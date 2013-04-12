@@ -1,6 +1,8 @@
 DESCRIPTION:
 - include grammar
+- check errors
 
 TEST:
 - rename examples
+- tests for char and String
 - tests for dot operator

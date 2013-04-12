@@ -97,6 +97,8 @@ ELitString. Expr8 ::= String;
 
 ELitChar.   Expr8 ::= Char;
 
+ENull.      Expr8 ::= "null";
+
 EArrAccess. Expr7 ::= Expr8 "[" Expr "]";
 
 EAccessFn.  Expr7 ::= Expr8 "." Ident "(" [Expr] ")";
@@ -145,6 +147,9 @@ GEQ.        OpRel ::= ">=";
 EQU.        OpRel ::= "==";
 
 NEQ.        OpRel ::= "!=";
+
+-- tokens --
+------------
 
 -- comments --
 --------------
