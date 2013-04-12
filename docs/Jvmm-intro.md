@@ -17,12 +17,17 @@ program must define _main()_ function with return type _int_ and no arguments,
 which is an entry point of a program. Function can be used before declaration
 as long as it is declared in global scope. Function with type other than _void_
 *must* explicitly return value (of a corresponding type). Arguments are passed
-by value (as in Java).
+and returned by value (as in Java). Some types (as described below) are always
+accessed by a reference and a thing that is passed to or returned from a
+function is the reference.
 
 Statements
 ----------
 Instructions: _if_, _while_, _for_, _return_, _;_, _++_, _--_, _=_, have
-natural semantics. The only l-values are variables.
+natural semantics. Operator precedence is almost compatible with those of Java
+and is described in included BNF grammar.
+The only l-values are variables and subscripted arrays (if one wants to assign
+a value to some cell in an array).
 
 Declarations
 ------------
@@ -44,11 +49,12 @@ _+_ is overloaded for strings. One can access (read-only) characters of a
 string using member-like function _String.charAt(int i)_.
 An array (as in Java) is actually a reference, which can be passed to and
 returned from a function. Arrays must be created explicitly using _new[int
-len]_ operator.  Length of an array (of type _int_) is provided on creation,
+len]_ operator. Length of an array (of type _int_) is provided on creation and
 cannot be altered and can be obtained as a _length_ attribute (using
 dot-notation).
 Both strings and arrays are indexed starting from 0.
-Memory allocated for an array using _new[int len]_ operator is managed automatically.
+Memory allocated for an array using _new[int len]_ operator is managed
+automatically.
 
 Expressions
 -----------

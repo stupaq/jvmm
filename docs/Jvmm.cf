@@ -4,17 +4,17 @@
 -- programs --
 --------------
 
-entrypoints Program;
+entrypoints CUnit;
 
-Program.    Program ::= [FnDefGlob];
+Prog.       CUnit ::= [DefGlob];
 
-FnDefGlob.  FnDefGlob ::= Type Ident "(" [FnArg] ")" Block;
+FnDefGlob.  DefGlob ::= Type Ident "(" [Arg] ")" Block;
 
-separator nonempty FnDefGlob "";
+separator nonempty DefGlob "";
 
-FnArg.      FnArg ::= Type Ident;
+FnArg.      Arg ::= Type Ident;
 
-separator FnArg ",";
+separator Arg ",";
 
 -- statements --
 ----------------
@@ -23,58 +23,60 @@ Block.      Block ::= "{" [Stmt] "}";
 
 separator Stmt "";
 
-Empty.      Stmt ::= ";";
+SEmpty.     Stmt ::= ";";
 
-BlockStmt.  Stmt ::= Block;
+SBlock.     Stmt ::= Block;
 
-Decl.       Stmt ::= Type [Item] ";";
+SDecl.      Stmt ::= Type [Item] ";";
 
-NoInit.     Item ::= Ident;
+INoInit.    Item ::= Ident;
 
-Init.       Item ::= Ident "=" Expr;
+IInit.      Item ::= Ident "=" Expr;
 
 separator nonempty Item ",";
 
-Assign.     Stmt ::= Ident "=" Expr  ";";
+SAssign.    Stmt ::= Ident "=" Expr  ";";
 
-PostInc.    Stmt ::= Ident "++" ";";
+SAssignArr. Stmt ::= Ident "[" Expr "]" "=" Expr  ";";
 
-PostDec.    Stmt ::= Ident "--" ";";
+SPostInc.   Stmt ::= Ident "++" ";";
 
-Return.     Stmt ::= "return" Expr ";";
+SPostDec.   Stmt ::= Ident "--" ";";
 
-ReturnV.    Stmt ::= "return" ";";
+SReturn.    Stmt ::= "return" Expr ";";
 
-If.         Stmt ::= "if" "(" Expr ")" Stmt;
+SReturnV.   Stmt ::= "return" ";";
 
-IfElse.     Stmt ::= "if" "(" Expr ")" Stmt "else" Stmt;
+SIf.        Stmt ::= "if" "(" Expr ")" Stmt;
 
-While.      Stmt ::= "while" "(" Expr ")" Stmt;
+SIfElse.    Stmt ::= "if" "(" Expr ")" Stmt "else" Stmt;
 
-Foreach.    Stmt ::= "for" "(" Type Ident ":" Expr ")" Stmt;
+SWhile.     Stmt ::= "while" "(" Expr ")" Stmt;
 
-ExprStmt.   Stmt ::= Expr ";";
+SForeach.   Stmt ::= "for" "(" Type Ident ":" Expr ")" Stmt;
 
-Throw.      Stmt ::= "throw" Expr ";";
+SExpr.      Stmt ::= Expr ";";
 
-Catch.      Stmt ::= "try" Stmt "catch" "(" Type Ident ")" Stmt;
+SThrow.     Stmt ::= "throw" Expr ";";
+
+SCatch.     Stmt ::= "try" Stmt "catch" "(" Type Ident ")" Stmt;
 
 -- types --
 -----------
 
-Array.      Type1 ::= Type "[]";
+TArray.     Type1 ::= Type "[]";
 
-Int.        Type ::= "int";
+TInt.       Type ::= "int";
 
-String.     Type ::= "String";
+TString.    Type ::= "String";
 
-String.     Type ::= "string";
+TString.    Type ::= "string";
 
-Char.       Type ::= "char";
+TChar.      Type ::= "char";
 
-Bool.       Type ::= "boolean";
+TBool.      Type ::= "boolean";
 
-Void.       Type ::= "void";
+TVoid.      Type ::= "void";
 
 coercions Type 1;
 
@@ -83,21 +85,27 @@ separator Type ",";
 -- expressions --
 -----------------
 
-EVar.       Expr6 ::= Ident;
+EVar.       Expr8 ::= Ident;
 
-ELitInt.    Expr6 ::= Integer;
+ELitInt.    Expr8 ::= Integer;
 
-ELitTrue.   Expr6 ::= "true";
+ELitTrue.   Expr8 ::= "true";
 
-ELitFalse.  Expr6 ::= "false";
+ELitFalse.  Expr8 ::= "false";
 
-ELitString. Expr6 ::= String;
+ELitString. Expr8 ::= String;
 
-ELitChar.   Expr6 ::= Char;
+ELitChar.   Expr8 ::= Char;
 
-EApp.       Expr6 ::= Ident "(" [Expr] ")";
+EArrAccess. Expr7 ::= Expr8 "[" Expr "]";
 
-ENewArray.  Expr6 ::= "new" Type "[" Expr "]";
+EAccessFn.  Expr7 ::= Expr8 "." Ident "(" [Expr] ")";
+
+EAccessVar. Expr7 ::= Expr8 "." Ident;
+
+EApp.       Expr7 ::= Ident "(" [Expr] ")";
+
+ENewArr.    Expr6 ::= "new" Type "[" Expr "]";
 
 ENeg.       Expr5 ::= "-" Expr6;
 
@@ -119,7 +127,7 @@ EAnd.       Expr1 ::= Expr2 "&&" Expr1;
 
 EOr.        Expr ::= Expr1 "||" Expr;
 
-coercions Expr 6;
+coercions Expr 8;
 
 separator Expr ",";
 
@@ -128,15 +136,15 @@ separator Expr ",";
 
 LTH.        OpRel ::= "<";
 
-LE.         OpRel ::= "<=";
+LEQ.        OpRel ::= "<=";
 
 GTH.        OpRel ::= ">";
 
-GE.         OpRel ::= ">=";
+GEQ.        OpRel ::= ">=";
 
 EQU.        OpRel ::= "==";
 
-NE.         OpRel ::= "!=";
+NEQ.        OpRel ::= "!=";
 
 -- comments --
 --------------

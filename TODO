@@ -1,3 +1,6 @@
-GRAMMAR:
-- char
-- string subscripts
+DESCRIPTION:
+- include grammar
+
+TEST:
+- rename examples
+- tests for dot operator
