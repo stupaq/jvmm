@@ -1,20 +1,36 @@
 -- Jvmm : BNF syntax specification --
 -------------------------------------
 
+-- There are 2 shift/reduce conflicts
+-- SIf. | SIfElse. -- tested in examples_good/conflict001.jv
+-- SAssignArr. | EAccessArr. -- tested in examples_good/conflict002.jv
+
 -- programs --
 --------------
 
-entrypoints CUnit;
+entrypoints Prog;
 
-Prog.       CUnit ::= [DefGlob];
+Prog.       Prog ::= [DefFunc];
 
-FnDefGlob.  DefGlob ::= Type Ident "(" [Arg] ")" Block;
+separator nonempty DefFunc "";
 
-separator nonempty DefGlob "";
+-- declarations/definitions --
+------------------------------
 
-FnArg.      Arg ::= Type Ident;
+SDefFunc.   DefFunc ::= Type Ident "(" [Arg] ")" Block;
+
+Arg.        Arg ::= Type Ident;
 
 separator Arg ",";
+
+SDeclVar.   Stmt ::= Type [Item] ";";
+
+NoInit.     Item ::= Ident;
+
+Init.       Item ::= Ident "=" Expr;
+
+separator nonempty Item ",";
+
 
 -- statements --
 ----------------
@@ -26,14 +42,6 @@ separator Stmt "";
 SEmpty.     Stmt ::= ";";
 
 SBlock.     Stmt ::= Block;
-
-SDecl.      Stmt ::= Type [Item] ";";
-
-INoInit.    Item ::= Ident;
-
-IInit.      Item ::= Ident "=" Expr;
-
-separator nonempty Item ",";
 
 SAssign.    Stmt ::= Ident "=" Expr  ";";
 
@@ -109,7 +117,7 @@ ELitChar.   Expr8 ::= Char;
 
 ENull.      Expr8 ::= "null";
 
-EArrAccess. Expr7 ::= Expr8 "[" Expr "]";
+EAccessArr. Expr7 ::= Expr8 "[" Expr "]";
 
 EAccessFn.  Expr7 ::= Expr8 "." Ident "(" [Expr] ")";
 

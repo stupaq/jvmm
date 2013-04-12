@@ -2,7 +2,7 @@ DOCS := $(patsubst %.md, %.pdf, $(wildcard docs/*.md))
 BNFC := $(wildcard docs/*.cf)
 EXGOOD := examples_good
 EXBAD := examples_bad
-LMODULE := Lang
+LMODULE := Syntax
 JVMM_EXT := .jv
 
 PDFLATEX := pdflatex -interaction=batchmode
