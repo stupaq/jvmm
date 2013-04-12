@@ -26,13 +26,14 @@ and a thing that is passed to or returned from a function (therefore copied) is
 the reference. For such objects, when the last reference referring the object
 falls out of its scope the object is disposed automatically.
 A reference can have a value _null_, which means it does not refer to any object.
-Note that in current specification reference-counting is sufficient for garbage
-collection, as there is no way to create a cycle of references.
+Note that for current language specification reference-counting is sufficient
+for garbage collection, as there is no way to create a cycle of references.
 
 Statements
 ----------
 Instructions: _if_, _while_, _for_, _return_, _;_, _++_, _--_, _=_, have
-natural semantics. Operator precedence is described in attached BNF grammar.
+Java-like semantics. Operator precedence is described in attached BNF grammar.
+
 The only l-values are variables, references and subscripted arrays (in case one
 wants to assign a value to some cell in an array). Note that assignment to a
 reference changes which object is referenced, not underlying object itself (and
@@ -45,23 +46,29 @@ inside a block, but usage of undeclared variable is forbidden. Declared and
 uninitialized variables are automatically initialized with default values, that
 is _int_ = 0, _boolean_ = false, _String_ = "", _char_ = 'J', uninitialized
 references are initialized with _null_.
+
 Scope of a local variable is limited to the block containing its declaration,
 variables from outer blocks (and global scope) can be hidden by local variable
 declaration, but names inside one block must be unique.
 
 Types
 -----
-Any implicit casts are forbidden! Types _int_, _boolean_, _void_, _char_ are
-defined as in Java, with exception that _char_ is limited to ANSI characters.
+There is no implicit cast at all! Primitive types _int_, _boolean_, _char_ are
+defined as in Java, with exception that _char_ is limited to characters 'a',
+..., 'z', 'A', ..., 'Z', '0', ..., '9'.
+
 _String_ is an immutable character sequence accessible by a reference.
 For convenience _string_ is an alias for _String_. Concatenation operator _+_
 is overloaded for strings. One can access (read-only) characters of a string
-using member-like function _s.charAt(int i)_.
-An array (as in Java) is accessible through reference. Arrays must be created
-explicitly using _new[int len]_ operator. Length of an array (of type _int_) is
-provided on creation and cannot be altered, one can access length of an array
-_a_ using member-like notation _a.length_.
-Both strings and arrays are indexed starting from 0.
+using member-like function _s.charAt(int i)_, positions in string are indexed
+from 0.
+
+An array is a sequence of variables of primitive type and is accessible through
+a reference. Arrays must be created explicitly using _new[int len]_ operator.
+Length of an array (of type _int_) is provided on creation and cannot be
+altered, one can access length of an array _a_ using member-like notation
+_a.length_. Elements of an array are indexed starting from 0 and accessed by
+_[]_ operator.
 
 Expressions
 -----------
@@ -69,8 +76,18 @@ Arithmetic and logical expressions have natural semantics. Logical expressions
 are evaluated lazily and have _boolean_ type, for other expressions we have
 greedy evaluation. There is no implicit conversion between _boolean_ and _int_.
 
-Exceptions
-----------
+Built-in functions
+------------------
+- _void print(String s)_ -- prints given string to stdout
+- _void printLine(String s)_ -- prints given string and a new line character to stdout
+- _String readLine()_ -- reads and returns one line from stdin (without terminal newline character)
+
+Optional extensions
+-------------------
+Here are some possible extensions to core *Jvmm*, which can be implemented if
+really needed.
+
+### Exceptions
 An exception in *Jvmm* has a _String_ type. It can be thrown with _throw s;_
 (where s has _String_ type) instruction and is caught by first _try {}
 catch(String e) {}_ block reached when going up the stack (or block structure).
@@ -79,11 +96,9 @@ execution of following block continues. Above definition is very informal,
 exceptions should work like in Java, but there is no finally, nor
 multiple-catch constructions.
 
-Built-in functions
-------------------
-- _void print(String s)_ -- prints given string to stdout
-- _void printLine(String s)_ -- prints given string and a new line character to stdout
-- _String readLine()_ -- reads and returns one line from stdin (without terminal newline character)
+### Structures
+C-like structures (fields only, no methods) accessed by a reference. Allocated
+using _new_ operator.
 
 Sources & bibliography
 ----------------------

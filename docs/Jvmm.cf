@@ -57,9 +57,9 @@ SForeach.   Stmt ::= "for" "(" Type Ident ":" Expr ")" Stmt;
 
 SExpr.      Stmt ::= Expr ";";
 
-SThrow.     Stmt ::= "throw" Expr ";";
+-- SThrow.     Stmt ::= "throw" Expr ";";
 
-SCatch.     Stmt ::= "try" Stmt "catch" "(" Type Ident ")" Stmt;
+-- SCatch.     Stmt ::= "try" Stmt "catch" "(" Type Ident ")" Stmt;
 
 -- types --
 -----------

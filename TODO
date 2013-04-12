@@ -1,8 +1,13 @@
 DESCRIPTION:
 - include grammar
-- check errors
+- check for errors
 
 TEST:
 - rename examples
 - tests for char and String
 - tests for dot operator
+
+OPTIONAL:
+- grammar, description & tests
+  - structures
+  - exceptions
