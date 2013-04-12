@@ -37,6 +37,16 @@ separator nonempty Item ",";
 
 SAssign.    Stmt ::= Ident "=" Expr  ";";
 
+SAssignAdd. Stmt ::= Ident "+=" Expr  ";";
+
+SAssignSub. Stmt ::= Ident "-=" Expr  ";";
+
+SAssignMul. Stmt ::= Ident "*=" Expr  ";";
+
+SAssignDiv. Stmt ::= Ident "/=" Expr  ";";
+
+SAssignMod. Stmt ::= Ident "%=" Expr  ";";
+
 SAssignArr. Stmt ::= Ident "[" Expr "]" "=" Expr  ";";
 
 SPostInc.   Stmt ::= Ident "++" ";";

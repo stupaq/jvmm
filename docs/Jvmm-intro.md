@@ -4,9 +4,9 @@
 Introduction
 ------------
 Language *Jvmm* (Java - -) is an imperative, interpreted programming language
-with strong typing. It is intended to be a (proper) subset of Java language
-(but it is not, since in Java everything is a class and there is no such
-concept as a class in *Jvmm* (yet)).
+with strong, static typing. It is intended to be a (proper) subset of Java
+language (but it is not, since in Java everything is a class and there is no
+such concept as a class in *Jvmm* (yet)).
 
 Program structure
 -----------------
@@ -31,8 +31,9 @@ for garbage collection, as there is no way to create a cycle of references.
 
 Statements
 ----------
-Instructions: _if_, _while_, _for_, _return_, _;_, _++_, _--_, _=_, have
-Java-like semantics. Operator precedence is described in attached BNF grammar.
+Instructions: _if_, _while_, _for_, _return_, _;_, _++_, _--_, _=_, _+=_, _-=_,
+_*=_, _/=_, _%=_, have Java-like semantics. Operator precedence is described in
+attached BNF grammar.
 
 The only l-values are variables, references and subscripted arrays (in case one
 wants to assign a value to some cell in an array). Note that assignment to a
@@ -54,14 +55,15 @@ declaration, but names inside one block must be unique.
 Types
 -----
 There is no implicit cast at all! Primitive types _int_, _boolean_, _char_ are
-defined as in Java, with exception that _char_ is limited to characters 'a',
-..., 'z', 'A', ..., 'Z', '0', ..., '9'.
+defined as in Java, with exception that _char_ is limited as described in
+attached grammar.
 
 _String_ is an immutable character sequence accessible by a reference.
 For convenience _string_ is an alias for _String_. Concatenation operator _+_
 is overloaded for strings. One can access (read-only) characters of a string
 using member-like function _s.charAt(int i)_, positions in string are indexed
-from 0.
+from 0. Length of a string _s_ can be obtained using member-like notation
+_s.length_.
 
 An array is a sequence of variables of primitive type and is accessible through
 a reference. Arrays must be created explicitly using _new[int len]_ operator.
@@ -81,6 +83,54 @@ Built-in functions
 - _void print(String s)_ -- prints given string to stdout
 - _void printLine(String s)_ -- prints given string and a new line character to stdout
 - _String readLine()_ -- reads and returns one line from stdin (without terminal newline character)
+
+Example code
+------------
+
+```{.java}
+// Example program in Jvmm
+
+int[] foo(int n) {
+  if (n > 0) {
+    int[] arr = new int[n];
+    while (n > 0) {
+      n--;
+      arr[n] = comp(n);
+    }
+    return arr;
+  } else
+    return null;
+}
+
+int bar(int[] arr) {
+  if (arr == null)
+    return 0;
+  int s; // equivalent to int s = 0;
+  for (int a : arr) {
+    s += a;
+  }
+  return s;
+}
+
+/* multi
+   line
+   comment */
+int main () {
+  printLine("Your name: ");
+  String s = readLine();
+  printLine("Hello " + s + "!");
+  int c = bar(foo(5));
+  if (s.length > 0 && s.charAt(0) == 'M')
+    print("OK");
+  else
+    print("nope");
+  return c + c*c - 1;
+}
+
+int comp(int a) {
+  return 2 *a -1;
+}
+```
 
 Optional extensions
 -------------------

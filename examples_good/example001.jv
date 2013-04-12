@@ -1,0 +1,42 @@
+// Example program in Jvmm
+
+int[] foo(int n) {
+  if (n > 0) {
+    int[] arr = new int[n];
+    while (n > 0) {
+      n--;
+      arr[n] = comp(n);
+    }
+    return arr;
+  } else
+    return null;
+}
+
+int bar(int[] arr) {
+  if (arr == null)
+    return 0;
+  int s; // equivalent to int s = 0;
+  for (int a : arr) {
+    s += a;
+  }
+  return s;
+}
+
+/* multi
+   line
+   comment */
+int main () {
+  printLine("Your name: ");
+  String s = readLine();
+  printLine("Hello " + s + "!");
+  int c = bar(foo(5));
+  if (s.length > 0 && s.charAt(0) == 'M')
+    print("OK");
+  else
+    print("nope");
+  return c + c*c - 1;
+}
+
+int comp(int a) {
+  return 2 *a -1;
+}
