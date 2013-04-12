@@ -1,13 +1,24 @@
-DOCS_MD := $(patsubst %.md, %.pdf, $(wildcard docs/*.md))
+DOCS := $(patsubst %.md, %.pdf, $(wildcard docs/*.md))
 
-all: docs
-	
-docs: $(DOCS_MD)
+PDFLATEX := pdflatex -interaction=batchmode
 
-$(DOCS_MD): %.pdf : %.md
+all: $(DOCS) Lang
+
+$(DOCS): %.pdf : %.md
 	pandoc $< -o $@
 
-clean:
-	-rm -f $(DOCS_MD)
+Lang: docs/Jvmm.cf
+	bnfc -p $@ $<
+	happy -gca $@/ParJvmm.y
+	alex -g $@/LexJvmm.x
+	(cd $@/; $(PDFLATEX) DocJvmm.tex; )
+	ghc -w --make $@/TestJvmm.hs -o $@/TestJvmm
 
-.PHONY: clean
+clean:
+	-rm -f Lang/*.{log,aux,hi,o}
+
+distclean: clean
+	-rm -f $(DOCS)
+	-rm -rf Lang
+
+.PHONY: clean distclean

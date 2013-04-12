@@ -1,0 +1,147 @@
+-- Jvmm : BNF syntax specification --
+-------------------------------------
+
+-- programs --
+--------------
+
+entrypoints Program;
+
+Program.    Program ::= [FnDefGlob];
+
+FnDefGlob.  FnDefGlob ::= Type Ident "(" [FnArg] ")" Block;
+
+separator nonempty FnDefGlob "";
+
+FnArg.      FnArg ::= Type Ident;
+
+separator FnArg ",";
+
+-- statements --
+----------------
+
+Block.      Block ::= "{" [Stmt] "}";
+
+separator Stmt "";
+
+Empty.      Stmt ::= ";";
+
+BlockStmt.  Stmt ::= Block;
+
+Decl.       Stmt ::= Type [Item] ";";
+
+NoInit.     Item ::= Ident;
+
+Init.       Item ::= Ident "=" Expr;
+
+separator nonempty Item ",";
+
+Assign.     Stmt ::= Ident "=" Expr  ";";
+
+PostInc.    Stmt ::= Ident "++" ";";
+
+PostDec.    Stmt ::= Ident "--" ";";
+
+Return.     Stmt ::= "return" Expr ";";
+
+ReturnV.    Stmt ::= "return" ";";
+
+If.         Stmt ::= "if" "(" Expr ")" Stmt;
+
+IfElse.     Stmt ::= "if" "(" Expr ")" Stmt "else" Stmt;
+
+While.      Stmt ::= "while" "(" Expr ")" Stmt;
+
+Foreach.    Stmt ::= "for" "(" Type Ident ":" Expr ")" Stmt;
+
+ExprStmt.   Stmt ::= Expr ";";
+
+Throw.      Stmt ::= "throw" Expr ";";
+
+Catch.      Stmt ::= "try" Stmt "catch" "(" Type Ident ")" Stmt;
+
+-- types --
+-----------
+
+Array.      Type1 ::= Type "[]";
+
+Int.        Type ::= "int";
+
+String.     Type ::= "String";
+
+String.     Type ::= "string";
+
+Char.       Type ::= "char";
+
+Bool.       Type ::= "boolean";
+
+Void.       Type ::= "void";
+
+coercions Type 1;
+
+separator Type ",";
+
+-- expressions --
+-----------------
+
+EVar.       Expr6 ::= Ident;
+
+ELitInt.    Expr6 ::= Integer;
+
+ELitTrue.   Expr6 ::= "true";
+
+ELitFalse.  Expr6 ::= "false";
+
+ELitString. Expr6 ::= String;
+
+ELitChar.   Expr6 ::= Char;
+
+EApp.       Expr6 ::= Ident "(" [Expr] ")";
+
+ENewArray.  Expr6 ::= "new" Type "[" Expr "]";
+
+ENeg.       Expr5 ::= "-" Expr6;
+
+ENot.       Expr5 ::= "!" Expr6;
+
+EMul.       Expr4 ::= Expr4 "*" Expr5;
+
+EDiv.       Expr4 ::= Expr4 "/" Expr5;
+
+EMod.       Expr4 ::= Expr4 "%" Expr5;
+
+EAdd.       Expr3 ::= Expr3 "+" Expr4;
+
+ESub.       Expr3 ::= Expr3 "-" Expr4;
+
+ERel.       Expr2 ::= Expr2 OpRel Expr3;
+
+EAnd.       Expr1 ::= Expr2 "&&" Expr1;
+
+EOr.        Expr ::= Expr1 "||" Expr;
+
+coercions Expr 6;
+
+separator Expr ",";
+
+-- operators --
+---------------
+
+LTH.        OpRel ::= "<";
+
+LE.         OpRel ::= "<=";
+
+GTH.        OpRel ::= ">";
+
+GE.         OpRel ::= ">=";
+
+EQU.        OpRel ::= "==";
+
+NE.         OpRel ::= "!=";
+
+-- comments --
+--------------
+
+comment  "//";
+
+comment  "/*" "*/";
+
