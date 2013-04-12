@@ -85,16 +85,16 @@ Built-in functions
 Optional extensions
 -------------------
 Here are some possible extensions to core *Jvmm*, which can be implemented if
-really needed.
+really needed. Sorted from the most preferred.
 
 ### Exceptions
-An exception in *Jvmm* has a _String_ type. It can be thrown with _throw s;_
-(where s has _String_ type) instruction and is caught by first _try {}
-catch(String e) {}_ block reached when going up the stack (or block structure).
-Variable declared in _catch_ is assigned with a value of caught exception and
-execution of following block continues. Above definition is very informal,
-exceptions should work like in Java, but there is no finally, nor
-multiple-catch constructions.
+Exceptions of type _String_. Exception can be thrown with _throw s;_ (where _s_
+has a _String_ type) instruction and is caught by first _try {} catch(String e)
+{}_ block reached when going up the stack (or block structure). Reference
+declared in _catch_ is assigned with a value of caught exception and execution
+of following block continues. Above definition is very informal, exceptions
+should work like in Java, but there is no finally, nor multiple-catch
+constructions.
 
 ### Structures
 C-like structures (fields only, no methods) accessed by a reference. Allocated
@@ -102,5 +102,10 @@ using _new_ operator.
 
 Sources & bibliography
 ----------------------
-- [LBNF Java 1.5 Grammar, example .cf file in bnfc-cabal](https://bnfc-cabal.googlecode.com/svn-history/r2/trunk/Examples/java.cf)
+- [LBNF Java 1.5 Grammar, example .cf file in
+  bnfc-cabal](https://bnfc-cabal.googlecode.com/svn-history/r2/trunk/Examples/java.cf)
+- [Przykładowe programy w języku "Latte", projekt zaliczeniowy MRJP na wydziale
+  MIM UW](http://www.mimuw.edu.pl/~ben/Zajecia/Mrj2012/Latte/)
+- [Lecture 4: Implementing Lexers and Parsers Programming Languages
+  Course](http://www.cse.chalmers.se/edu/year/2011/course/TIN321/lectures/proglang-04.html)
 
