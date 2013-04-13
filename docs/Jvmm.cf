@@ -17,13 +17,15 @@ separator nonempty DefFunc "";
 -- declarations/definitions --
 ------------------------------
 
-SDefFunc.   DefFunc ::= Type Ident "(" [Arg] ")" Block;
+GDefFunc.   DefFunc ::= Type Ident "(" [Arg] ")" Block;
+
+internal    SDefFunc. Stmt ::= Type Ident [Arg] Block;
 
 Arg.        Arg ::= Type Ident;
 
 separator Arg ",";
 
-SDeclVar.   Stmt ::= Type [Item] ";";
+SDeclVars.  Stmt ::= Type [Item] ";";
 
 NoInit.     Item ::= Ident;
 
@@ -31,13 +33,18 @@ Init.       Item ::= Ident "=" Expr;
 
 separator nonempty Item ",";
 
-
 -- statements --
 ----------------
 
 Block.      Block ::= "{" [Stmt] "}";
 
 separator Stmt "";
+
+internal    BScope. Block ::= [VScope] [Stmt];
+
+VScope.     VScope ::= Type Ident;
+
+separator VScope "";
 
 SEmpty.     Stmt ::= ";";
 
