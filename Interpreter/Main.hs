@@ -1,6 +1,7 @@
 module Main where
 import System.IO ( stdin, hGetContents )
 import System.Environment ( getArgs, getProgName )
+import Data.Either
 import Syntax.LexJvmm
 import Syntax.ParJvmm
 import Syntax.SkelJvmm
@@ -8,6 +9,7 @@ import Syntax.PrintJvmm
 import Syntax.AbsJvmm
 import Syntax.ErrM
 import Semantics.Trans
+import Semantics.Scope
 
 type ParseFun a = [Token] -> Err a
 
@@ -30,11 +32,12 @@ run v p s = let ts = myLexer s in case p ts of
     printlv (v + 1) "Tokens:"
     printlv v $ show ts
     printl s
-  Ok tree -> do
-    let tree' = transAbs tree
-    printl "\nParse Successful!"
-    printlv v $ "\n[Abstract Syntax]\n\n" ++ show tree'
-    printlv (v + 1) $ "\n[Linearized tree]\n\n" ++ printTree tree'
+  Ok tree ->  case scope $ transAbs tree of
+    Right tree' -> do
+      printl "\nParse Successful!"
+      printlv v $ "\n[Abstract Syntax]\n\n" ++ show tree'
+      printlv (v + 1) $ "\n[Linearized tree]\n\n" ++ printTree tree'
+    Left err -> fail err
 
 main :: IO ()
 main = do

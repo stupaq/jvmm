@@ -1,8 +1,9 @@
 module Semantics.Errors where
 import Control.Monad.Error
 import qualified Data.List as List
+import Syntax.AbsJvmm
 
-duplicateArg id = "duplicate argument: " ++ (show id)
-unboundSymbol id = "unbound symbol: " ++ (show id)
+duplicateArg (Arg _ (Ident id)) = "duplicate argument name: " ++ id
+unboundSymbol (Ident id) = "unbound symbol: " ++ id
 globalNonDec = "non-declaration in global scope"
-globalVarDec ids = "variable declaration in global scope: " ++ (concat $ List.intersperse "," $ map show ids)
+globalVarDec ids = "variable declaration in global scope: " ++ (concat $ List.intersperse "," $ map (\(Ident id) -> id) ids)

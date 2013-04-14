@@ -33,12 +33,12 @@ decFunc id sc = sc { funcs = declare (funcs sc) id }
 decType id sc = sc { types = declare (types sc) id }
 
 -- How each statement affects current scope
-declareStmt :: Stmt -> Scope -> Either String Scope
-declareStmt stmt sc = case stmt of
-  SDefFunc _ id _ _ -> return $ decFunc id sc
-  SDeclVar typ id -> return $ decVar id sc
-  SDefVar typ id _ -> return $ decVar id sc
-  _ -> return sc
+declareStmt :: Stmt -> Scope -> Scope
+declareStmt stmt = case stmt of
+  SDefFunc _ id _ _ -> decFunc id
+  SDeclVar typ id -> decVar id
+  SDefVar typ id _ -> decVar id
+  _ -> Prelude.id
 
 -- If we need no state on error
 runErrorState m = runIdentity . runErrorT . (evalStateT m)
@@ -57,7 +57,7 @@ declareArgs args sc = runErrorState (foldM fun sc args) Set.empty
 
 resolve :: Map.Map Ident Tag -> Ident -> (ReaderT Scope (ErrorT String Identity)) Ident
 resolve m id = case Map.lookup id m of
-    Just tag -> return $ Ident $ concat [show id, show tag]
+    Just tag -> let (Ident name) = id in return $ Ident $ concat [name, "$", show tag]
     Nothing -> throwError $ Err.unboundSymbol id
 
 resVar, resFunc, resType :: Ident -> (ReaderT Scope (ErrorT String Identity)) Ident
@@ -77,7 +77,7 @@ scope' stmt = runErrorEnv (funS stmt) scope0
         sc <- ask
         case declareArgs args sc of
           Right sc' -> do
-            let args' = args --FIXME args are not relabelled
+            let args' = args --FIXME args are not relabelled, but we know that they're good
             stmt' <- local (const sc') (funS stmt)
             return $ SDefFunc typ id args' stmt'
           Left err -> throwError err
@@ -88,7 +88,19 @@ scope' stmt = runErrorEnv (funS stmt) scope0
         expr' <- funE expr
         id' <- resVar id
         return $ SDefVar typ id' expr'
-      SBlock stmts -> undefined --TODO
+      SBlock stmts -> do --FIXME forbid redeclaration in the same scope
+        sc <- ask
+        case runErrorState (mapM fun stmts) sc of
+          Right stmts' -> return $ SBlock stmts'
+          Left err -> throwError err
+        where
+          fun :: Stmt -> (StateT Scope (ErrorT String Identity)) Stmt
+          fun stmt = do
+            modify (declareStmt stmt)
+            sc <- get
+            case runErrorEnv (funS stmt) sc of
+              Right stmt' -> return stmt'
+              Left err -> throwError err
       SAssign id expr -> do
         expr' <- funE expr
         id' <- resVar id
@@ -125,23 +137,73 @@ scope' stmt = runErrorEnv (funS stmt) scope0
         stmt' <- funS stmt
         return $ SWhile expr' stmt'
       SForeach typ id expr stmt -> do
-        id' <- resVar id
         expr' <- funE expr
-        stmt' <- local (decVar id) (funS stmt)
-        return $ SForeach typ id' expr' stmt'
+        local (decVar id) $ do
+          id' <- (resVar id)
+          stmt' <- funS stmt
+          return $ SForeach typ id' expr' stmt'
       SExpr expr -> do
         expr' <- funE expr
         return $ SExpr expr'
       _ -> return stmt
     funE :: Expr -> (ReaderT Scope (ErrorT String Identity)) Expr
-    funE = undefined
+    funE expr = case expr of
+      EVar id -> do
+        id' <- resVar id
+        return $ EVar id'
+      EAccessArr expr1 expr2 -> do
+        expr1' <- funE expr1
+        expr2' <- funE expr2
+        return $ EAccessArr expr1' expr2'
+      EAccessFn expr id exprs -> do
+        let id' = id
+        expr' <- funE expr
+        exprs' <- mapM funE exprs
+        return $ EAccessFn expr' id' exprs'
+      EAccessVar expr id -> do
+        expr' <- funE expr
+        let id' = id
+        return $ EAccessVar expr' id'
+      EApp id exprs -> do
+        exprs' <- mapM funE exprs
+        return $ EApp id exprs'
+      ENewArr typ expr -> do
+        expr' <- funE expr
+        return $ ENewArr typ expr'
+      ENeg expr -> do
+        expr' <- funE expr
+        return $ ENeg expr'
+      ENot expr -> do
+        expr' <- funE expr
+        return $ ENot expr'
+      EMul expr1 opmul2 expr3 -> do
+        expr1' <- funE expr1
+        expr3' <- funE expr3
+        return $ EMul expr1' opmul2 expr3'
+      EAdd expr1 opadd2 expr3 -> do
+        expr1' <- funE expr1
+        expr3' <- funE expr3
+        return $ EAdd expr1' opadd2 expr3'
+      ERel expr1 oprel2 expr3 -> do
+        expr1' <- funE expr1
+        expr3' <- funE expr3
+        return $ ERel expr1' oprel2 expr3'
+      EAnd expr1 expr2 -> do
+        expr1' <- funE expr1
+        expr2' <- funE expr2
+        return $ EAnd expr1' expr2'
+      EOr expr1 expr2 -> do
+        expr1' <- funE expr1
+        expr2' <- funE expr2
+        return $ EOr expr1' expr2'
+      _ -> return expr
 
 -- TODO
 {-
 -- Creates scoped tree from translated AST, mutually recursive symbols,
 -- allows only blocks of function definitions
-scope'' :: Block -> ScopeM Block
-scope'' (Block stmts) = do
+scope'' :: Stmt -> Either String Stmt
+scope'' (SBlock stmts) = runErrorEnv (funS stmt) scope0
   sc <- ask
   sc' <- foldM fun sc stmts
   return $ Block $ map (fun' sc) stmts
@@ -153,3 +215,7 @@ scope'' (Block stmts) = do
 -- Recurses into declaration's blocks
     fun' sc (SDefFunc typ id args blk) = undefined
 -- -}
+
+-- Scope computation always starts with global scope
+scope :: Stmt -> Either String Stmt
+scope = scope' --FIXME
