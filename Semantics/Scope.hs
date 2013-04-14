@@ -13,11 +13,10 @@ import Control.Monad.Writer
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Semantics.Errors as Err
-import Syntax.AbsJvmm
+import Syntax.AbsJvmm as Abs
 
 -- Each symbol in scoped tree has an identifier which is unique in its scope.
--- In other words, there is no identifier hiding in Scope.Tree
-type Tree = Block
+-- In other words, there is no identifier hiding in scoped tree
 type Tag = Int
 tag0 = 0 :: Tag
 
@@ -51,10 +50,14 @@ declareStmt stmt sc = case stmt of
     Init id _  -> decVar sc id) sc items
   _ -> return sc
 
+-- If we need no state
+runErrorState :: (Error a') => StateT a (ErrorT a' Identity) a'' -> a -> Either a' a''
+runErrorState m = runIdentity . runErrorT . (evalStateT m)
+
 -- How arguments affect scope inside function body
 declareArgs :: [Arg] -> Scope -> Either String Scope
 declareArgs args sc =
-  runIdentity $ runErrorT $ evalStateT (foldM fun sc args) Set.empty
+  runErrorState (foldM fun sc args) Set.empty
   where
     fun :: Scope -> Arg -> (StateT (Set.Set Ident) (ErrorT String Identity)) Scope
     fun sc (Arg typ id) = do
@@ -65,23 +68,49 @@ declareArgs args sc =
         True -> Err.duplicateArg (Arg typ id)
 
 -- Monad for assigning scope to variables
-type ScopeM a = (ReaderT Scope (ErrorT String (Identity))) a
+type ScopeM a = (ReaderT Scope (ErrorT String Identity)) a
 runScopeM :: Scope -> ScopeM a -> Either String a
 runScopeM sc m = runIdentity (runErrorT (runReaderT m sc))
 
--- Creates Scope.Tree from AST for Prog
-scope :: Prog -> ScopeM Tree
-scope (Prog defs) = scopeR $ Block $ map fun defs
-  where fun (GDefFunc typ id args blk) = SDefFunc typ id args blk
-
 -- TODO
--- Creates Scope.Tree from AST for Block, sequential symbol declarations
-scopeS :: Block -> ScopeM Tree
-scopeS (Block []) = undefined
+-- Creates scoped tree from AST for SBlock, sequential symbol declarations
+scopeS :: Stmt -> ScopeM Stmt
+scopeS (Block stmts) = do
+  sc <- ask
+  fail "undefined"
+  where
+    scope'' :: Stmt -> (ReaderT Scope (ErrorT String Identity)) [Stmt]
+    scope'' stmt =
+      case stmt of
+      -- TODO
+        SDefFunc typ id args block -> undefined
+        SDeclVars typ items -> undefined
+        SForeach typ id expr stmt -> do
+          stmt' <- pack $ scope'' stmt
+          pass $ S expr stmt'
+        SStmtBlock (Block stmts) -> do
+          stmt' <- pack $ scope'' stmt
+          pass $ SBlock stmt'
+        SIf expr stmt -> do
+          stmt' <- pack $ scope'' stmt
+          pass $ SIf expr stmt'
+        SIfElse expr stmt1 stmt2 -> do
+          stmt1' <- pack $ scope'' stmt1
+          stmt2' <- pack $ scope'' stmt2
+          pass $ SIfElse expr stmt1' stmt2'
+        SWhile expr stmt -> do
+          stmt' <- pack $ scope'' stmt
+          pass $ SWhile expr stmt'
+        _ -> pass stmt
+      where
+        pack :: [Stmt] -> Stmt
+        pack [stmt] = stmt
+        pack stmts = SBlock $ Block
 
--- Creates Scope.Tree from AST for Block, mutually recursive symbols,
+{-
+-- Creates scoped tree from AST for SBlock, mutually recursive symbols,
 -- allows only blocks of function definitions
-scopeR :: Block -> ScopeM Tree
+scopeR :: Block -> ScopeM Block
 scopeR (Block stmts) = do
   sc <- ask
   sc' <- foldM fun sc stmts
@@ -89,8 +118,9 @@ scopeR (Block stmts) = do
   where
 -- Aggregates declarations in global scope
     fun sc (SDefFunc typ id args blk) = return $ sc { funcs = declare (funcs sc) id }
-    fun _ (SDeclVars typ ids) = throwError $ "variable declaration in global scope: " ++ (concat $ map show ids)
-    fun _ _ = throwError $ "not a declaration in global scope"
+    fun _ (SDeclVars typ ids) = Err.globalVarDec ids
+    fun _ _ = Err.globalNonDec
 -- Recurses into declaration's blocks
     fun' sc (SDefFunc typ id args blk) = undefined
-
+-- -}
+scopeR = undefined

@@ -4,51 +4,52 @@
 -- There are 2 shift/reduce conflicts
 -- SIf. | SIfElse. -- tested in examples_good/conflict001.jv
 -- SAssignArr. | EAccessArr. -- tested in examples_good/conflict002.jv
+-- Labels prefixed with "P" are prunned during translation
 
 -- programs --
 --------------
 
-entrypoints Prog;
+entrypoints PProg;
 
-Prog.       Prog ::= [DefFunc];
+PProg.      PProg ::= [PDefFunc];
 
-separator nonempty DefFunc "";
+separator nonempty PDefFunc "";
 
 -- declarations/definitions --
 ------------------------------
 
-GDefFunc.   DefFunc ::= Type Ident "(" [Arg] ")" Block;
+PDefFunc.   PDefFunc ::= Type Ident "(" [Arg] ")" PBlock;
 
-internal    SDefFunc. Stmt ::= Type Ident [Arg] Block;
+internal    SDefFunc. Stmt ::= Type Ident [Arg] Stmt;
 
 Arg.        Arg ::= Type Ident;
 
 separator Arg ",";
 
-SDeclVars.  Stmt ::= Type [Item] ";";
+PSDeclVar.  Stmt ::= Type [PItem] ";";
 
-NoInit.     Item ::= Ident;
+PNoInit.    PItem ::= Ident;
 
-Init.       Item ::= Ident "=" Expr;
+PInit.      PItem ::= Ident "=" Expr;
 
-separator nonempty Item ",";
+separator nonempty PItem ",";
+
+internal    SDeclVar. Stmt ::= Type Ident;
+
+internal    SDefVar. Stmt ::= Type Ident Expr;
 
 -- statements --
 ----------------
 
-Block.      Block ::= "{" [Stmt] "}";
+PBlock.     PBlock ::= "{" [Stmt] "}";
+
+internal    SBlock. Stmt ::= [Stmt];
 
 separator Stmt "";
 
-internal    BScope. Block ::= [VScope] [Stmt];
-
-VScope.     VScope ::= Type Ident;
-
-separator VScope "";
-
 SEmpty.     Stmt ::= ";";
 
-SBlock.     Stmt ::= Block;
+PSBlock.    Stmt ::= PBlock;
 
 SAssign.    Stmt ::= Ident "=" Expr  ";";
 
