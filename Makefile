@@ -4,10 +4,15 @@ EXGOOD := examples_good
 EXBAD := examples_bad
 LMODULE := Syntax
 JVMM_EXT := .jv
+MAIN := Interpreter/Main
 
 PDFLATEX := pdflatex -interaction=batchmode
 
-all: grammar
+all: interpreter
+
+interpreter: $(MAIN)
+$(MAIN): % : %.hs grammar
+	ghc -w --make $< -o $@
 
 docs: $(DOCS)
 $(DOCS): %.pdf : %.md

@@ -20,7 +20,7 @@ separator nonempty PDefFunc "";
 
 PDefFunc.   PDefFunc ::= Type Ident "(" [Arg] ")" PBlock;
 
-internal    SDefFunc. Stmt ::= Type Ident [Arg] Stmt;
+internal    SDefFunc. Stmt ::= Type Ident "(" [Arg] ")" Stmt;
 
 Arg.        Arg ::= Type Ident;
 
@@ -34,16 +34,16 @@ PInit.      PItem ::= Ident "=" Expr;
 
 separator nonempty PItem ",";
 
-internal    SDeclVar. Stmt ::= Type Ident;
+internal    SDeclVar. Stmt ::= Type Ident ";";
 
-internal    SDefVar. Stmt ::= Type Ident Expr;
+internal    SDefVar. Stmt ::= Type Ident "=" Expr ";";
 
 -- statements --
 ----------------
 
 PBlock.     PBlock ::= "{" [Stmt] "}";
 
-internal    SBlock. Stmt ::= [Stmt];
+internal    SBlock. Stmt ::= "{" [Stmt] "}";
 
 separator Stmt "";
 
@@ -53,15 +53,7 @@ PSBlock.    Stmt ::= PBlock;
 
 SAssign.    Stmt ::= Ident "=" Expr  ";";
 
-SAssignAdd. Stmt ::= Ident "+=" Expr  ";";
-
-SAssignSub. Stmt ::= Ident "-=" Expr  ";";
-
-SAssignMul. Stmt ::= Ident "*=" Expr  ";";
-
-SAssignDiv. Stmt ::= Ident "/=" Expr  ";";
-
-SAssignMod. Stmt ::= Ident "%=" Expr  ";";
+SAssignOp.  Stmt ::= Ident OpAssign Expr  ";";
 
 SAssignArr. Stmt ::= Ident "[" Expr "]" "=" Expr  ";";
 
@@ -82,10 +74,6 @@ SWhile.     Stmt ::= "while" "(" Expr ")" Stmt;
 SForeach.   Stmt ::= "for" "(" Type Ident ":" Expr ")" Stmt;
 
 SExpr.      Stmt ::= Expr ";";
-
--- SThrow.     Stmt ::= "throw" Expr ";";
-
--- SCatch.     Stmt ::= "try" Stmt "catch" "(" Type Ident ")" Stmt;
 
 -- types --
 -----------
@@ -139,21 +127,15 @@ ENeg.       Expr5 ::= "-" Expr6;
 
 ENot.       Expr5 ::= "!" Expr6;
 
-EMul.       Expr4 ::= Expr4 "*" Expr5;
+EMul.       Expr4 ::= Expr4 OpMul Expr5 ;
 
-EDiv.       Expr4 ::= Expr4 "/" Expr5;
+EAdd.       Expr3 ::= Expr3 OpAdd Expr4 ;
 
-EMod.       Expr4 ::= Expr4 "%" Expr5;
+ERel.       Expr2 ::= Expr2 OpRel Expr3 ;
 
-EAdd.       Expr3 ::= Expr3 "+" Expr4;
+EAnd.       Expr1 ::= Expr2 "&&" Expr1 ;
 
-ESub.       Expr3 ::= Expr3 "-" Expr4;
-
-ERel.       Expr2 ::= Expr2 OpRel Expr3;
-
-EAnd.       Expr1 ::= Expr2 "&&" Expr1;
-
-EOr.        Expr ::= Expr1 "||" Expr;
+EOr.        Expr ::= Expr1 "||" Expr ;
 
 coercions Expr 8;
 
@@ -161,6 +143,26 @@ separator Expr ",";
 
 -- operators --
 ---------------
+
+APlus.      OpAssign ::= "+=";
+
+AMinus.     OpAssign ::= "-=";
+
+ATimes.     OpAssign ::= "*=";
+
+ADiv.       OpAssign ::= "/=";
+
+AMod.       OpAssign ::= "%=";
+
+Plus.       OpAdd ::= "+";
+
+Minus.      OpAdd ::= "-";
+
+Times.      OpMul ::= "*";
+
+Div.        OpMul ::= "/";
+
+Mod.        OpMul ::= "%";
 
 LTH.        OpRel ::= "<";
 
