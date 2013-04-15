@@ -1,3 +1,7 @@
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE UndecidableInstances #-}
 module Semantics.Scope where
 import Control.Monad.Identity
 import Control.Monad.Error
@@ -14,17 +18,19 @@ import Syntax.AbsJvmm (Ident(..), Arg(..), Type(..), Expr(..), Stmt(..))
 -- In other words, there is no identifier hiding in scoped tree
 type Tag = Int
 tag0 = 0 :: Tag
+type Symbols = Map.Map Ident Tag
+symbols0 = Map.empty
 
 data Scope = Scope {
-  vars :: Map.Map Ident Tag,
+  vars :: Symbols,
 -- We do not support functions or types hiding (yet)
-  funcs :: Map.Map Ident Tag,
-  types :: Map.Map Ident Tag
+  funcs :: Symbols,
+  types :: Symbols
 } deriving (Eq, Show)
 
-scope0 = Scope { vars = Map.empty, funcs = Map.empty, types = Map.empty }
+scope0 = Scope { vars = symbols0, funcs = symbols0, types = symbols0 }
 
-declare :: Map.Map Ident Tag -> Ident -> Map.Map Ident Tag
+declare :: Symbols -> Ident -> Symbols
 declare m id = Map.insertWith (\_ -> (+1)) id tag0 m
 
 decVar, decFunc, decType :: Ident -> Scope -> Scope
@@ -40,44 +46,67 @@ declareStmt stmt = case stmt of
   SDefVar typ id _ -> decVar id
   _ -> Prelude.id
 
--- If we need no state on error
-runErrorState m = runIdentity . runErrorT . (evalStateT m)
+-- If we need no state on error, we stack monads this way
+evalErrorState m = runIdentity . runErrorT . (evalStateT m)
+runErrorState m = runIdentity . runErrorT . (runStateT m)
 
--- How arguments affect scope inside function body
-declareArgs :: [Arg] -> Scope -> Either String Scope
-declareArgs args sc = runErrorState (foldM fun sc args) Set.empty
-  where
-    fun :: Scope -> Arg -> (StateT (Set.Set Ident) (ErrorT String Identity)) Scope
-    fun sc (Arg typ id) = do
-      args <- gets (Set.member id)
-      modify (Set.insert id)
-      case args of
-        False -> return $ decVar id sc
-        True -> throwError $ Err.duplicateArg (Arg typ id)
+runErrorEnv m = runIdentity . runErrorT . (runReaderT m)
 
-resolve :: Map.Map Ident Tag -> Ident -> (ReaderT Scope (ErrorT String Identity)) Ident
+--FIXME
+res' :: (Scope -> Symbols) -> Ident -> (StateT Scope (ReaderT Scope (ErrorT String Identity))) Ident
+res' acc id = (get) >>= (lift . lift . (resolve acc id))
+
+res :: (Scope -> Symbols) -> Ident -> (ReaderT Scope (ErrorT String Identity)) Ident
+res acc id = (get) >>= (lift . (resolve acc id))
+
+resolve :: (Scope -> Symbols) -> Ident -> Scope -> (ErrorT String Identity) Ident
+resolve acc id sc = case Map.lookup id (acc sc) of
+  Just tag -> let (Ident name) = id in return $ Ident $ concat [name, "$", show tag]
+  Nothing -> throwError $ Err.unboundSymbol id
+
+resolve :: Symbols -> Ident -> (ReaderT Scope (ErrorT String Identity)) Ident
 resolve m id = case Map.lookup id m of
-    Just tag -> let (Ident name) = id in return $ Ident $ concat [name, "$", show tag]
-    Nothing -> throwError $ Err.unboundSymbol id
+  Just tag -> let (Ident name) = id in return $ Ident $ concat [name, "$", show tag]
+  Nothing -> lift $ throwError $ Err.unboundSymbol id
 
 resVar, resFunc, resType :: Ident -> (ReaderT Scope (ErrorT String Identity)) Ident
 resVar id = (ask) >>= (\sc -> resolve (vars sc) id)
 resFunc id = (ask) >>= (\sc -> resolve (funcs sc) id)
 resType id = (ask) >>= (\sc -> resolve (types sc) id)
 
-runErrorEnv m = runIdentity . runErrorT . (runReaderT m)
+resolve' :: Symbols -> Ident -> (StateT Scope (ReaderT Scope (ErrorT String Identity))) Ident
+resolve' m id = case Map.lookup id m of
+  Just tag -> let (Ident name) = id in return $ Ident $ concat [name, "$", show tag]
+  Nothing -> lift $ throwError $ Err.unboundSymbol id
+
+resVar', resFunc', resType' :: Ident -> (StateT Scope (ReaderT Scope (ErrorT String Identity))) Ident
+resVar' id = (get) >>= (\sc -> resolve' (vars sc) id)
+resFunc' id = (get) >>= (\sc -> resolve' (funcs sc) id)
+resType' id = (get) >>= (\sc -> resolve' (types sc) id)
+--FIXME
 
 -- Creates scoped tree from translated AST, sequential symbol declarations
 scope' :: Stmt -> Either String Stmt
 scope' stmt = runErrorEnv (funS stmt) scope0
   where
+    -- The scope in reader monad is the one from outside of a function,
+    -- scope in state is the 'current' on -- for tracking redeclarations
+    funA :: Arg -> (StateT Scope (ReaderT Scope (ErrorT String Identity))) Arg
+    funA (Arg typ id) = do
+      -- resolve in reader's Scope
+      idout <- lift $ resVar id
+      -- resolve in state's scope
+      idin <- resVar' id
+      unless (idin == idout) $ throwError $ Err.duplicateArg (Arg typ id)
+      modify (decVar id)
+      id' <- resVar' id
+      return $ Arg typ id'
     funS :: Stmt -> (ReaderT Scope (ErrorT String Identity)) Stmt
     funS stmt = case stmt of
       SDefFunc typ id args stmt -> do
         sc <- ask
-        case declareArgs args sc of
-          Right sc' -> do
-            let args' = args --FIXME args are not relabelled, but we know that they're good
+        case runErrorEnv (runStateT (mapM funA args) sc) sc of
+          Right (args', sc') -> do
             stmt' <- local (const sc') (funS stmt)
             return $ SDefFunc typ id args' stmt'
           Left err -> throwError err
@@ -90,7 +119,7 @@ scope' stmt = runErrorEnv (funS stmt) scope0
         return $ SDefVar typ id' expr'
       SBlock stmts -> do --FIXME forbid redeclaration in the same scope
         sc <- ask
-        case runErrorState (mapM fun stmts) sc of
+        case evalErrorState (mapM fun stmts) sc of
           Right stmts' -> return $ SBlock stmts'
           Left err -> throwError err
         where
