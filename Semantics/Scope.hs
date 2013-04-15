@@ -12,6 +12,7 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.Either as Either
 import qualified Semantics.Errors as Err
+import Semantics.Errors (rethrow)
 import Syntax.AbsJvmm (Ident(..), Arg(..), Type(..), Expr(..), Stmt(..))
 
 -- Each symbol in scoped tree has an identifier which is unique in its scope.
@@ -33,84 +34,75 @@ scope0 = Scope { vars = symbols0, funcs = symbols0, types = symbols0 }
 declare :: Symbols -> Ident -> Symbols
 declare m id = Map.insertWith (\_ -> (+1)) id tag0 m
 
-decVar, decFunc, decType :: Ident -> Scope -> Scope
-decVar id sc = sc { vars = declare (vars sc) id }
-decFunc id sc = sc { funcs = declare (funcs sc) id }
-decType id sc = sc { types = declare (types sc) id }
+decVar, decFunc, decType :: Ident -> (StateT Scope (ReaderT Scope (ErrorT String Identity))) ()
+decVar id = do
+  redecl vars id `rethrow` Err.redeclaredSymbol id
+  modify $ (\sc -> sc { vars = declare (vars sc) id })
+decFunc id = do
+  redecl vars id `rethrow` Err.redeclaredSymbol id
+  modify $ (\sc -> sc { funcs = declare (funcs sc) id })
+decType id = do
+  redecl vars id `rethrow` Err.redeclaredSymbol id
+  modify $ (\sc -> sc { types = declare (types sc) id })
 
---FIXME add state to funS and therefore return side effects of a statement in parent block
--- How each statement affects current scope
-declareStmt :: Stmt -> Scope -> Scope
-declareStmt stmt = case stmt of
-  SDefFunc _ id _ _ -> decFunc id
-  SDeclVar typ id -> decVar id
-  SDefVar typ id _ -> decVar id
-  _ -> Prelude.id
+redecl :: (Scope -> Symbols) -> Ident -> (StateT Scope (ReaderT Scope (ErrorT String Identity))) ()
+redecl acc id = do
+  -- resolve in block's beginning's scope
+  idout <- res' acc id `catchError` (\_ -> return id)
+  -- resolve in current scope
+  idin <- res acc id `catchError` (\_ -> return id)
+  unless (idin == idout) $ throwError $ Err.redeclaredSymbol id
 
 --TODO fake declaration and resolution for functions and types
 
-res' :: (Scope -> Symbols) -> Ident -> (StateT Scope (ReaderT Scope (ErrorT String Identity))) Ident
-res' acc id = (get) >>= (lift . lift . (resolve acc id))
-
-res :: (Scope -> Symbols) -> Ident -> (ReaderT Scope (ErrorT String Identity)) Ident
-res acc id = (ask) >>= (lift . (resolve acc id))
+res, res' :: (Scope -> Symbols) -> Ident -> (StateT Scope (ReaderT Scope (ErrorT String Identity))) Ident
+res acc id = (get) >>= (lift . lift . (resolve acc id))
+res' acc id = (ask) >>= (lift . lift . (resolve acc id))
 
 resolve :: (Scope -> Symbols) -> Ident -> Scope -> (ErrorT String Identity) Ident
 resolve acc id sc = case Map.lookup id (acc sc) of
   Just tag -> let (Ident name) = id in return $ Ident $ concat [name, "$", show tag]
   Nothing -> throwError $ Err.unboundSymbol id
 
--- If we need no state on error, we stack monads this way
-evalErrorState m = runIdentity . runErrorT . (evalStateT m)
-runErrorState m = runIdentity . runErrorT . (runStateT m)
-
-runErrorEnv m = runIdentity . runErrorT . (runReaderT m)
+-- Pushes scope 'stack frame', runs action in it, restores 'stack frame'
+local' action = do
+  sc <- get
+  res <- local (const sc) action
+  put sc
+  return res
 
 -- Creates scoped tree from translated AST, sequential symbol declarations
 scope' :: Stmt -> Either String Stmt
-scope' stmt = runErrorEnv (funS stmt) scope0
+scope' stmt = runIdentity $ runErrorT $ runReaderT (evalStateT (funS stmt) scope0) scope0
   where
-    -- The scope in reader monad is the one from outside of a function,
-    -- scope in state is the 'current' one -- for tracking redeclarations
+    -- The scope in reader monad is the one from beginning of a block, scope in
+    -- state is the current one, we need both for tracking redeclarations in
+    -- single block.
     funA :: Arg -> (StateT Scope (ReaderT Scope (ErrorT String Identity))) Arg
     funA (Arg typ id) = do
-      -- resolve in reader's Scope
-      idout <- lift $ res vars id `catchError` (\_ -> return id)
-      -- resolve in state's scope
-      idin <- res' vars id `catchError` (\_ -> return id)
-      unless (idin == idout) $ throwError $ Err.duplicateArg (Arg typ id)
-      modify (decVar id)
-      -- resolve in state's scope
-      id' <- res' vars id
+      decVar id `rethrow` Err.duplicateArg (Arg typ id)
+      id' <- res vars id
       return $ Arg typ id'
-    funS :: Stmt -> (ReaderT Scope (ErrorT String Identity)) Stmt
+    funS :: Stmt -> (StateT Scope (ReaderT Scope (ErrorT String Identity))) Stmt
     funS stmt = case stmt of
       SDefFunc typ id args stmt -> do
-        sc <- ask
-        (args', sc') <- runStateT (mapM funA args) sc
-        stmt' <- local (const sc') (funS stmt)
+        decFunc id
+        args' <- mapM funA args
+        -- arguments are declared in current scope
+        stmt' <- local' (funS stmt)
         return $ SDefFunc typ id args' stmt'
       SDeclVar typ id -> do
+        decVar id
         id' <- res vars id
         return $ SDeclVar typ id'
       SDefVar typ id expr -> do
+        decVar id
         expr' <- funE expr
         id' <- res vars id
         return $ SDefVar typ id' expr'
-      SBlock stmts -> do --FIXME forbid redeclaration in the same scope
-        sc <- ask
-        stmts' <- evalStateT (mapM fun stmts) sc
+      SBlock stmts -> do
+        stmts' <- local' (mapM funS stmts)
         return $ SBlock stmts'
-        where
-          -- The scope in reader monad is the one from outer block,
-          -- scope in state is the 'current' one -- for tracking redeclarations
-          fun :: Stmt -> (StateT Scope (ReaderT Scope (ErrorT String Identity))) Stmt
-          fun stmt = do
-            modify (declareStmt stmt)
-            sc' <- get
-            case runErrorEnv (funS stmt) sc' of
-              Right stmt' -> return stmt'
-              Left err -> throwError err
       SAssign id expr -> do
         expr' <- funE expr
         id' <- res vars id
@@ -148,15 +140,17 @@ scope' stmt = runErrorEnv (funS stmt) scope0
         return $ SWhile expr' stmt'
       SForeach typ id expr stmt -> do
         expr' <- funE expr
-        local (decVar id) $ do
+        local' $ do
+          decVar id
           id' <- (res vars id)
-          stmt' <- funS stmt
+          -- function body can hide iteration variable
+          stmt' <- local' (funS stmt)
           return $ SForeach typ id' expr' stmt'
       SExpr expr -> do
         expr' <- funE expr
         return $ SExpr expr'
       _ -> return stmt
-    funE :: Expr -> (ReaderT Scope (ErrorT String Identity)) Expr
+    funE :: Expr -> (StateT Scope (ReaderT Scope (ErrorT String Identity))) Expr
     funE expr = case expr of
       EVar id -> do
         id' <- res vars id
@@ -214,16 +208,6 @@ scope' stmt = runErrorEnv (funS stmt) scope0
 -- allows only blocks of function definitions
 scope'' :: Stmt -> Either String Stmt
 scope'' (SBlock stmts) = runErrorEnv (funS stmt) scope0
-  sc <- ask
-  sc' <- foldM fun sc stmts
-  return $ Block $ map (fun' sc) stmts
-  where
--- Aggregates declarations in global scope
-    fun sc (SDefFunc typ id args blk) = return $ sc { funcs = declare (funcs sc) id }
-    fun _ (SDeclVars typ ids) = Err.globalVarDec ids
-    fun _ _ = Err.globalNonDec
--- Recurses into declaration's blocks
-    fun' sc (SDefFunc typ id args blk) = undefined
 -- -}
 
 -- Scope computation always starts with global scope
