@@ -7,7 +7,7 @@ transAbs :: PProg -> Stmt
 transAbs = transPProg
   where
     transPProg :: PProg -> Stmt
-    transPProg (PProg pdeffuncs) = SBlock $ map transPDefFunc pdeffuncs
+    transPProg (PProg pdeffuncs) = Global $ map transPDefFunc pdeffuncs
 
     transPDefFunc :: PDefFunc -> Stmt
     transPDefFunc (PDefFunc typ id args pblock) = SDefFunc typ id args $ transPBlock pblock

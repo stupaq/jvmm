@@ -45,6 +45,8 @@ PBlock.     PBlock ::= "{" [Stmt] "}";
 
 internal    SBlock. Stmt ::= "{" [Stmt] "}";
 
+internal    Global. Stmt ::= "{" [Stmt] "}";
+
 separator Stmt "";
 
 SEmpty.     Stmt ::= ";";

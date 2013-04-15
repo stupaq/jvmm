@@ -29,6 +29,7 @@ data Scope = Scope {
   types :: Symbols
 } deriving (Eq, Show)
 
+--FIXME add built-ins to global scope
 scope0 = Scope { vars = symbols0, funcs = symbols0, types = symbols0 }
 
 declare :: Symbols -> Ident -> Symbols
@@ -52,12 +53,12 @@ redecl acc id = do
   -- resolve in current scope
   idin <- res acc id `catchError` (\_ -> return id)
   unless (idin == idout) $ throwError $ Err.redeclaredSymbol id
+  where
+    res' :: (Scope -> Symbols) -> Ident -> (StateT Scope (ReaderT Scope (ErrorT String Identity))) Ident
+    res' acc id = (ask) >>= (lift . lift . (resolve acc id))
 
---TODO fake declaration and resolution for functions and types
-
-res, res' :: (Scope -> Symbols) -> Ident -> (StateT Scope (ReaderT Scope (ErrorT String Identity))) Ident
+res :: (Scope -> Symbols) -> Ident -> (StateT Scope (ReaderT Scope (ErrorT String Identity))) Ident
 res acc id = (get) >>= (lift . lift . (resolve acc id))
-res' acc id = (ask) >>= (lift . lift . (resolve acc id))
 
 resolve :: (Scope -> Symbols) -> Ident -> Scope -> (ErrorT String Identity) Ident
 resolve acc id sc = case Map.lookup id (acc sc) of
@@ -71,13 +72,38 @@ local' action = do
   put sc
   return res
 
--- Creates scoped tree from translated AST, sequential symbol declarations
-scope' :: Stmt -> Either String Stmt
-scope' stmt = runIdentity $ runErrorT $ runReaderT (evalStateT (funS stmt) scope0) scope0
+-- Creates scoped tree from translated AST
+scope :: Stmt -> Either String Stmt
+scope stmt = runIdentity $ runErrorT $ runReaderT (evalStateT (funS stmt) scope0) scope0
   where
     -- The scope in reader monad is the one from beginning of a block, scope in
     -- state is the current one, we need both for tracking redeclarations in
     -- single block.
+    -- Fills current scope (the one in state) with mutually recursive declarations
+    buildGlobal :: [Stmt] -> (StateT Scope (ReaderT Scope (ErrorT String Identity))) ()
+    buildGlobal stmts = forM_ stmts $ \stmt -> case stmt of
+      SDefFunc typ id args stmt -> do
+        decFunc id
+      SDeclVar typ id -> do
+        decVar id
+      SDefVar typ id expr -> do
+        decVar id
+      _ -> throwError $ Err.globalForbidden
+    funND stmt = case stmt of
+      -- We are in mutually recursive scope, these symbols are already defined
+      SDefFunc typ id args stmt -> do
+        id' <- res funcs id
+        args' <- mapM funA args
+        stmt' <- local' (funS stmt)
+        return $ SDefFunc typ id' args' stmt'
+      SDeclVar typ id -> do
+        id' <- res vars id
+        return $ SDeclVar typ id'
+      SDefVar typ id expr -> do
+        expr' <- funE expr
+        id' <- res vars id
+        return $ SDefVar typ id' expr'
+      _ -> throwError $ Err.globalForbidden
     funA :: Arg -> (StateT Scope (ReaderT Scope (ErrorT String Identity))) Arg
     funA (Arg typ id) = do
       decVar id `rethrow` Err.duplicateArg (Arg typ id)
@@ -85,21 +111,19 @@ scope' stmt = runIdentity $ runErrorT $ runReaderT (evalStateT (funS stmt) scope
       return $ Arg typ id'
     funS :: Stmt -> (StateT Scope (ReaderT Scope (ErrorT String Identity))) Stmt
     funS stmt = case stmt of
+      Global stmts -> do
+        buildGlobal stmts
+        stmts' <- mapM funND stmts
+        return $ SBlock stmts'
       SDefFunc typ id args stmt -> do
         decFunc id
-        args' <- mapM funA args
-        -- arguments are declared in current scope
-        stmt' <- local' (funS stmt)
-        return $ SDefFunc typ id args' stmt'
+        funND $ SDefFunc typ id args stmt
       SDeclVar typ id -> do
         decVar id
-        id' <- res vars id
-        return $ SDeclVar typ id'
+        funND $ SDeclVar typ id
       SDefVar typ id expr -> do
         decVar id
-        expr' <- funE expr
-        id' <- res vars id
-        return $ SDefVar typ id' expr'
+        funND $ SDefVar typ id expr
       SBlock stmts -> do
         stmts' <- local' (mapM funS stmts)
         return $ SBlock stmts'
@@ -160,17 +184,18 @@ scope' stmt = runIdentity $ runErrorT $ runReaderT (evalStateT (funS stmt) scope
         expr2' <- funE expr2
         return $ EAccessArr expr1' expr2'
       EAccessFn expr id exprs -> do
-        let id' = id
+        let id' = id --TODO fields
         expr' <- funE expr
         exprs' <- mapM funE exprs
         return $ EAccessFn expr' id' exprs'
       EAccessVar expr id -> do
         expr' <- funE expr
-        let id' = id
+        let id' = id --TODO methods
         return $ EAccessVar expr' id'
       EApp id exprs -> do
+        id' <- res funcs id
         exprs' <- mapM funE exprs
-        return $ EApp id exprs'
+        return $ EApp id' exprs'
       ENewArr typ expr -> do
         expr' <- funE expr
         return $ ENewArr typ expr'
@@ -202,14 +227,3 @@ scope' stmt = runIdentity $ runErrorT $ runReaderT (evalStateT (funS stmt) scope
         return $ EOr expr1' expr2'
       _ -> return expr
 
--- TODO
-{-
--- Creates scoped tree from translated AST, mutually recursive symbols,
--- allows only blocks of function definitions
-scope'' :: Stmt -> Either String Stmt
-scope'' (SBlock stmts) = runErrorEnv (funS stmt) scope0
--- -}
-
--- Scope computation always starts with global scope
-scope :: Stmt -> Either String Stmt
-scope = scope' --FIXME

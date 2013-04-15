@@ -1,4 +1,6 @@
-- resolve conflicts
+GRAMMAR:
+- declared exceptions
+- 'String' only
 
 TEST:
 - tests for char and String

@@ -1,0 +1,11 @@
+int main() {
+  int[] arr = new int[3];
+  int a;
+  a++;
+  for (int a : arr) {
+    a++;
+    int a;
+    a++;
+  }
+  a++;
+}
