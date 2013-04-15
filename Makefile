@@ -3,23 +3,21 @@ BNFC := $(wildcard docs/*.cf)
 JVMM_EXT := .jv
 EXGOOD := examples_good
 EXBAD := examples_bad
-SYNTAX := Syntax
 MAIN := Interpreter/Main Syntax/TestJvmm
 
 PDFLATEX := pdflatex -interaction=batchmode
+GHCMAKE := ghc -w --make -outputdir ghc-make
 
-all: main
+all: $(MAIN)
 
-main: $(MAIN)
-$(MAIN): % : %.hs grammar
-	ghc -w --make $< -o $@
+# This is an ugly hack, ghc --make sucks at parallel compilation
+$(MAIN): % : %.hs $(MAIN)
+	$(GHCMAKE) $< -o $@
 
-docs: $(DOCS)
 $(DOCS): %.pdf : %.md
 	pandoc $< -o $@
 
-Syntax/TestJvmm.hs: grammar
-grammar: Syntax
+Syntax/TestJvmm.hs: Syntax
 Syntax: $(BNFC)
 	bnfc -p $@ $<
 	@-rm -f $@/*.bak
@@ -27,17 +25,15 @@ Syntax: $(BNFC)
 	alex -g $@/LexJvmm.x
 	(cd $@/; $(PDFLATEX) DocJvmm.tex; )
 
-test-grammar: Syntax/TestJvmm.hs
+test-grammar: $(MAIN)
 	@echo CORRECT SYNTAX:
 	@$(foreach f, $(shell ls $(EXGOOD)/*$(JVMM_EXT) $(EXBAD)/*$(JVMM_EXT)), echo -n $(f) " : "; Syntax/TestJvmm $(f) | grep -q "Parse Successful!" && echo OK || { echo FAIL; exit 1; } ;)
 	@echo SYNTAX ERRORS:
 	@$(foreach f, $(shell ls $(EXBAD)/*.txt), echo -n $(f) " : "; Syntax/TestJvmm $(f) | grep -q "Parse Successful!" && { echo FAIL; exit 1; } || echo OK;)
 
-stage1: grammar docs test-grammar
-	zip -j $@.zip $(DOCS) Syntax/DocJvmm.pdf
-
 clean:
 	-rm -f Syntax/*.{log,aux,hi,o}
+	-rm -rf ghc-make
 
 distclean: clean
 	-rm -f $(DOCS) $(MAIN) *.zip

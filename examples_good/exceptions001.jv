@@ -1,10 +1,17 @@
-int main() {
+int main(int a) {
+  int a = 3;
   try {
+    a = 5;
     a();
+    int a = 4;
     printLine("NO EXCEPTION");
   } catch(String s){
+    a = 6;
     printLine("EXCEPTION");
+    int a = 10;
   }
+  a = 11;
+  return a;
 }
 
 int a() throws String {
