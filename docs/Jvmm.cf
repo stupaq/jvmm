@@ -18,9 +18,15 @@ separator nonempty PDefFunc "";
 -- declarations/definitions --
 ------------------------------
 
-PDefFunc.   PDefFunc ::= Type Ident "(" [Arg] ")" PBlock;
+PDefFunc.   PDefFunc ::= Type Ident "(" [Arg] ")" PFunExcepts PBlock;
 
-internal    SDefFunc. Stmt ::= Type Ident "(" [Arg] ")" Stmt;
+PExcepts.   PFunExcepts ::= "throws" [Type];
+
+separator nonempty Type ",";
+
+PNoExcept.  PFunExcepts ::= ;
+
+internal    SDefFunc. Stmt ::= Type Ident "(" [Arg] ")" "throws" [Type] Stmt;
 
 Arg.        Arg ::= Type Ident;
 
@@ -77,6 +83,10 @@ SForeach.   Stmt ::= "for" "(" Type Ident ":" Expr ")" Stmt;
 
 SExpr.      Stmt ::= Expr ";";
 
+SThrow.     Stmt ::= "throw" Expr ";";
+
+STryCatch.  Stmt ::= "try" Stmt "catch" "(" Type Ident ")" Stmt;
+
 -- types --
 -----------
 
@@ -85,8 +95,6 @@ TArray.     Type1 ::= Type "[]";
 TInt.       Type ::= "int";
 
 TString.    Type ::= "String";
-
-TString.    Type ::= "string";
 
 TChar.      Type ::= "char";
 

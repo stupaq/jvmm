@@ -1,16 +1,16 @@
 DOCS := $(patsubst %.md, %.pdf, $(wildcard docs/*.md))
 BNFC := $(wildcard docs/*.cf)
+JVMM_EXT := .jv
 EXGOOD := examples_good
 EXBAD := examples_bad
-LMODULE := Syntax
-JVMM_EXT := .jv
-MAIN := Interpreter/Main
+SYNTAX := Syntax
+MAIN := Interpreter/Main Syntax/TestJvmm
 
 PDFLATEX := pdflatex -interaction=batchmode
 
-all: interpreter
+all: main
 
-interpreter: $(MAIN)
+main: $(MAIN)
 $(MAIN): % : %.hs grammar
 	ghc -w --make $< -o $@
 
@@ -18,30 +18,29 @@ docs: $(DOCS)
 $(DOCS): %.pdf : %.md
 	pandoc $< -o $@
 
-grammar: $(LMODULE)
-$(LMODULE): $(BNFC)
+Syntax/TestJvmm.hs: grammar
+grammar: Syntax
+Syntax: $(BNFC)
 	bnfc -p $@ $<
 	@-rm -f $@/*.bak
 	happy -gca $@/ParJvmm.y
 	alex -g $@/LexJvmm.x
 	(cd $@/; $(PDFLATEX) DocJvmm.tex; )
-	ghc -w --make $@/TestJvmm.hs -o $@/TestJvmm
 
-test-grammar: grammar
+test-grammar: Syntax/TestJvmm.hs
 	@echo CORRECT SYNTAX:
-	@$(foreach f, $(shell ls $(EXGOOD)/*$(JVMM_EXT) $(EXBAD)/*$(JVMM_EXT)), echo -n $(f) " : "; $(LMODULE)/TestJvmm $(f) | grep -q "Parse Successful!" && echo OK || { echo FAIL; exit 1; } ;)
+	@$(foreach f, $(shell ls $(EXGOOD)/*$(JVMM_EXT) $(EXBAD)/*$(JVMM_EXT)), echo -n $(f) " : "; Syntax/TestJvmm $(f) | grep -q "Parse Successful!" && echo OK || { echo FAIL; exit 1; } ;)
 	@echo SYNTAX ERRORS:
-	@$(foreach f, $(shell ls $(EXBAD)/*.txt), echo -n $(f) " : "; $(LMODULE)/TestJvmm $(f) | grep -q "Parse Successful!" && { echo FAIL; exit 1; } || echo OK;)
+	@$(foreach f, $(shell ls $(EXBAD)/*.txt), echo -n $(f) " : "; Syntax/TestJvmm $(f) | grep -q "Parse Successful!" && { echo FAIL; exit 1; } || echo OK;)
 
 stage1: grammar docs test-grammar
-	zip -j $@.zip $(DOCS) $(LMODULE)/DocJvmm.pdf
+	zip -j $@.zip $(DOCS) Syntax/DocJvmm.pdf
 
 clean:
-	-rm -f $(LMODULE)/*.{log,aux,hi,o}
+	-rm -f Syntax/*.{log,aux,hi,o}
 
 distclean: clean
-	-rm -f $(DOCS)
-	-rm -rf $(LMODULE)
-	-rm -rf *.zip
+	-rm -f $(DOCS) $(MAIN) *.zip
+	-rm -rf Syntax
 
 .PHONY: clean distclean test-grammar

@@ -1,0 +1,12 @@
+int main() {
+  try {
+    a();
+    printLine("NO EXCEPTION");
+  } catch(String s){
+    printLine("EXCEPTION");
+  }
+}
+
+int a() throws String {
+  throw "A";
+}

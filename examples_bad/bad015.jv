@@ -1,4 +1,4 @@
-// passing string to printInt().
+// passing String to printInt().
 
 int main() {
 	printInt("foo");

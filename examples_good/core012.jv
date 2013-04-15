@@ -10,7 +10,7 @@ int main() {
     printInt(78%3);
     printBool(x-y > x+y);
     printBool(x/y <= x*y);
-    printString("string"+" "+"concatenation");
+    printString("String"+" "+"concatenation");
     return 0 ;
 }
 

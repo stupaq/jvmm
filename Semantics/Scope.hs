@@ -78,7 +78,7 @@ scope stmt = runIdentity $ runErrorT $ runReaderT (evalStateT (funS stmt) scope0
     -- Fills current scope (the one in state) with mutually recursive declarations
     buildGlobal :: [Stmt] -> (StateT Scope (ReaderT Scope (ErrorT String Identity))) ()
     buildGlobal stmts = forM_ stmts $ \stmt -> case stmt of
-      SDefFunc typ id args stmt -> do
+      SDefFunc typ id args excepts stmt -> do
         decFunc id
       SDeclVar typ id -> do
         decVar id
@@ -87,11 +87,11 @@ scope stmt = runIdentity $ runErrorT $ runReaderT (evalStateT (funS stmt) scope0
       _ -> throwError $ Err.globalForbidden
     funND stmt = case stmt of
       -- We are in mutually recursive scope, these symbols are already defined
-      SDefFunc typ id args stmt -> do
+      SDefFunc typ id args excepts stmt -> do
         id' <- res funcs id
         args' <- mapM funA args
         stmt' <- local' (funS stmt)
-        return $ SDefFunc typ id' args' stmt'
+        return $ SDefFunc typ id' args' excepts stmt'
       SDeclVar typ id -> do
         id' <- res vars id
         return $ SDeclVar typ id'
@@ -111,9 +111,9 @@ scope stmt = runIdentity $ runErrorT $ runReaderT (evalStateT (funS stmt) scope0
         buildGlobal stmts
         stmts' <- mapM funND stmts
         return $ SBlock stmts'
-      SDefFunc typ id args stmt -> do
+      SDefFunc typ id args excepts stmt -> do
         decFunc id
-        funND $ SDefFunc typ id args stmt
+        funND $ SDefFunc typ id args excepts stmt
       SDeclVar typ id -> do
         decVar id
         funND $ SDeclVar typ id

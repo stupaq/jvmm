@@ -59,11 +59,10 @@ defined as in Java, with exception that _char_ is limited as described in
 attached grammar.
 
 _String_ is an immutable character sequence accessible by a reference.
-For convenience _string_ is an alias for _String_. Concatenation operator _+_
-is overloaded for strings. One can access (read-only) characters of a string
-using member-like function _s.charAt(int i)_, positions in string are indexed
-from 0. Length of a string _s_ can be obtained using member-like notation
-_s.length_.
+Concatenation operator _+_ is overloaded for strings. One can access
+(read-only) characters of a string using member-like function _s.charAt(int
+i)_, positions in string are indexed from 0. Length of a string _s_ can be
+obtained using member-like notation _s.length_.
 
 An array is a sequence of variables of primitive type and is accessible through
 a reference. Arrays must be created explicitly using _new[int len]_ operator.
@@ -77,6 +76,17 @@ Expressions
 Arithmetic and logical expressions have natural semantics. Logical expressions
 are evaluated lazily and have _boolean_ type, for other expressions we have
 greedy evaluation. There is no implicit conversion between _boolean_ and _int_.
+
+Exceptions
+----------
+Exceptions of type _String_. Exception can be thrown with _throw s;_ (where _s_
+has a _String_ type) instruction and is caught by first _try {} catch(String e)
+{}_ block reached when going up the stack (or block structure). Reference
+declared in _catch_ is assigned with a value of caught exception and execution
+of following block continues. Above definition is very informal, exceptions
+should work like in Java, but there is no finally, nor multiple-catch
+constructions. Also as in Java exceptions thrown by a function must be declared
+in function header using _throws_ keyword.
 
 Built-in functions
 ------------------
@@ -136,15 +146,6 @@ Optional extensions
 -------------------
 Here are some possible extensions to core *Jvmm*, which can be implemented if
 really needed. Sorted from the most preferred.
-
-### Exceptions
-Exceptions of type _String_. Exception can be thrown with _throw s;_ (where _s_
-has a _String_ type) instruction and is caught by first _try {} catch(String e)
-{}_ block reached when going up the stack (or block structure). Reference
-declared in _catch_ is assigned with a value of caught exception and execution
-of following block continues. Above definition is very informal, exceptions
-should work like in Java, but there is no finally, nor multiple-catch
-constructions.
 
 ### Structures
 C-like structures (fields only, no methods) accessed by a reference. Allocated

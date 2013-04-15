@@ -10,7 +10,8 @@ transAbs = transPProg
     transPProg (PProg pdeffuncs) = Global $ map transPDefFunc pdeffuncs
 
     transPDefFunc :: PDefFunc -> Stmt
-    transPDefFunc (PDefFunc typ id args pblock) = SDefFunc typ id args $ transPBlock pblock
+    transPDefFunc (PDefFunc typ id args (PExcepts excepts) pblock) = SDefFunc typ id args excepts $ transPBlock pblock
+    transPDefFunc (PDefFunc typ id args (PNoExcept) pblock) = SDefFunc typ id args [] $ transPBlock pblock
 
     transStmt :: Stmt -> [Stmt]
     transStmt x = case x of

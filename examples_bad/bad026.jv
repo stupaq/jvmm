@@ -1,4 +1,4 @@
-// Assigning string to int variable.
+// Assigning String to int variable.
 
 int main () {
  int x;

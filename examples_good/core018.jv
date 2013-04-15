@@ -2,8 +2,8 @@
 
 int main() {
   int x = readInt();
-  string y = readString();
-  string z = readString();
+  String y = readString();
+  String z = readString();
 
   printInt(x-5);
   printString(y+z);  
