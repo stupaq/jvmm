@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 module Semantics.Trans where
 import Syntax.AbsJvmm
 

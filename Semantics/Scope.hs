@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 module Semantics.Scope where
 import Control.Monad.Identity
 import Control.Monad.Error
@@ -6,7 +7,6 @@ import Control.Monad.State
 import Control.Monad.Writer
 import qualified Data.Map as Map
 import qualified Data.Set as Set
-import qualified Data.Either as Either
 import qualified Semantics.Errors as Err
 import Semantics.Errors (rethrow)
 import Syntax.AbsJvmm (Ident(..), Arg(..), Type(..), Expr(..), Stmt(..))
@@ -20,7 +20,6 @@ symbols0 = Map.empty
 
 data Scope = Scope {
   vars :: Symbols,
--- We do not support functions or types hiding (yet)
   funcs :: Symbols,
   types :: Symbols
 } deriving (Eq, Show)
@@ -52,6 +51,15 @@ redecl acc id = do
   where
     res' :: (Scope -> Symbols) -> Ident -> (StateT Scope (ReaderT Scope (ErrorT String Identity))) Ident
     res' acc id = (ask) >>= (lift . lift . (resolve acc id))
+
+resVar, resFunc :: Ident -> (StateT Scope (ReaderT Scope (ErrorT String Identity))) Ident
+resVar = res vars
+-- We do not support functions or types hiding (but we want to check for redeclarations and usage of undeclared types)
+resFunc id = (res funcs id) >> (return id)
+resType :: Type -> (StateT Scope (ReaderT Scope (ErrorT String Identity))) Type
+resType typ = case typ of
+  TUser id -> (res types id) >> (return typ)
+  _ -> return typ
 
 res :: (Scope -> Symbols) -> Ident -> (StateT Scope (ReaderT Scope (ErrorT String Identity))) Ident
 res acc id = (get) >>= (lift . lift . (resolve acc id))
@@ -88,23 +96,27 @@ scope stmt = runIdentity $ runErrorT $ runReaderT (evalStateT (funS stmt) scope0
     funND stmt = case stmt of
       -- We are in mutually recursive scope, these symbols are already defined
       SDefFunc typ id args excepts stmt -> do
-        id' <- res funcs id
+        typ' <- resType typ
+        id' <- resFunc id
         args' <- mapM funA args
         stmt' <- local' (funS stmt)
-        return $ SDefFunc typ id' args' excepts stmt'
+        return $ SDefFunc typ' id' args' excepts stmt'
       SDeclVar typ id -> do
-        id' <- res vars id
-        return $ SDeclVar typ id'
+        typ' <- resType typ
+        id' <- resVar id
+        return $ SDeclVar typ' id'
       SDefVar typ id expr -> do
+        typ' <- resType typ
         expr' <- funE expr
-        id' <- res vars id
-        return $ SDefVar typ id' expr'
+        id' <- resVar id
+        return $ SDefVar typ' id' expr'
       _ -> throwError $ Err.globalForbidden
     funA :: Arg -> (StateT Scope (ReaderT Scope (ErrorT String Identity))) Arg
     funA (Arg typ id) = do
       decVar id `rethrow` Err.duplicateArg (Arg typ id)
-      id' <- res vars id
-      return $ Arg typ id'
+      id' <- resVar id
+      typ' <- resType typ
+      return $ Arg typ' id'
     funS :: Stmt -> (StateT Scope (ReaderT Scope (ErrorT String Identity))) Stmt
     funS stmt = case stmt of
       Global stmts -> do
@@ -125,22 +137,22 @@ scope stmt = runIdentity $ runErrorT $ runReaderT (evalStateT (funS stmt) scope0
         return $ SBlock stmts'
       SAssign id expr -> do
         expr' <- funE expr
-        id' <- res vars id
+        id' <- resVar id
         return $ SAssign id' expr'
       SAssignOp id opassign expr -> do
         expr' <- funE expr
-        id' <- res vars id
+        id' <- resVar id
         return $ SAssignOp id' opassign expr'
       SAssignArr id expr1 expr2 -> do
         expr1' <- funE expr1
         expr2' <- funE expr2
-        id' <- res vars id
+        id' <- resVar id
         return $ SAssignArr id' expr1' expr2'
       SPostInc id -> do
-        id' <- res vars id
+        id' <- resVar id
         return $ SPostInc id'
       SPostDec id -> do
-        id' <- res vars id
+        id' <- resVar id
         return $ SPostDec id'
       SReturn expr -> do
         expr' <- funE expr
@@ -159,13 +171,14 @@ scope stmt = runIdentity $ runErrorT $ runReaderT (evalStateT (funS stmt) scope0
         stmt' <- funS stmt
         return $ SWhile expr' stmt'
       SForeach typ id expr stmt -> do
+        typ' <- resType typ
         expr' <- funE expr
         local' $ do
           decVar id
-          id' <- res vars id
+          id' <- resVar id
           -- function body can hide iteration variable
           stmt' <- local' (funS stmt)
-          return $ SForeach typ id' expr' stmt'
+          return $ SForeach typ' id' expr' stmt'
       SExpr expr -> do
         expr' <- funE expr
         return $ SExpr expr'
@@ -176,36 +189,38 @@ scope stmt = runIdentity $ runErrorT $ runReaderT (evalStateT (funS stmt) scope0
         stmt1' <- local' (funS stmt1)
         local' $ do
           decVar id3
-          id3' <- res vars id3
+          id3' <- resVar id3
           -- catch body can hide exception variable
           stmt4' <- local' (funS stmt4)
           return $ STryCatch stmt1' typ2 id3' stmt4'
-      _ -> undefined
+      SReturnV -> return SReturnV
+      SEmpty -> return SEmpty
     funE :: Expr -> (StateT Scope (ReaderT Scope (ErrorT String Identity))) Expr
     funE expr = case expr of
       EVar id -> do
-        id' <- res vars id
+        id' <- resVar id
         return $ EVar id'
       EAccessArr expr1 expr2 -> do
         expr1' <- funE expr1
         expr2' <- funE expr2
         return $ EAccessArr expr1' expr2'
       EAccessFn expr id exprs -> do
-        let id' = id --TODO fields
+        let id' = id -- NOTE field access
         expr' <- funE expr
         exprs' <- mapM funE exprs
         return $ EAccessFn expr' id' exprs'
       EAccessVar expr id -> do
         expr' <- funE expr
-        let id' = id --TODO methods
+        let id' = id -- NOTE method call
         return $ EAccessVar expr' id'
       EApp id exprs -> do
-        id' <- res funcs id
+        id' <- resFunc id
         exprs' <- mapM funE exprs
         return $ EApp id' exprs'
       ENewArr typ expr -> do
+        typ' <- resType typ
         expr' <- funE expr
-        return $ ENewArr typ expr'
+        return $ ENewArr typ' expr'
       ENeg expr -> do
         expr' <- funE expr
         return $ ENeg expr'

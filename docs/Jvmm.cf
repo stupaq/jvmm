@@ -102,6 +102,10 @@ TBool.      Type ::= "boolean";
 
 TVoid.      Type ::= "void";
 
+TUser.      Type ::= Ident;
+
+internal    TFunc. Type ::= Type [Type];
+
 coercions Type 1;
 
 separator Type ",";
