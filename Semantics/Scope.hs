@@ -162,14 +162,25 @@ scope stmt = runIdentity $ runErrorT $ runReaderT (evalStateT (funS stmt) scope0
         expr' <- funE expr
         local' $ do
           decVar id
-          id' <- (res vars id)
+          id' <- res vars id
           -- function body can hide iteration variable
           stmt' <- local' (funS stmt)
           return $ SForeach typ id' expr' stmt'
       SExpr expr -> do
         expr' <- funE expr
         return $ SExpr expr'
-      _ -> return stmt
+      SThrow expr -> do
+        expr' <- funE expr
+        return $ SThrow expr'
+      STryCatch stmt1 typ2 id3 stmt4 -> do
+        stmt1' <- local' (funS stmt1)
+        local' $ do
+          decVar id3
+          id3' <- res vars id3
+          -- catch body can hide exception variable
+          stmt4' <- local' (funS stmt4)
+          return $ STryCatch stmt1' typ2 id3' stmt4'
+      _ -> undefined
     funE :: Expr -> (StateT Scope (ReaderT Scope (ErrorT String Identity))) Expr
     funE expr = case expr of
       EVar id -> do

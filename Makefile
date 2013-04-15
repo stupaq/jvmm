@@ -10,12 +10,14 @@ GHCMAKE := ghc -w --make -outputdir ghc-make
 
 all: $(MAIN)
 
-# This is an ugly hack, ghc --make sucks at parallel compilation
-$(MAIN): % : %.hs $(MAIN)
+$(MAIN): % : %.hs
 	$(GHCMAKE) $< -o $@
 
 $(DOCS): %.pdf : %.md
 	pandoc $< -o $@
+
+# This is an ugly hack, ghc --make sucks at parallel compilation
+Interpreter/Main: Syntax/TestJvmm
 
 Syntax/TestJvmm.hs: Syntax
 Syntax: $(BNFC)
@@ -25,7 +27,7 @@ Syntax: $(BNFC)
 	alex -g $@/LexJvmm.x
 	(cd $@/; $(PDFLATEX) DocJvmm.tex; )
 
-test-grammar: $(MAIN)
+test-grammar: Syntax/TestJvmm
 	@echo CORRECT SYNTAX:
 	@$(foreach f, $(shell ls $(EXGOOD)/*$(JVMM_EXT) $(EXBAD)/*$(JVMM_EXT)), echo -n $(f) " : "; Syntax/TestJvmm $(f) | grep -q "Parse Successful!" && echo OK || { echo FAIL; exit 1; } ;)
 	@echo SYNTAX ERRORS:
@@ -39,4 +41,4 @@ distclean: clean
 	-rm -f $(DOCS) $(MAIN) *.zip
 	-rm -rf Syntax
 
-.PHONY: clean distclean test-grammar
+.PHONY: clean distclean test-grammar $(MAIN)

@@ -24,6 +24,8 @@ transAbs = transPProg
       SIfElse expr stmt1 stmt2 -> return $ SIfElse expr (transStmt' stmt1) (transStmt' stmt2)
       SWhile expr stmt -> return $ SWhile expr $ transStmt' stmt
       SForeach typ id expr stmt -> return $ SForeach typ id expr $ transStmt' stmt
+      SThrow expr -> return $ SThrow expr
+      STryCatch stmt1 typ2 id3 stmt4 -> return $ STryCatch (transStmt' stmt1) typ2 id3 (transStmt' stmt4)
       _ -> return x
 
     transStmt' :: Stmt -> Stmt

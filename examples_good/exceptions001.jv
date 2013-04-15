@@ -4,11 +4,10 @@ int main(int a) {
     a = 5;
     a();
     int a = 4;
-    printLine("NO EXCEPTION");
   } catch(String s){
     a = 6;
-    printLine("EXCEPTION");
     int a = 10;
+    char c = s.charAt(0);
   }
   a = 11;
   return a;
