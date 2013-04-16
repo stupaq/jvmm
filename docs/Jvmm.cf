@@ -104,6 +104,8 @@ TVoid.      Type ::= "void";
 
 TUser.      Type ::= Ident;
 
+TObject.    Type ::= "Object";
+
 internal    TFunc. Type ::= Type [Type];
 
 coercions Type 1;

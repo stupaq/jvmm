@@ -10,6 +10,7 @@ import Syntax.AbsJvmm
 import Syntax.ErrM
 import Semantics.Trans
 import Semantics.Scope
+import Semantics.Types
 
 type ParseFun a = [Token] -> Err a
 
@@ -32,7 +33,7 @@ run v p s = let ts = myLexer s in case p ts of
     printlv (v + 1) "Tokens:"
     printlv v $ show ts
     printl s
-  Ok tree ->  case scope $ transAbs tree of
+  Ok tree ->  case types $ scope $ transAbs tree of
     Right tree' -> do
       printl "\nParse Successful!"
       printlv v $ "\n[Abstract Syntax]\n\n" ++ show tree'
