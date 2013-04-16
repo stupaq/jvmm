@@ -35,10 +35,10 @@ decVar id = do
   redecl vars id `rethrow` Err.redeclaredSymbol id
   modify $ (\sc -> sc { vars = declare (vars sc) id })
 decFunc id = do
-  redecl vars id `rethrow` Err.redeclaredSymbol id
+  redecl funcs id `rethrow` Err.redeclaredSymbol id
   modify $ (\sc -> sc { funcs = declare (funcs sc) id })
 decType id = do
-  redecl vars id `rethrow` Err.redeclaredSymbol id
+  redecl types id `rethrow` Err.redeclaredSymbol id
   modify $ (\sc -> sc { types = declare (types sc) id })
 
 redecl :: (Scope -> Symbols) -> Ident -> (StateT Scope (ReaderT Scope (ErrorT String Identity))) ()
