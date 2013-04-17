@@ -5,6 +5,9 @@
 -- SIf. | SIfElse. -- tested in examples_good/conflict001.jv
 -- SAssignArr. | EAccessArr. -- tested in examples_good/conflict002.jv
 -- Labels prefixed with "Pn_" are prunned in subsequent phases
+-- Note the ugly trick with coercion 0 for OpBin, this makes 2 (+) 3 * 4 a
+-- parse error. Without this trick one can promote binary operator 2 (+) 3 * 4 =
+-- (2 + 3) * 4, we don't really like that.
 
 -- programs --
 --------------
@@ -88,6 +91,8 @@ STryCatch.  Stmt ::= "try" Stmt "catch" "(" Type Ident ")" Stmt;
 
 internal    TFunc. Type ::= Type "(" [Type] ")" "throws" [Type];
 
+internal    TUnknown. Type ::= "unknown";
+
 TArray.     Type1 ::= Type "[]";
 
 TInt.       Type ::= "int";
@@ -109,9 +114,9 @@ coercions Type 1;
 -- expressions --
 -----------------
 
-internal    EBinaryT. Expr4 ::= Type "=|" Expr4 OpMul Expr5;
+internal    EBinaryT. Expr ::= Type "=|" OpBin Expr Expr;
 
-internal    EUnaryT. Expr3 ::= Type "=|" Expr3 OpAdd Expr4;
+internal    EUnaryT. Expr ::= Type "=|" OpUn Expr;
 
 EVar.       Expr8 ::= Ident;
 
@@ -141,15 +146,15 @@ ENeg.       Expr5 ::= "-" Expr6;
 
 ENot.       Expr5 ::= "!" Expr6;
 
-EMul.       Expr4 ::= Expr4 OpMul Expr5 ;
+EMul.       Expr4 ::= Expr4 OpBin4 Expr5 ;
 
-EAdd.       Expr3 ::= Expr3 OpAdd Expr4 ;
+EAdd.       Expr3 ::= Expr3 OpBin3 Expr4 ;
 
-ERel.       Expr2 ::= Expr2 OpRel Expr3 ;
+ERel.       Expr2 ::= Expr2 OpBin2 Expr3 ;
 
-EAnd.       Expr1 ::= Expr2 "&&" Expr1 ;
+EAnd.       Expr1 ::= Expr2 OpBin1 Expr1 ;
 
-EOr.        Expr ::= Expr1 "||" Expr ;
+EOr.        Expr ::= Expr1 OpBin Expr ;
 
 coercions Expr 8;
 
@@ -157,6 +162,10 @@ separator Expr ",";
 
 -- operators --
 ---------------
+
+internal    Neg. OpUn ::= "-";
+
+internal    Not. OpUn ::= "!";
 
 APlus.      OpAssign ::= "+=";
 
@@ -168,27 +177,34 @@ ADiv.       OpAssign ::= "/=";
 
 AMod.       OpAssign ::= "%=";
 
-Plus.       OpAdd ::= "+";
+Times.      OpBin4 ::= "*";
 
-Minus.      OpAdd ::= "-";
+Div.        OpBin4 ::= "/";
 
-Times.      OpMul ::= "*";
+Mod.        OpBin4 ::= "%";
 
-Div.        OpMul ::= "/";
+Plus.       OpBin3 ::= "+";
 
-Mod.        OpMul ::= "%";
+Minus.      OpBin3 ::= "-";
 
-LTH.        OpRel ::= "<";
+LTH.        OpBin2 ::= "<";
 
-LEQ.        OpRel ::= "<=";
+LEQ.        OpBin2 ::= "<=";
 
-GTH.        OpRel ::= ">";
+GTH.        OpBin2 ::= ">";
 
-GEQ.        OpRel ::= ">=";
+GEQ.        OpBin2 ::= ">=";
 
-EQU.        OpRel ::= "==";
+EQU.        OpBin2 ::= "==";
 
-NEQ.        OpRel ::= "!=";
+NEQ.        OpBin2 ::= "!=";
+
+And.        OpBin1 ::= "&&";
+
+Or.         OpBin ::= "||";
+
+-- disable parentheses promotion
+coercions OpBin 0;
 
 -- tokens --
 ------------

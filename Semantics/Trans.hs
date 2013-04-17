@@ -74,7 +74,10 @@ transAbs = tP_Prog
 
     tExpr :: Expr -> Expr
     tExpr x = case x of
-      -- TODO missing generalized typed expressions
+      -- internal
+      EBinaryT type' opbin expr1 expr2  -> undefined
+      EUnaryT type' opun expr  -> undefined
+      -- pass & translate
       EVar id  -> x
       ELitInt n  -> x
       ELitTrue  -> x
@@ -87,11 +90,16 @@ transAbs = tP_Prog
       EAccessVar expr id  -> EAccessVar (tExpr expr) id
       EApp id exprs  -> EApp id (map tExpr exprs)
       ENewArr type' expr  -> ENewArr type' (tExpr expr)
-      ENeg expr  -> ENeg (tExpr expr)
-      ENot expr  -> ENot (tExpr expr)
-      EMul expr1 opmul2 expr3  -> EMul (tExpr expr1) opmul2 (tExpr expr3)
-      EAdd expr1 opadd2 expr3  -> EAdd (tExpr expr1) opadd2 (tExpr expr3)
-      ERel expr1 oprel2 expr3  -> ERel (tExpr expr1) oprel2 (tExpr expr3)
-      EAnd expr1 expr2  -> EAnd (tExpr expr1) (tExpr expr2)
-      EOr expr1 expr2  -> EOr (tExpr expr1) (tExpr expr2)
+      ENeg expr  -> unary Neg expr
+      ENot expr  -> unary Not expr
+      EMul expr1 opbin2 expr3  -> binary opbin2 expr1 expr3
+      EAdd expr1 opbin2 expr3  -> binary opbin2 expr1 expr3
+      ERel expr1 opbin2 expr3  -> binary opbin2 expr1 expr3
+      EAnd expr1 opbin2 expr3  -> binary opbin2 expr1 expr3
+      EOr expr1 opbin2 expr3  -> binary opbin2 expr1 expr3
+      where
+        unary :: OpUn -> Expr -> Expr
+        unary op expr =  EUnaryT TUnknown op (tExpr expr)
+        binary :: OpBin -> Expr -> Expr -> Expr
+        binary op expr1 expr2 = EBinaryT TUnknown op (tExpr expr1) (tExpr expr2)
 
