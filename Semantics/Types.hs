@@ -91,8 +91,7 @@ checkTypes = runTypeM typeenv0 . funS
       Global stmts -> undefined
       SDefFunc typ id args excepts stmt -> undefined
       SDeclVar typ id -> undefined
-      SDefVar typ id expr -> undefined
-      SBlock stmts -> undefined
+      P1SBlock stmts -> undefined
       SAssign id expr -> typeofVar id -||- funE expr
       SAssignOp id APlus expr ->
         (TInt -| typeofVar id -||- funE expr)

@@ -94,8 +94,6 @@ scope stmt = fmap fst $ runScopeM scope0 (funS stmt)
         decFunc id
       SDeclVar typ id -> do
         decVar id
-      SDefVar typ id expr -> do
-        decVar id
       _ -> throwError $ Err.globalForbidden
     funND stmt = case stmt of
       -- We are in mutually recursive scope, these symbols are already defined
@@ -109,11 +107,6 @@ scope stmt = fmap fst $ runScopeM scope0 (funS stmt)
         typ' <- resType typ
         id' <- resVar id
         return $ SDeclVar typ' id'
-      SDefVar typ id expr -> do
-        typ' <- resType typ
-        expr' <- funE expr
-        id' <- resVar id
-        return $ SDefVar typ' id' expr'
       _ -> throwError $ Err.globalForbidden
     funA :: Arg -> (StateT Scope (ReaderT Scope (ErrorT String Identity))) Arg
     funA (Arg typ id) = do
@@ -126,19 +119,16 @@ scope stmt = fmap fst $ runScopeM scope0 (funS stmt)
       Global stmts -> do
         buildGlobal stmts
         stmts' <- mapM funND stmts
-        return $ SBlock stmts'
+        return $ Global stmts'
       SDefFunc typ id args excepts stmt -> do
         decFunc id
         funND $ SDefFunc typ id args excepts stmt
       SDeclVar typ id -> do
         decVar id
         funND $ SDeclVar typ id
-      SDefVar typ id expr -> do
-        decVar id
-        funND $ SDefVar typ id expr
-      SBlock stmts -> do
+      P1SBlock stmts -> do
         stmts' <- local' (mapM funS stmts)
-        return $ SBlock stmts'
+        return $ Local [] stmts' --FIXME
       SAssign id expr -> do
         expr' <- funE expr
         id' <- resVar id

@@ -26,8 +26,8 @@ transAbs = transPProg
 
     transStmt :: Stmt -> [Stmt]
     transStmt x = case x of
-      PSDeclVar typ pitems -> map (transPItem typ) pitems
-      SBlock stmts -> return $ SBlock $ do
+      PSDeclVar typ pitems -> concat $ map (transPItem typ) pitems
+      P1SBlock stmts -> return $ P1SBlock $ do
         stmt <- stmts
         transStmt stmt
       PSBlock pblock -> return $ transPBlock pblock
@@ -42,15 +42,15 @@ transAbs = transPProg
     transStmt' :: Stmt -> Stmt
     transStmt' x = case transStmt x of
       [stmt] -> stmt
-      stmts -> SBlock stmts
+      stmts -> P1SBlock stmts
 
-    transPItem :: Type -> PItem -> Stmt
+    transPItem :: Type -> PItem -> [Stmt]
     transPItem typ x = case x of
-      PNoInit id -> SDeclVar typ id
-      PInit id expr -> SDefVar typ id expr
+      PNoInit id -> [SDeclVar typ id]
+      PInit id expr -> [SDeclVar typ id, SAssign id expr]
 
     transPBlock :: PBlock -> Stmt
-    transPBlock (PBlock stmts) = SBlock $ do
+    transPBlock (PBlock stmts) = P1SBlock $ do
       stmt <- stmts
       transStmt stmt
 

@@ -4,7 +4,7 @@
 -- There are 2 shift/reduce conflicts
 -- SIf. | SIfElse. -- tested in examples_good/conflict001.jv
 -- SAssignArr. | EAccessArr. -- tested in examples_good/conflict002.jv
--- Labels prefixed with "P" are prunned during translation
+-- Labels prefixed with "P" are prunned in subsequent phases
 
 -- programs --
 --------------
@@ -42,14 +42,14 @@ separator nonempty PItem ",";
 
 internal    SDeclVar. Stmt ::= Type Ident ";";
 
-internal    SDefVar. Stmt ::= Type Ident "=" Expr ";";
-
 -- statements --
 ----------------
 
 PBlock.     PBlock ::= "{" [Stmt] "}";
 
-internal    SBlock. Stmt ::= "{" [Stmt] "}";
+internal    P1SBlock. Stmt ::= "{" [Stmt] "}";
+
+internal    Local. Stmt ::= "let" [Stmt] "in" "{" [Stmt] "}";
 
 internal    Global. Stmt ::= "{" [Stmt] "}";
 
