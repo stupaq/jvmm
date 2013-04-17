@@ -12,8 +12,10 @@ data UIdent =
 toStr :: Ident -> String
 toStr (Ident id) = id
 
--- After running translate on AST one can assume non-existance of all labels
--- prefixed with "P" (type separation might be introduced in the future)
+-- Performs abstract syntax tree transformations that do not alter semantics
+-- and simplify its structure.  After running translate on AST one can assume
+-- non-existance of all labels prefixed with "P_" (type separation might be
+-- introduced in the future)
 transAbs :: P_Prog -> Stmt
 transAbs = transP_Prog
   where
@@ -26,22 +28,35 @@ transAbs = transP_Prog
 
     transStmt :: Stmt -> [Stmt]
     transStmt x = case x of
-      P_SDeclVar typ pitems -> concat $ map (transP_Item typ) pitems
-      P_SBlock pblock -> return $ transP_Block pblock
+      -- internal
+      Local stmts1 stmts2  -> undefined
+      Global stmts  -> undefined
+      SDefFunc type' id args types stmt  -> undefined
+      SDeclVar type' id  -> undefined
+      -- transform
+      P_SDeclVar type' p_items  ->  concat $ map (transP_Item type') p_items
+      P_SBlock p_block  ->  return $ transP_Block p_block
+      P_SAssignOp id opassign expr  -> undefined
+      P_SPostInc id  -> undefined
+      P_SPostDec id  -> undefined
+      -- pass
+      SEmpty  -> return x
+      SAssign id expr  -> return x
+      SAssignArr id expr1 expr2  -> return x
+      SReturn expr  -> return x
+      SReturnV  -> return x
       SIf expr stmt -> return $ SIf expr $ transStmt' stmt
       SIfElse expr stmt1 stmt2 -> return $ SIfElse expr (transStmt' stmt1) (transStmt' stmt2)
       SWhile expr stmt -> return $ SWhile expr $ transStmt' stmt
-      SForeach typ id expr stmt -> return $ SForeach typ id expr $ transStmt' stmt
+      SForeach type' id expr stmt -> return $ SForeach type' id expr $ transStmt' stmt
+      SExpr expr  -> return x
       SThrow expr -> return $ SThrow expr
-      STryCatch stmt1 typ2 id3 stmt4 -> return $ STryCatch (transStmt' stmt1) typ2 id3 (transStmt' stmt4)
-      Local _ _ -> undefined
-      P1_SBlock stmts -> undefined
-      _ -> return x
+      STryCatch stmt1 type'2 id3 stmt4 -> return $ STryCatch (transStmt' stmt1) type'2 id3 (transStmt' stmt4)
 
     transStmt' :: Stmt -> Stmt
     transStmt' x = case transStmt x of
       [stmt] -> stmt
-      stmts -> P1_SBlock stmts
+      stmts -> Local [] stmts
 
     transP_Item :: Type -> P_Item -> [Stmt]
     transP_Item typ x = case x of
@@ -49,7 +64,7 @@ transAbs = transP_Prog
       P_Init id expr -> [SDeclVar typ id, SAssign id expr]
 
     transP_Block :: P_Block -> Stmt
-    transP_Block (P_Block stmts) = P1_SBlock $ do
+    transP_Block (P_Block stmts) = Local [] $ do
       stmt <- stmts
       transStmt stmt
 

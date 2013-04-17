@@ -159,7 +159,7 @@ scope stmt = fmap fst $ runScopeM scope0 (funS stmt)
       SDeclVar typ id -> do
         decVar id
         funND $ SDeclVar typ id
-      P1_SBlock stmts -> do
+      Local _ stmts -> do -- definitions part of Local is empty at this point
         stmts' <- local' (mapM funS stmts)
         let (decls, instrs) = List.partition (\x -> case x of { SDeclVar _ _ -> True; _ -> False }) stmts'
         return $ Local decls instrs
