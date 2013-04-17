@@ -5,13 +5,6 @@ TRANS:
 - unify ops type
 - line markers (possibly newtype for speed)
 
-SCOPE:
-- declare & resolve for members in static classes
-- add builtins
-
-TYPES:
-
-
 TEST:
 - tests for char and String
 - tests for dot operator

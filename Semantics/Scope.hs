@@ -1,5 +1,5 @@
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
-module Semantics.Scope where
+module Semantics.Scope (scope) where
 import Control.Monad.Identity
 import Control.Monad.Error
 import Control.Monad.Reader
@@ -27,7 +27,7 @@ data Scope = Scope {
 } deriving (Eq, Show)
 scope0 = Scope {
   vars = symbols0,
-  funcs = foldr (flip Map.insert $ 0) symbols0 Builtins.names,
+  funcs = foldl declare symbols0 Builtins.names,
   types = symbols0
 }
 
@@ -39,9 +39,77 @@ resolve acc id sc = case Map.lookup id (acc sc) of
   Just tag -> let (Ident name) = id in return $ Ident $ concat [name, "$", show tag]
   Nothing -> throwError $ Err.unboundSymbol id
 
-type ScopeM = StateT Scope (ReaderT Scope (ErrorT String Identity))
+-- The first scope in reader monad is the global one, second is the one from
+-- beginning of a block, scope in state is the current one, we need all of them
+-- for tracking redeclarations in single block and resolving member symbols.
+type ScopeM = StateT Scope (ReaderT (Scope, Scope) (ErrorT String Identity))
 runScopeM :: Scope -> ScopeM a -> Either String (a, Scope)
-runScopeM sc m = runIdentity $ runErrorT $ runReaderT (runStateT m sc) sc
+runScopeM sc m = runIdentity $ runErrorT $ runReaderT (runStateT m sc) (sc, sc)
+
+decl :: (Scope -> Symbols) -> Ident -> ScopeM ()
+decl acc id = do
+  -- resolve in block's beginning's scope
+  idout <- res' acc id `catchError` (\_ -> return id)
+  -- resolve in current scope
+  idin <- res acc id `catchError` (\_ -> return id)
+  unless (idin == idout) $ throwError $ Err.redeclaredSymbol id
+  where
+    res' :: (Scope -> Symbols) -> Ident -> ScopeM Ident
+    res' acc id = (asks snd) >>= (lift . lift . (resolve acc id))
+
+res, glob :: (Scope -> Symbols) -> Ident -> ScopeM Ident
+res acc id = (get) >>= (lift . lift . (resolve acc id))
+glob acc id = (asks fst) >>= (lift . lift . (resolve acc id))
+
+-- Pushes scope 'stack frame', runs action in it, restores 'stack frame'
+local' action = do
+  sc <- get
+  (glob, _) <- ask
+  res <- local (const (glob, sc)) action
+  put sc
+  return res
+
+-- Runs action with global scope as current one, note that action will never
+-- modify global scope inside, restores scope after action is executed
+global' action = do
+  sc <- get
+  glob <- asks fst
+  put glob
+  res <- local (const (glob, glob)) action
+  put sc
+  return res
+
+-- Fills current scope (the one in state) with mutually recursive declarations
+-- Note that each class (user defined type) must reside within global
+-- scope, since it forms a global scope itself, when resolving field
+-- access, all we need to do is declare variable/function with given name
+-- using global scope as a base, resolve this symbol and dispose modified
+-- scope.
+buildGlobal :: [Stmt] -> ScopeM ()
+buildGlobal stmts = forM_ stmts $ \stmt -> case stmt of
+  SDefFunc typ id args excepts stmt -> do
+    decFunc id
+  SDeclVar typ id -> do
+    decVar id
+  _ -> throwError $ Err.globalForbidden
+
+-- Runs action with current scope as global one, restores scope after action is
+-- executed
+runGlobal action = do
+  sc <- get
+  res <- local (const (sc, sc)) action
+  put sc
+  return res
+
+-- TODO remove when ready
+resVar, resFunc :: Ident -> ScopeM Ident
+resVar = res vars
+resFunc = res funcs
+-- We do not support types hiding (but we want to check for redeclarations and usage of undeclared types)
+resType :: Type -> ScopeM Type
+resType typ = case typ of
+  TUser id -> (res types id) >> (return typ)
+  _ -> return typ
 
 decVar, decFunc, decType :: Ident -> ScopeM ()
 decVar id = do
@@ -53,52 +121,12 @@ decFunc id = do
 decType id = do
   decl types id
   modify $ (\sc -> sc { types = declare (types sc) id })
-
-decl :: (Scope -> Symbols) -> Ident -> (StateT Scope (ReaderT Scope (ErrorT String Identity))) ()
-decl acc id = do
-  -- resolve in block's beginning's scope
-  idout <- res' acc id `catchError` (\_ -> return id)
-  -- resolve in current scope
-  idin <- res acc id `catchError` (\_ -> return id)
-  unless (idin == idout) $ throwError $ Err.redeclaredSymbol id
-  where
-    res' :: (Scope -> Symbols) -> Ident -> (StateT Scope (ReaderT Scope (ErrorT String Identity))) Ident
-    res' acc id = (ask) >>= (lift . lift . (resolve acc id))
-
-resVar, resFunc :: Ident -> (StateT Scope (ReaderT Scope (ErrorT String Identity))) Ident
-resVar = res vars
-resFunc = res funcs
--- We do not support types hiding (but we want to check for redeclarations and usage of undeclared types)
-resType :: Type -> (StateT Scope (ReaderT Scope (ErrorT String Identity))) Type
-resType typ = case typ of
-  TUser id -> (res types id) >> (return typ)
-  _ -> return typ
-
-res :: (Scope -> Symbols) -> Ident -> (StateT Scope (ReaderT Scope (ErrorT String Identity))) Ident
-res acc id = (get) >>= (lift . lift . (resolve acc id))
-
--- Pushes scope 'stack frame', runs action in it, restores 'stack frame'
-local' action = do
-  sc <- get
-  res <- local (const sc) action
-  put sc
-  return res
+-- TODO
 
 -- Creates scoped tree from translated AST
 scope :: Stmt -> Either String Stmt
 scope stmt = fmap fst $ runScopeM scope0 (funS stmt)
   where
-    -- The scope in reader monad is the one from beginning of a block, scope in
-    -- state is the current one, we need both for tracking redeclarations in
-    -- single block.
-    -- Fills current scope (the one in state) with mutually recursive declarations
-    buildGlobal :: [Stmt] -> (StateT Scope (ReaderT Scope (ErrorT String Identity))) ()
-    buildGlobal stmts = forM_ stmts $ \stmt -> case stmt of
-      SDefFunc typ id args excepts stmt -> do
-        decFunc id
-      SDeclVar typ id -> do
-        decVar id
-      _ -> throwError $ Err.globalForbidden
     funND x = case x of
       -- We are in mutually recursive scope, these symbols are already defined
       SDefFunc typ id args excepts stmt -> do
@@ -113,17 +141,17 @@ scope stmt = fmap fst $ runScopeM scope0 (funS stmt)
         id' <- resVar id
         return $ SDeclVar typ' id'
       _ -> throwError $ Err.globalForbidden
-    funA :: Arg -> (StateT Scope (ReaderT Scope (ErrorT String Identity))) Arg
+    funA :: Arg -> ScopeM Arg
     funA (Arg typ id) = do
       decVar id `rethrow` Err.duplicateArg (Arg typ id)
       id' <- resVar id
       typ' <- resType typ
       return $ Arg typ' id'
-    funS :: Stmt -> (StateT Scope (ReaderT Scope (ErrorT String Identity))) Stmt
+    funS :: Stmt -> ScopeM Stmt
     funS x = case x of
       Global stmts -> do
         buildGlobal stmts
-        stmts' <- mapM funND stmts
+        stmts' <- runGlobal $ mapM funND stmts
         return $ Global stmts'
       SDefFunc typ id args excepts stmt -> do
         decFunc id
@@ -196,7 +224,7 @@ scope stmt = fmap fst $ runScopeM scope0 (funS stmt)
       SReturnV -> return SReturnV
       SEmpty -> return SEmpty
       Local _ _ -> undefined
-    funE :: Expr -> (StateT Scope (ReaderT Scope (ErrorT String Identity))) Expr
+    funE :: Expr -> ScopeM Expr
     funE x = case x of
       EVar id -> do
         id' <- resVar id
@@ -206,14 +234,26 @@ scope stmt = fmap fst $ runScopeM scope0 (funS stmt)
         expr2' <- funE expr2
         return $ EAccessArr expr1' expr2'
       EAccessFn expr id exprs -> do
-        let id' = id -- NOTE field access
         expr' <- funE expr
         exprs' <- mapM funE exprs
-        return $ EAccessFn expr' id' exprs'
+        global' $ do
+          -- We are in global scope now, member (depending on type, which we
+          -- can't determine right now) may exist or not. We still can resolve
+          -- member's name, since it will be declared immediately on top of
+          -- global scope.
+          decFunc id
+          id' <- resFunc id
+          return $ EAccessFn expr' id' exprs'
       EAccessVar expr id -> do
         expr' <- funE expr
-        let id' = id -- NOTE method call
-        return $ EAccessVar expr' id'
+        global' $ do
+          -- We are in global scope now, member (depending on type, which we
+          -- can't determine right now) may exist or not. We still can resolve
+          -- member's name, since it will be declared immediately on top of
+          -- global scope.
+          decVar id
+          id' <- resVar id
+          return $ EAccessVar expr' id'
       EApp id exprs -> do
         id' <- resFunc id
         exprs' <- mapM funE exprs
