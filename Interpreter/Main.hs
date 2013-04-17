@@ -23,10 +23,10 @@ printl :: String -> IO ()
 printl = putStrLn
 
 -- Interpret given file
-runFile :: Verbosity -> ParseFun PProg -> FilePath -> IO ()
+runFile :: Verbosity -> ParseFun P_Prog -> FilePath -> IO ()
 runFile v p f = printl f >> readFile f >>= run v p
 
-run :: Verbosity -> ParseFun PProg -> String -> IO ()
+run :: Verbosity -> ParseFun P_Prog -> String -> IO ()
 run v p s = let ts = myLexer s in case p ts of
   Bad s -> do
     printlv (v - 1) $ "[Tokens]" ++ (show ts)
@@ -42,10 +42,10 @@ main :: IO ()
 main = do
   args <- getArgs
   case args of
-    [] -> hGetContents stdin >>= run 2 pPProg
+    [] -> hGetContents stdin >>= run 2 pP_Prog
     "-q":fs -> runFiles 0 fs
     fs -> runFiles 1 fs
     "-v":fs -> runFiles 2 fs
   where
-    runFiles v = mapM_ (runFile v pPProg)
+    runFiles v = mapM_ (runFile v pP_Prog)
 

@@ -23,7 +23,6 @@ data Scope = Scope {
   funcs :: Symbols,
   types :: Symbols
 } deriving (Eq, Show)
-
 --FIXME add built-ins to global scope
 scope0 = Scope { vars = symbols0, funcs = symbols0, types = symbols0 }
 
@@ -126,7 +125,7 @@ scope stmt = fmap fst $ runScopeM scope0 (funS stmt)
       SDeclVar typ id -> do
         decVar id
         funND $ SDeclVar typ id
-      P1SBlock stmts -> do
+      P1_SBlock stmts -> do
         stmts' <- local' (mapM funS stmts)
         return $ Local [] stmts' --FIXME
       SAssign id expr -> do
@@ -189,6 +188,7 @@ scope stmt = fmap fst $ runScopeM scope0 (funS stmt)
           return $ STryCatch stmt1' typ2 id3' stmt4'
       SReturnV -> return SReturnV
       SEmpty -> return SEmpty
+      Local _ _ -> undefined
     funE :: Expr -> (StateT Scope (ReaderT Scope (ErrorT String Identity))) Expr
     funE expr = case expr of
       EVar id -> do

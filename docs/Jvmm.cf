@@ -4,27 +4,27 @@
 -- There are 2 shift/reduce conflicts
 -- SIf. | SIfElse. -- tested in examples_good/conflict001.jv
 -- SAssignArr. | EAccessArr. -- tested in examples_good/conflict002.jv
--- Labels prefixed with "P" are prunned in subsequent phases
+-- Labels prefixed with "Pn_" are prunned in subsequent phases
 
 -- programs --
 --------------
 
-entrypoints PProg;
+entrypoints P_Prog;
 
-PProg.      PProg ::= [PDefFunc];
+P_Prog.      P_Prog ::= [P_DefFunc];
 
-separator nonempty PDefFunc "";
+separator nonempty P_DefFunc "";
 
 -- declarations/definitions --
 ------------------------------
 
-PDefFunc.   PDefFunc ::= Type Ident "(" [Arg] ")" PFunExcepts PBlock;
+P_DefFunc.   P_DefFunc ::= Type Ident "(" [Arg] ")" P_FunExcepts P_Block;
 
-PExcepts.   PFunExcepts ::= "throws" [Type];
+P_Excepts.   P_FunExcepts ::= "throws" [Type];
 
 separator nonempty Type ",";
 
-PNoExcept.  PFunExcepts ::= ;
+P_NoExcept.  P_FunExcepts ::= ;
 
 internal    SDefFunc. Stmt ::= Type Ident "(" [Arg] ")" "throws" [Type] Stmt;
 
@@ -32,22 +32,22 @@ Arg.        Arg ::= Type Ident;
 
 separator Arg ",";
 
-PSDeclVar.  Stmt ::= Type [PItem] ";";
+P_SDeclVar.  Stmt ::= Type [P_Item] ";";
 
-PNoInit.    PItem ::= Ident;
+P_NoInit.   P_Item ::= Ident;
 
-PInit.      PItem ::= Ident "=" Expr;
+P_Init.     P_Item ::= Ident "=" Expr;
 
-separator nonempty PItem ",";
+separator nonempty P_Item ",";
 
 internal    SDeclVar. Stmt ::= Type Ident ";";
 
 -- statements --
 ----------------
 
-PBlock.     PBlock ::= "{" [Stmt] "}";
+P_Block.    P_Block ::= "{" [Stmt] "}";
 
-internal    P1SBlock. Stmt ::= "{" [Stmt] "}";
+internal    P1_SBlock. Stmt ::= "{" [Stmt] "}";
 
 internal    Local. Stmt ::= "let" [Stmt] "in" "{" [Stmt] "}";
 
@@ -57,7 +57,7 @@ separator Stmt "";
 
 SEmpty.     Stmt ::= ";";
 
-PSBlock.    Stmt ::= PBlock;
+P_SBlock.   Stmt ::= P_Block;
 
 SAssign.    Stmt ::= Ident "=" Expr  ";";
 
