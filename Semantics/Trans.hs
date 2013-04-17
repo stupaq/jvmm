@@ -73,5 +73,25 @@ transAbs = tP_Prog
       tStmt stmt
 
     tExpr :: Expr -> Expr
-    tExpr x = x
+    tExpr x = case x of
+      -- TODO missing generalized typed expressions
+      EVar id  -> x
+      ELitInt n  -> x
+      ELitTrue  -> x
+      ELitFalse  -> x
+      ELitString str  -> x
+      ELitChar c  -> x
+      ENull  -> x
+      EAccessArr expr1 expr2  -> EAccessArr (tExpr expr1) (tExpr expr2)
+      EAccessFn expr id exprs  -> EAccessFn (tExpr expr) id (map tExpr exprs)
+      EAccessVar expr id  -> EAccessVar (tExpr expr) id
+      EApp id exprs  -> EApp id (map tExpr exprs)
+      ENewArr type' expr  -> ENewArr type' (tExpr expr)
+      ENeg expr  -> ENeg (tExpr expr)
+      ENot expr  -> ENot (tExpr expr)
+      EMul expr1 opmul2 expr3  -> EMul (tExpr expr1) opmul2 (tExpr expr3)
+      EAdd expr1 opadd2 expr3  -> EAdd (tExpr expr1) opadd2 (tExpr expr3)
+      ERel expr1 oprel2 expr3  -> ERel (tExpr expr1) oprel2 (tExpr expr3)
+      EAnd expr1 expr2  -> EAnd (tExpr expr1) (tExpr expr2)
+      EOr expr1 expr2  -> EOr (tExpr expr1) (tExpr expr2)
 

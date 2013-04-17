@@ -109,6 +109,10 @@ coercions Type 1;
 -- expressions --
 -----------------
 
+internal    EBinaryT. Expr4 ::= Type "=|" Expr4 OpMul Expr5;
+
+internal    EUnaryT. Expr3 ::= Type "=|" Expr3 OpAdd Expr4;
+
 EVar.       Expr8 ::= Ident;
 
 ELitInt.    Expr8 ::= Integer;
@@ -139,15 +143,9 @@ ENot.       Expr5 ::= "!" Expr6;
 
 EMul.       Expr4 ::= Expr4 OpMul Expr5 ;
 
-internal    EMulT. Expr4 ::= Type "=|" Expr4 OpMul Expr5;
-
 EAdd.       Expr3 ::= Expr3 OpAdd Expr4 ;
 
-internal    EAddT. Expr3 ::= Type "=|" Expr3 OpAdd Expr4;
-
 ERel.       Expr2 ::= Expr2 OpRel Expr3 ;
-
-internal    ERelT. Expr2 ::= Type "=|" Expr2 OpRel Expr3;
 
 EAnd.       Expr1 ::= Expr2 "&&" Expr1 ;
 
