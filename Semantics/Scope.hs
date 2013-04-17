@@ -7,8 +7,10 @@ import Control.Monad.State
 import Control.Monad.Writer
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import qualified Data.List as List
 import qualified Semantics.Errors as Err
 import Semantics.Errors (rethrow)
+import qualified Semantics.Builtins as Builtins
 import Syntax.AbsJvmm (Ident(..), Arg(..), Type(..), Expr(..), Stmt(..))
 
 -- Each symbol in scoped tree has an identifier which is unique in its scope.
@@ -23,8 +25,11 @@ data Scope = Scope {
   funcs :: Symbols,
   types :: Symbols
 } deriving (Eq, Show)
---FIXME add built-ins to global scope
-scope0 = Scope { vars = symbols0, funcs = symbols0, types = symbols0 }
+scope0 = Scope {
+  vars = symbols0,
+  funcs = foldr (flip Map.insert $ 0) symbols0 Builtins.names,
+  types = symbols0
+}
 
 declare :: Symbols -> Ident -> Symbols
 declare m id = Map.insertWith (\_ -> (+1)) id tag0 m
@@ -62,8 +67,8 @@ decl acc id = do
 
 resVar, resFunc :: Ident -> (StateT Scope (ReaderT Scope (ErrorT String Identity))) Ident
 resVar = res vars
--- We do not support functions or types hiding (but we want to check for redeclarations and usage of undeclared types)
-resFunc id = (res funcs id) >> (return id)
+resFunc = res funcs
+-- We do not support types hiding (but we want to check for redeclarations and usage of undeclared types)
 resType :: Type -> (StateT Scope (ReaderT Scope (ErrorT String Identity))) Type
 resType typ = case typ of
   TUser id -> (res types id) >> (return typ)
@@ -94,14 +99,15 @@ scope stmt = fmap fst $ runScopeM scope0 (funS stmt)
       SDeclVar typ id -> do
         decVar id
       _ -> throwError $ Err.globalForbidden
-    funND stmt = case stmt of
+    funND x = case x of
       -- We are in mutually recursive scope, these symbols are already defined
       SDefFunc typ id args excepts stmt -> do
         typ' <- resType typ
         id' <- resFunc id
-        args' <- mapM funA args
-        stmt' <- local' (funS stmt)
-        return $ SDefFunc typ' id' args' excepts stmt'
+        local' $ do
+          args' <- mapM funA args `rethrow` (show x)
+          stmt' <- local' (funS stmt)
+          return $ SDefFunc typ' id' args' excepts stmt'
       SDeclVar typ id -> do
         typ' <- resType typ
         id' <- resVar id
@@ -114,7 +120,7 @@ scope stmt = fmap fst $ runScopeM scope0 (funS stmt)
       typ' <- resType typ
       return $ Arg typ' id'
     funS :: Stmt -> (StateT Scope (ReaderT Scope (ErrorT String Identity))) Stmt
-    funS stmt = case stmt of
+    funS x = case x of
       Global stmts -> do
         buildGlobal stmts
         stmts' <- mapM funND stmts
@@ -127,7 +133,8 @@ scope stmt = fmap fst $ runScopeM scope0 (funS stmt)
         funND $ SDeclVar typ id
       P1_SBlock stmts -> do
         stmts' <- local' (mapM funS stmts)
-        return $ Local [] stmts' --FIXME
+        let (decls, instrs) = List.partition (\x -> case x of { SDeclVar _ _ -> True; _ -> False }) stmts'
+        return $ Local decls instrs
       SAssign id expr -> do
         expr' <- funE expr
         id' <- resVar id
@@ -190,7 +197,7 @@ scope stmt = fmap fst $ runScopeM scope0 (funS stmt)
       SEmpty -> return SEmpty
       Local _ _ -> undefined
     funE :: Expr -> (StateT Scope (ReaderT Scope (ErrorT String Identity))) Expr
-    funE expr = case expr of
+    funE x = case x of
       EVar id -> do
         id' <- resVar id
         return $ EVar id'
@@ -241,5 +248,5 @@ scope stmt = fmap fst $ runScopeM scope0 (funS stmt)
         expr1' <- funE expr1
         expr2' <- funE expr2
         return $ EOr expr1' expr2'
-      _ -> return expr
+      _ -> return x
 
