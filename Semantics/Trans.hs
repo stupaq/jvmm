@@ -18,6 +18,11 @@ toStr (Ident id) = id
 transAbs :: P_Prog -> Stmt
 transAbs = tP_Prog
   where
+    unary :: OpUn -> Expr -> Expr
+    unary op expr =  EUnaryT TUnknown op (tExpr expr)
+    binary :: OpBin -> Expr -> Expr -> Expr
+    binary op expr1 expr2 = EBinaryT TUnknown op (tExpr expr1) (tExpr expr2)
+
     tP_Prog :: P_Prog -> Stmt
     tP_Prog (P_Prog pdeffuncs) = Global $ map tP_DefFunc pdeffuncs
 
@@ -36,11 +41,11 @@ transAbs = tP_Prog
       P_SDeclVar type' p_items  -> concat $ map (tP_Item type') p_items
       P_SBlock p_block  ->  return $ tP_Block p_block
       P_SAssignOp id opassign expr  -> return $ SAssign id $ tExpr $ (case opassign of {
-        APlus -> EAdd (EVar id) Plus;
-        AMinus -> EAdd (EVar id) Minus;
-        ATimes -> EMul (EVar id) Times;
-        ADiv -> EMul (EVar id) Div;
-        AMod -> EMul (EVar id) Mod; }) (tExpr expr)
+        APlus -> P_EAdd (EVar id) Plus;
+        AMinus -> P_EAdd (EVar id) Minus;
+        ATimes -> P_EMul (EVar id) Times;
+        ADiv -> P_EMul (EVar id) Div;
+        AMod -> P_EMul (EVar id) Mod; }) (tExpr expr)
       P_SPostInc id  -> tStmt $ P_SAssignOp id APlus (ELitInt 1)
       P_SPostDec id  -> tStmt $ P_SAssignOp id AMinus (ELitInt 1)
       -- pass
@@ -77,7 +82,7 @@ transAbs = tP_Prog
       -- internal
       EBinaryT type' opbin expr1 expr2  -> undefined
       EUnaryT type' opun expr  -> undefined
-      -- pass & translate
+      -- pass
       EVar id  -> x
       ELitInt n  -> x
       ELitTrue  -> x
@@ -90,16 +95,12 @@ transAbs = tP_Prog
       EAccessVar expr id  -> EAccessVar (tExpr expr) id
       EApp id exprs  -> EApp id (map tExpr exprs)
       ENewArr type' expr  -> ENewArr type' (tExpr expr)
-      ENeg expr  -> unary Neg expr
-      ENot expr  -> unary Not expr
-      EMul expr1 opbin2 expr3  -> binary opbin2 expr1 expr3
-      EAdd expr1 opbin2 expr3  -> binary opbin2 expr1 expr3
-      ERel expr1 opbin2 expr3  -> binary opbin2 expr1 expr3
-      EAnd expr1 opbin2 expr3  -> binary opbin2 expr1 expr3
-      EOr expr1 opbin2 expr3  -> binary opbin2 expr1 expr3
-      where
-        unary :: OpUn -> Expr -> Expr
-        unary op expr =  EUnaryT TUnknown op (tExpr expr)
-        binary :: OpBin -> Expr -> Expr -> Expr
-        binary op expr1 expr2 = EBinaryT TUnknown op (tExpr expr1) (tExpr expr2)
+      -- translate
+      P_ENeg expr  -> unary Neg expr
+      P_ENot expr  -> unary Not expr
+      P_EMul expr1 opbin2 expr3  -> binary opbin2 expr1 expr3
+      P_EAdd expr1 opbin2 expr3  -> binary opbin2 expr1 expr3
+      P_ERel expr1 opbin2 expr3  -> binary opbin2 expr1 expr3
+      P_EAnd expr1 opbin2 expr3  -> binary opbin2 expr1 expr3
+      P_EOr expr1 opbin2 expr3  -> binary opbin2 expr1 expr3
 

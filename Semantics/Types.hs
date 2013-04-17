@@ -10,7 +10,7 @@ import qualified Semantics.Scope as Scope
 import qualified Semantics.Errors as Err
 import Semantics.Errors (rethrow)
 import Semantics.Trans (UIdent(..), toStr)
-import Syntax.AbsJvmm (Arg(..), Type(..), Expr(..), Stmt(..), OpRel(..), OpAdd(Plus), OpAssign(APlus))
+import Syntax.AbsJvmm (Arg(..), Type(..), Expr(..), Stmt(..), OpBin(..), OpUn(..))
 import Syntax.AbsJvmm (Ident)
 
 -- Typing is fully static. We type each null as Object type (which is a
@@ -27,7 +27,7 @@ membertypes0 = Map.empty
 
 data TypeEnv = TypeEnv {
   idents :: Types,
---TODO handle composite types
+-- TODO handle composite types
   types :: MemberTypes
 }
 typeenv0 = TypeEnv { idents = types0, types = membertypes0 }
@@ -74,13 +74,14 @@ infix 3 `instead`
 instead :: Bool -> TypeM a -> TypeM ()
 instead cond m = unless cond $ m >> return ()
 
---TODO remove these when ready
+-- TODO remove these when ready
 typeofFunc, typeofVar :: Ident -> TypeM Type
 typeofVar id = typeof (VIdent $ toStr id)
 typeofFunc id = typeof (FIdent $ toStr id)
 typeofMVar, typeofMFunc :: Type -> Ident -> TypeM Type
 typeofMVar typ id = typeof' typ (VIdent $ toStr id)
 typeofMFunc typ id = typeof' typ (FIdent $ toStr id)
+-- TODO
 
 checkTypes :: Stmt -> Either String (Type, Set.Set Type)
 checkTypes = runTypeM typeenv0 . funS
@@ -138,19 +139,25 @@ checkTypes = runTypeM typeenv0 . funS
         -- TODO temporary limit
         (typ `elem` [TInt, TBool, TChar]) `instead` (throwError "non-primitive array")
         return typ
-      ENeg expr -> TInt =| funE expr
-      ENot expr -> TBool =| funE expr
-      EMul expr1 opmul2 expr3 -> TInt =| funE expr1 =||= funE expr3
-      EAdd expr1 Plus expr3 ->
-        (TInt -| funE expr1 -||- funE expr3)
-        `mplus`
-        (TString -| funE expr1 -||- funE expr3)
-        `rethrow` Err.badArithType
-      EAdd expr1 opadd2 expr3 -> TInt -| funE expr1 -||- funE expr3
-      ERel expr1 oprel2 expr3 -> do
-        funE expr1 =||= funE expr3
-        (oprel2 `elem` [EQU, NEQ]) `instead` (TInt =| funE expr1)
-        return TBool
-      EAnd expr1 expr2 -> TBool =| funE expr1 =||= funE expr2
-      EOr expr1 expr2 -> TBool =| funE expr1 =||= funE expr2
+      EUnaryT _ op expr -> case op of
+        Not -> TBool =| funE expr
+        Neg -> TInt =| funE expr
+      EBinaryT _ opbin expr1 expr2 -> do
+        let typ = funE expr1 =||= funE expr2
+        case opbin of
+          Plus -> (TInt -| typ) `mplus` (TString -| typ) `rethrow` Err.badArithType
+          And -> TBool =| typ
+          Or -> TBool =| typ
+          -- For primitives we have natural ==, for others we compare 'adresses'
+          EQU -> return TBool
+          NEQ -> return TBool
+          -- TInt-only operations: Times Div Mod Minus LTH LEQ GTH GEQ
+          _ -> do
+            TInt -| typ
+            case opbin of
+              LTH -> return TBool
+              LEQ -> return TBool
+              GTH -> return TBool
+              GEQ -> return TBool
+              _ -> return TInt
 

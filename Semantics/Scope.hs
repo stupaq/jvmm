@@ -251,31 +251,12 @@ scope stmt = fmap fst $ runScopeM scope0 (funS stmt)
         typ' <- resType typ
         expr' <- funE expr
         return $ ENewArr typ' expr'
-      ENeg expr -> do
+      EUnaryT _ op expr -> do
         expr' <- funE expr
-        return $ ENeg expr'
-      ENot expr -> do
-        expr' <- funE expr
-        return $ ENot expr'
-      EMul expr1 opmul2 expr3 -> do
-        expr1' <- funE expr1
-        expr3' <- funE expr3
-        return $ EMul expr1' opmul2 expr3'
-      EAdd expr1 opadd2 expr3 -> do
-        expr1' <- funE expr1
-        expr3' <- funE expr3
-        return $ EAdd expr1' opadd2 expr3'
-      ERel expr1 oprel2 expr3 -> do
-        expr1' <- funE expr1
-        expr3' <- funE expr3
-        return $ ERel expr1' oprel2 expr3'
-      EAnd expr1 expr2 -> do
+        return $ EUnaryT TUnknown op expr'
+      EBinaryT _ op expr1 expr2 -> do
         expr1' <- funE expr1
         expr2' <- funE expr2
-        return $ EAnd expr1' expr2'
-      EOr expr1 expr2 -> do
-        expr1' <- funE expr1
-        expr2' <- funE expr2
-        return $ EOr expr1' expr2'
-      _ -> return x
+        return $ EBinaryT TUnknown op expr1' expr2'
+      _ -> return x -- TODO this is unsafe but good for rapid dev
 

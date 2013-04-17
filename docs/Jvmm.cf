@@ -114,9 +114,23 @@ coercions Type 1;
 -- expressions --
 -----------------
 
-internal    EBinaryT. Expr ::= Type "=|" OpBin Expr Expr;
+internal    EBinaryT. Expr ::= Type "=| (" OpBin ") (" Expr ") (" Expr ")";
 
-internal    EUnaryT. Expr ::= Type "=|" OpUn Expr;
+internal    EUnaryT. Expr ::= Type "=| (" OpUn ") (" Expr ")";
+
+P_ENeg.     Expr5 ::= "-" Expr6;
+
+P_ENot.     Expr5 ::= "!" Expr6;
+
+P_EMul.     Expr4 ::= Expr4 OpBin4 Expr5 ;
+
+P_EAdd.     Expr3 ::= Expr3 OpBin3 Expr4 ;
+
+P_ERel.     Expr2 ::= Expr2 OpBin2 Expr3 ;
+
+P_EAnd.     Expr1 ::= Expr2 OpBin1 Expr1 ;
+
+P_EOr.      Expr ::= Expr1 OpBin Expr ;
 
 EVar.       Expr8 ::= Ident;
 
@@ -141,20 +155,6 @@ EAccessVar. Expr7 ::= Expr8 "." Ident;
 EApp.       Expr7 ::= Ident "(" [Expr] ")";
 
 ENewArr.    Expr6 ::= "new" Type "[" Expr "]";
-
-ENeg.       Expr5 ::= "-" Expr6;
-
-ENot.       Expr5 ::= "!" Expr6;
-
-EMul.       Expr4 ::= Expr4 OpBin4 Expr5 ;
-
-EAdd.       Expr3 ::= Expr3 OpBin3 Expr4 ;
-
-ERel.       Expr2 ::= Expr2 OpBin2 Expr3 ;
-
-EAnd.       Expr1 ::= Expr2 OpBin1 Expr1 ;
-
-EOr.        Expr ::= Expr1 OpBin Expr ;
 
 coercions Expr 8;
 
