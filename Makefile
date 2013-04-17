@@ -6,7 +6,7 @@ EXBAD := examples_bad
 MAIN := Interpreter/Main Syntax/TestJvmm
 
 PDFLATEX := pdflatex -interaction=batchmode
-GHCMAKE := ghc -w --make -outputdir ghc-make
+GHCMAKE := ghc -w -fwarn-incomplete-patterns --make -outputdir ghc-make
 
 all: $(MAIN)
 
@@ -20,8 +20,9 @@ $(DOCS): %.pdf : %.md
 Interpreter/Main: Syntax/TestJvmm
 
 Syntax/TestJvmm.hs: Syntax
-Syntax: $(BNFC)
+Syntax: $(BNFC) Syntax.diff
 	bnfc -p $@ $<
+	(cd $@/; patch -p1 -i ../Syntax.diff)
 	@-rm -f $@/*.bak
 	happy -gca $@/ParJvmm.y
 	alex -g $@/LexJvmm.x

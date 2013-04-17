@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 module Semantics.Types where
 import Control.Monad.Identity
 import Control.Monad.Error
@@ -93,15 +92,7 @@ checkTypes = runTypeM typeenv0 . funS
       SDefFunc typ id args excepts stmt -> undefined
       SDeclVar typ id -> undefined
       SAssign id expr -> typeofVar id -||- funE expr
-      SAssignOp id APlus expr ->
-        (TInt -| typeofVar id -||- funE expr)
-        `mplus`
-        (TString -| typeofVar id -||- funE expr)
-        `rethrow` Err.badArithType
-      SAssignOp id opassign expr -> TInt -| typeofVar id -||- funE expr
       SAssignArr id expr1 expr2 -> funE (EAccessArr (EVar id) expr1) -||- funE expr2
-      SPostInc id -> TString -| typeofVar id
-      SPostDec id -> TString -| typeofVar id
       SReturn expr -> funE expr
       SIf expr stmt -> (TBool =| funE expr) >> funS stmt
       SIfElse expr stmt1 stmt2 -> (TBool =| funE expr) >> funS stmt1 >> funS stmt2

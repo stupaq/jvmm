@@ -1,0 +1,13 @@
+diff -rcd Syntax/PrintJvmm.hs Syntax1/PrintJvmm.hs
+*** Syntax/PrintJvmm.hs	2013-04-17 21:10:36.022808529 +0200
+--- Syntax1/PrintJvmm.hs	2013-04-17 21:08:18.299469187 +0200
+***************
+*** 166,171 ****
+--- 166,172 ----
+     TObject  -> prPrec i 0 (concatD [doc (showString "Object")])
+  
+    prtList es = case es of
++    [] -> (concatD [doc (showString "")])
+     [x] -> (concatD [prt 0 x])
+     x:xs -> (concatD [prt 0 x , doc (showString ",") , prt 0 xs])
+  

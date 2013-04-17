@@ -1,4 +1,3 @@
-{-# OP_TIONS_GHC -fwarn-incomplete-patterns #-}
 module Semantics.Trans where
 import Syntax.AbsJvmm
 
@@ -17,54 +16,62 @@ toStr (Ident id) = id
 -- non-existance of all labels prefixed with "P_" (type separation might be
 -- introduced in the future)
 transAbs :: P_Prog -> Stmt
-transAbs = transP_Prog
+transAbs = tP_Prog
   where
-    transP_Prog :: P_Prog -> Stmt
-    transP_Prog (P_Prog pdeffuncs) = Global $ map transP_DefFunc pdeffuncs
+    tP_Prog :: P_Prog -> Stmt
+    tP_Prog (P_Prog pdeffuncs) = Global $ map tP_DefFunc pdeffuncs
 
-    transP_DefFunc :: P_DefFunc -> Stmt
-    transP_DefFunc (P_DefFunc typ id args (P_Excepts excepts) pblock) = SDefFunc typ id args excepts $ transP_Block pblock
-    transP_DefFunc (P_DefFunc typ id args (P_NoExcept) pblock) = SDefFunc typ id args [] $ transP_Block pblock
+    tP_DefFunc :: P_DefFunc -> Stmt
+    tP_DefFunc (P_DefFunc typ id args (P_Excepts excepts) pblock) = SDefFunc typ id args excepts $ tP_Block pblock
+    tP_DefFunc (P_DefFunc typ id args (P_NoExcept) pblock) = SDefFunc typ id args [] $ tP_Block pblock
 
-    transStmt :: Stmt -> [Stmt]
-    transStmt x = case x of
+    tStmt :: Stmt -> [Stmt]
+    tStmt x = case x of
       -- internal
       Local stmts1 stmts2  -> undefined
       Global stmts  -> undefined
       SDefFunc type' id args types stmt  -> undefined
       SDeclVar type' id  -> undefined
       -- transform
-      P_SDeclVar type' p_items  ->  concat $ map (transP_Item type') p_items
-      P_SBlock p_block  ->  return $ transP_Block p_block
-      P_SAssignOp id opassign expr  -> undefined
-      P_SPostInc id  -> undefined
-      P_SPostDec id  -> undefined
+      P_SDeclVar type' p_items  -> concat $ map (tP_Item type') p_items
+      P_SBlock p_block  ->  return $ tP_Block p_block
+      P_SAssignOp id opassign expr  -> return $ SAssign id $ tExpr $ (case opassign of {
+        APlus -> EAdd (EVar id) Plus;
+        AMinus -> EAdd (EVar id) Minus;
+        ATimes -> EMul (EVar id) Times;
+        ADiv -> EMul (EVar id) Div;
+        AMod -> EMul (EVar id) Mod; }) (tExpr expr)
+      P_SPostInc id  -> tStmt $ P_SAssignOp id APlus (ELitInt 1)
+      P_SPostDec id  -> tStmt $ P_SAssignOp id AMinus (ELitInt 1)
       -- pass
       SEmpty  -> return x
-      SAssign id expr  -> return x
-      SAssignArr id expr1 expr2  -> return x
-      SReturn expr  -> return x
+      SAssign id expr  -> return $ SAssign id $ tExpr expr
+      SAssignArr id expr1 expr2  ->  return $ SAssignArr id (tExpr expr1) (tExpr expr2)
+      SReturn expr  -> return $ SReturn $ tExpr expr
       SReturnV  -> return x
-      SIf expr stmt -> return $ SIf expr $ transStmt' stmt
-      SIfElse expr stmt1 stmt2 -> return $ SIfElse expr (transStmt' stmt1) (transStmt' stmt2)
-      SWhile expr stmt -> return $ SWhile expr $ transStmt' stmt
-      SForeach type' id expr stmt -> return $ SForeach type' id expr $ transStmt' stmt
-      SExpr expr  -> return x
-      SThrow expr -> return $ SThrow expr
-      STryCatch stmt1 type'2 id3 stmt4 -> return $ STryCatch (transStmt' stmt1) type'2 id3 (transStmt' stmt4)
+      SIf expr stmt -> return $ SIf (tExpr expr) (tStmt' stmt)
+      SIfElse expr stmt1 stmt2 -> return $ SIfElse (tExpr expr) (tStmt' stmt1) (tStmt' stmt2)
+      SWhile expr stmt -> return $ SWhile (tExpr expr) (tStmt' stmt)
+      SForeach type' id expr stmt -> return $ SForeach type' id (tExpr expr) (tStmt' stmt)
+      SExpr expr  -> return $ SExpr $ tExpr expr
+      SThrow expr -> return $ SThrow $ tExpr expr
+      STryCatch stmt1 type'2 id3 stmt4 -> return $ STryCatch (tStmt' stmt1) type'2 id3 (tStmt' stmt4)
 
-    transStmt' :: Stmt -> Stmt
-    transStmt' x = case transStmt x of
+    tStmt' :: Stmt -> Stmt
+    tStmt' x = case tStmt x of
       [stmt] -> stmt
       stmts -> Local [] stmts
 
-    transP_Item :: Type -> P_Item -> [Stmt]
-    transP_Item typ x = case x of
+    tP_Item :: Type -> P_Item -> [Stmt]
+    tP_Item typ x = case x of
       P_NoInit id -> [SDeclVar typ id]
-      P_Init id expr -> [SDeclVar typ id, SAssign id expr]
+      P_Init id expr -> [SDeclVar typ id, SAssign id (tExpr expr)]
 
-    transP_Block :: P_Block -> Stmt
-    transP_Block (P_Block stmts) = Local [] $ do
+    tP_Block :: P_Block -> Stmt
+    tP_Block (P_Block stmts) = Local [] $ do
       stmt <- stmts
-      transStmt stmt
+      tStmt stmt
+
+    tExpr :: Expr -> Expr
+    tExpr x = x
 

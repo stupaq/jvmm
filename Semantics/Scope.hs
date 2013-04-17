@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 module Semantics.Scope (scope) where
 import Control.Monad.Identity
 import Control.Monad.Error
@@ -167,21 +166,11 @@ scope stmt = fmap fst $ runScopeM scope0 (funS stmt)
         expr' <- funE expr
         id' <- resVar id
         return $ SAssign id' expr'
-      SAssignOp id opassign expr -> do
-        expr' <- funE expr
-        id' <- resVar id
-        return $ SAssignOp id' opassign expr'
       SAssignArr id expr1 expr2 -> do
         expr1' <- funE expr1
         expr2' <- funE expr2
         id' <- resVar id
         return $ SAssignArr id' expr1' expr2'
-      SPostInc id -> do
-        id' <- resVar id
-        return $ SPostInc id'
-      SPostDec id -> do
-        id' <- resVar id
-        return $ SPostDec id'
       SReturn expr -> do
         expr' <- funE expr
         return $ SReturn expr'
