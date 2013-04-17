@@ -2,6 +2,16 @@
 module Semantics.Trans where
 import Syntax.AbsJvmm
 
+-- Unified identifier
+data UIdent =
+    VIdent String
+  | FIdent String
+  | TIdent String
+  deriving (Ord, Eq, Show)
+
+toStr :: Ident -> String
+toStr (Ident id) = id
+
 -- After running translate on AST one can assume non-existance of all labels
 -- prefixed with "P" (type separation might be introduced in the future)
 transAbs :: PProg -> Stmt

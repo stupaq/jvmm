@@ -1,12 +1,20 @@
-GRAMMAR:
-- declared exceptions
-- 'String' only
+TRANS:
+- remove assign ops
+- remove multiple expressions
+- add typed expressions
+- unify ops type
+- line markers (possibly newtype for speed)
+
+SCOPE:
+- declare & resolve for members in static classes
+- add builtins
+
+TYPES:
+
 
 TEST:
 - tests for char and String
 - tests for dot operator
-
-OPTIONAL:
-- grammar, description & tests
-  - structures
-  - exceptions
+- add output for all custom tests
+- tests for scope (a++)
+- tests for exceptions

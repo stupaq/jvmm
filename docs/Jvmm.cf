@@ -106,7 +106,7 @@ TUser.      Type ::= Ident;
 
 TObject.    Type ::= "Object";
 
-internal    TFunc. Type ::= Type [Type];
+internal    TFunc. Type ::= Type "(" [Type] ")" "throws" [Type];
 
 coercions Type 1;
 
@@ -145,9 +145,15 @@ ENot.       Expr5 ::= "!" Expr6;
 
 EMul.       Expr4 ::= Expr4 OpMul Expr5 ;
 
+internal    EMulT. Expr4 ::= Type "=|" Expr4 OpMul Expr5;
+
 EAdd.       Expr3 ::= Expr3 OpAdd Expr4 ;
 
+internal    EAddT. Expr3 ::= Type "=|" Expr3 OpAdd Expr4;
+
 ERel.       Expr2 ::= Expr2 OpRel Expr3 ;
+
+internal    ERelT. Expr2 ::= Type "=|" Expr2 OpRel Expr3;
 
 EAnd.       Expr1 ::= Expr2 "&&" Expr1 ;
 

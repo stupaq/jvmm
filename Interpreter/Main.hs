@@ -29,15 +29,13 @@ runFile v p f = printl f >> readFile f >>= run v p
 run :: Verbosity -> ParseFun PProg -> String -> IO ()
 run v p s = let ts = myLexer s in case p ts of
   Bad s -> do
-    printl "\nParse Failed...\n"
-    printlv (v + 1) "Tokens:"
-    printlv v $ show ts
-    printl s
-  Ok tree ->  case types $ scope $ transAbs tree of
+    printlv (v - 1) $ "[Tokens]" ++ (show ts)
+    printl $ "\n[Error]\n\n" ++ s
+  Ok tree ->  case scope $ transAbs tree of
     Right tree' -> do
-      printl "\nParse Successful!"
-      printlv v $ "\n[Abstract Syntax]\n\n" ++ show tree'
+      printlv (v - 1) $ "\n[Abstract Syntax]\n\n" ++ show tree'
       printlv (v + 1) $ "\n[Linearized tree]\n\n" ++ printTree tree'
+      printl $ "\n[Type check]\n\n" ++ (show $ checkTypes tree')
     Left err -> fail err
 
 main :: IO ()
