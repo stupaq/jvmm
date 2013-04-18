@@ -15,8 +15,8 @@ defined by return value type, arguments list (each argument with specified
 type) and function body. Functions cannot be redefined in global scope, but
 they can be used before declaration. Each program must define _main()_ function
 with return type _int_ and no arguments, which is an entry point of a program.
-Function with type other than _void_ *must* explicitly return value (of a
-corresponding type).
+Function with type other than _void_ should explicitly return value otherwise
+default value of corresponding type is returned.
 
 Passing style and memory management
 -----------------------------------
@@ -90,9 +90,10 @@ in function header using _throws_ keyword.
 
 Built-in functions
 ------------------
-- _void print(String s)_ -- prints given string to stdout
-- _void printLine(String s)_ -- prints given string and a new line character to stdout
-- _String readLine()_ -- reads and returns one line from stdin (without terminal newline character)
+- _void printInt(int)_ -- prints an integer and a new line character to stdout
+- _void printString(String)_ -- prints given string and a new line character to stdout
+- _int readInt()_ -- reads single integer from stdin
+- _String readString()_ -- reads and returns one line from stdin (without terminal newline character)
 
 Example code
 ------------
@@ -126,14 +127,14 @@ int bar(int[] arr) {
    line
    comment */
 int main () {
-  printLine("Your name: ");
+  printString("Your name: ");
   String s = readLine();
-  printLine("Hello " + s + "!");
+  printString("Hello " + s + "!");
   int c = bar(foo(5));
   if (s.length > 0 && s.charAt(0) == 'M')
-    print("OK");
+    printString("OK");
   else
-    print("nope");
+    printString("nope");
   return c + c*c - 1;
 }
 

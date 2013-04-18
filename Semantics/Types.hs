@@ -6,6 +6,7 @@ import Control.Monad.State
 import Control.Monad.Writer
 import qualified Data.Set as Set
 import qualified Data.Map as Map
+import qualified Semantics.Builtins as Builtins
 import qualified Semantics.Scope as Scope
 import qualified Semantics.Errors as Err
 import Semantics.Errors (rethrow)
@@ -20,7 +21,7 @@ import Syntax.AbsJvmm (Ident)
 
 -- Typing data
 type Types = Map.Map UIdent Type
-types0 = Map.empty
+types0 = Builtins.types
 
 type MemberTypes = Map.Map Type Types
 membertypes0 = Map.empty
