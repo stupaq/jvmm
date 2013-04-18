@@ -27,36 +27,47 @@ membertypes0 = Map.empty
 
 data TypeEnv = TypeEnv {
   function :: Maybe Type,
+  exceptions :: Set.Set Type,
   idents :: Types,
   -- TODO handle composite types
   types :: MemberTypes
 }
-typeenv0 = TypeEnv { function = Nothing, idents = types0, types = membertypes0 }
+typeenv0 = TypeEnv {
+  function = Nothing,
+  exceptions = Set.empty,
+  idents = types0,
+  types = membertypes0
+}
 
 -- Domain-specific dialect
-type TypeM = WriterT (Set.Set Type) (ReaderT TypeEnv (WriterT (Last Type) (ErrorT String Identity)))
-runTypeM :: TypeEnv -> TypeM a -> Either String ((a, Set.Set Type), Last Type)
-runTypeM r m = runIdentity $ runErrorT $ runWriterT $ runReaderT (runWriterT m) r
+type TypeM = ReaderT TypeEnv (ErrorT String Identity)
+runTypeM :: TypeEnv -> TypeM a -> Either String a
+runTypeM r m = runIdentity $ runErrorT $ runReaderT m r
 
 lookupM :: (Ord a) => a -> Map.Map a b -> TypeM b
-lookupM key map = lift $ lift $ case Map.lookup key map of
+lookupM key map = lift $ case Map.lookup key map of
   Just val -> return val
   Nothing -> throwError noMsg
 
 typeof :: UIdent -> TypeM Type
-typeof uid = asks idents >>= lookupM uid 
+typeof uid = (asks idents >>= lookupM uid) `rethrow` Err.unknownSymbolType uid
 
 typeof' :: Type -> UIdent -> TypeM Type
 typeof' typ uid = (asks types >>= lookupM typ >>= lookupM uid) `rethrow` Err.unknownMemberType typ uid
 
 throws :: Type -> TypeM ()
-throws = tell . Set.singleton
+throws typ = do
+  excepts <- asks exceptions
+  unless (Set.member typ excepts) $ throwError $ Err.uncaughtException typ
 
 catches :: Type -> TypeM a -> TypeM a
-catches typ = censor (Set.delete typ)
+catches typ = local (\env -> env { exceptions = Set.insert typ (exceptions env) })
 
 returns :: Type -> TypeM ()
-returns = lift . tell . Last . Just
+returns typ = do
+  Just (TFunc rett _ _) <- asks function `rethrow` Err.danglingReturn --FIXME this might not work
+  typ =| return rett
+  return ()
 
 -- Declares symbol to be of a given type
 declare :: UIdent -> Type -> TypeM a -> TypeM a
@@ -65,11 +76,18 @@ declare uid typ = local (\env -> env { idents = Map.insert uid typ (idents env) 
 -- Note that this does not recurse into function body
 declare' :: Stmt -> TypeM a -> TypeM a
 declare' x = case x of
-  SDefFunc typ id args excepts stmt -> declare (FIdent $ toStr id) (functype x)
+  SDefFunc typ id args excepts stmt -> declare (FIdent $ toStr id) (functype x) . sequential declare'' args
   SDeclVar typ id -> declare (VIdent $ toStr id) typ
 
-declareall' :: [Stmt] -> TypeM a -> TypeM a
-declareall' stmts = foldl (\acc stmt -> acc . (declare' stmt)) Prelude.id stmts
+declare'' :: Arg -> TypeM a -> TypeM a
+declare'' (Arg typ id) = declare' (SDeclVar typ id)
+
+-- Note that this looks up members but does not recurse in methods body
+define' :: Stmt -> TypeM a -> TypeM a
+define' x = Prelude.id --FIXME
+
+sequential :: (b -> TypeM a -> TypeM a) -> [b] -> TypeM a -> TypeM a
+sequential fun stmts = foldl (\acc stmt -> acc . (fun stmt)) Prelude.id stmts
 
 call :: Type -> TypeM a -> TypeM a
 call typ@(TFunc ret args excepts) = local (\env -> env { function = Just $ typ })
@@ -110,15 +128,15 @@ typeofMVar typ id = typeof' typ (VIdent $ toStr id)
 typeofMFunc typ id = typeof' typ (FIdent $ toStr id)
 -- TODO
 
-checkTypes :: Stmt -> Either String (Stmt, Set.Set Type)
-checkTypes = fmap fst . runTypeM typeenv0 . funS
+checkTypes :: Stmt -> Either String Stmt
+checkTypes = runTypeM typeenv0 . funS
   where
     funS :: Stmt -> TypeM Stmt
     funS x = case x of
-      Global stmts -> declareall' stmts $ do
+      Global stmts -> sequential declare' stmts $ do
         stmts' <- mapM funS stmts
         return $ Global stmts'
-      Local decls stmts -> declareall' decls $ do
+      Local decls stmts -> sequential declare' decls $ do
         stmts' <- mapM funS stmts
         return $ Local decls stmts'
       SDefFunc typ id args excepts stmt -> do
@@ -136,7 +154,8 @@ checkTypes = fmap fst . runTypeM typeenv0 . funS
         return $ SAssignArr id expr1' expr2'
       SReturn expr -> do
         let expr' = expr --FIXME
-        funE expr
+        typ <- funE expr
+        returns typ
         return $ SReturn expr'
       SIf expr stmt -> do
         let expr' = expr --FIXME
@@ -167,11 +186,16 @@ checkTypes = fmap fst . runTypeM typeenv0 . funS
         let expr' = expr --FIXME
         TString -| funE expr
         return $ SThrow expr'
-      STryCatch stmt1 typ2 id3 stmt4 -> do
+      STryCatch stmt1 typ id stmt2 -> do
         -- TODO temporary limitation
-        (typ2 `elem` [TString]) `instead` (throwError "bad exception type")
-        return $ STryCatch stmt1 typ2 id3 stmt4 --FIXME
-      SReturnV -> return x
+        (typ `elem` [TString]) `instead` (throwError "bad exception type")
+        stmt2' <- declare (VIdent $ toStr id) typ (funS stmt2)
+        catches typ $ do
+          stmt1' <- funS stmt1
+          return $ STryCatch stmt1 typ id stmt2
+      SReturnV -> do
+        returns TVoid
+        return x
       SEmpty -> return x
     funE :: Expr -> TypeM Type
     funE x = case x of
