@@ -35,7 +35,7 @@ run v p s = let ts = myLexer s in case p ts of
     Right tree' -> do
       printlv (v - 1) $ "\n[Abstract Syntax]\n\n" ++ show tree'
       printlv (v + 1) $ "\n[Linearized tree]\n\n" ++ printTree tree'
-      case checkTypes tree' of
+      case staticTypes tree' of
         Right tree'' -> printl $ "\n[Type check]\n\n" ++ printTree tree''
         Left err -> fail err
     Left err -> fail err

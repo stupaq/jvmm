@@ -17,4 +17,4 @@ unexpectedType expected actual = concat ["not matching type, expected: ", show e
 argumentsNotMatch expected actual = concat ["arguments do not match, expected: ", concat $ map show expected, " actual ", concat $ map show actual]
 badArithType = "bad operands type for arithmetic operator"
 danglingReturn = "dangling return"
-uncaughtException typ = "uncaucht, undeclared exception" ++ (show typ)
+uncaughtException typ = "uncaught, undeclared exception " ++ (show typ)

@@ -9,6 +9,7 @@ PDFLATEX := pdflatex -interaction=batchmode
 GHCMAKE := ghc -w -fwarn-incomplete-patterns --make -outputdir ghc-make
 
 all: $(MAIN)
+	ln -sf Interpreter/Main ./interpreter
 
 $(MAIN): % : %.hs
 	$(GHCMAKE) $< -o $@
@@ -39,7 +40,7 @@ clean:
 	-rm -rf ghc-make
 
 distclean: clean
-	-rm -f $(DOCS) $(MAIN) *.zip
+	-rm -f $(DOCS) $(MAIN) *.zip ./interpreter
 	-rm -rf Syntax
 
 .PHONY: clean distclean test-grammar $(MAIN)

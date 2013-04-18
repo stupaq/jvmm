@@ -65,9 +65,10 @@ catches typ = local (\env -> env { exceptions = Set.insert typ (exceptions env) 
 
 returns :: Type -> TypeM ()
 returns typ = do
-  Just (TFunc rett _ _) <- asks function `rethrow` Err.danglingReturn --FIXME this might not work
-  typ =| return rett
-  return ()
+  ftyp <- asks function 
+  case ftyp of
+    Just (TFunc rett _ _) -> typ =| rett >> return ()
+    Nothing -> throwError Err.danglingReturn
 
 -- Declares symbol to be of a given type
 declare :: UIdent -> Type -> TypeM a -> TypeM a
@@ -84,7 +85,7 @@ declare'' (Arg typ id) = declare' (SDeclVar typ id)
 
 -- Note that this looks up members but does not recurse in methods body
 define' :: Stmt -> TypeM a -> TypeM a
-define' x = Prelude.id --FIXME
+define' x = Prelude.id -- TODO syntax for mutually recursive classes
 
 sequential :: (b -> TypeM a -> TypeM a) -> [b] -> TypeM a -> TypeM a
 sequential fun stmts = foldl (\acc stmt -> acc . (fun stmt)) Prelude.id stmts
@@ -98,22 +99,36 @@ call' = call . functype
 functype :: Stmt -> Type
 functype (SDefFunc typ _ args excepts _) = TFunc typ (map (\(Arg typ _) -> typ) args) excepts
 
--- Type arithmetic
-(=||=) :: TypeM Type -> TypeM Type -> TypeM Type
-(=||=) m1 m2 = do
-  typ1 <- m1
-  typ2 <- m2
-  unless (typ1 == typ2) $ throwError $ Err.unexpectedType typ1 typ2
+-- We say that t <- t1 =||= t2 when t2 and t1 are subtypes of t, and no other
+-- type t' such that t =| t' has this property
+(=||=) :: Type -> Type -> TypeM Type
+(=||=) typ1 typ2 = do
+  let bad = throwError (Err.unexpectedType typ1 typ2)
+  (typ1 =| typ2) `mplus` (typ1 |= typ2) `mplus`
+    case (typ1, typ2) of
+      -- TODO hierarchy
+      _ -> bad
+
+-- We say that t1 =| t2 when t2 is a subtype of t1 (t2 can be safely casted to t1)
+(=|), (|=) :: Type -> Type -> TypeM Type
+(=|) typ1 typ2 = do
+  let bad = throwError (Err.unexpectedType typ1 typ2)
+      ok = return ()
+  case (typ1, typ2) of
+    (TArray etyp1, TArray etyp2) -> etyp1 =| etyp2 >> return ()
+    (TInt, TInt) -> ok
+    (TString, TString) -> ok
+    (TChar, TChar) -> ok
+    (TBool, TBool) -> ok
+    (TObject, TObject) -> ok
+    (TObject, TArray _) -> ok
+    (TObject, TUser _) -> ok
+    -- TODO hierarchy
+    (TUser id1, TUser id2) -> bad
+    _ -> bad
   return typ1
 
-(-||-) :: TypeM Type -> TypeM Type -> TypeM Type
-(-||-) m1 m2 = (m1 =||= m2) >> (return TVoid)
-
-(=|) :: Type -> TypeM Type -> TypeM Type
-(=|) typ1 = (=||=) (return typ1)
-
-(-|) :: Type -> TypeM Type -> TypeM Type
-(-|) typ1 m2 = (typ1 =| m2) >> (return TVoid)
+(|=) = flip (=|)
 
 infix 3 `instead`
 instead :: Bool -> TypeM a -> TypeM ()
@@ -128,8 +143,8 @@ typeofMVar typ id = typeof' typ (VIdent $ toStr id)
 typeofMFunc typ id = typeof' typ (FIdent $ toStr id)
 -- TODO
 
-checkTypes :: Stmt -> Either String Stmt
-checkTypes = runTypeM typeenv0 . funS
+staticTypes :: Stmt -> Either String Stmt
+staticTypes = runTypeM typeenv0 . funS
   where
     funS :: Stmt -> TypeM Stmt
     funS x = case x of
@@ -140,51 +155,54 @@ checkTypes = runTypeM typeenv0 . funS
         stmts' <- mapM funS stmts
         return $ Local decls stmts'
       SDefFunc typ id args excepts stmt -> do
-        stmt' <- declare' x (call' x (funS stmt))
+        stmt' <- declare' x $ call' x $ sequential catches excepts $ funS stmt
         return $ SDefFunc typ id args excepts stmt'
       SDeclVar typ id -> return x
       SAssign id expr -> do
-        let expr' = expr --FIXME
-        typeofVar id -||- funE expr
+        (expr', etyp) <- funE expr
+        vtyp <- typeofVar id
+        vtyp =| etyp
         return $ SAssign id expr'
       SAssignArr id expr1 expr2 -> do
-        let expr1' = expr1 --FIXME
-        let expr2' = expr2 --FIXME
-        funE (EAccessArr (EVar id) expr1) -||- funE expr2
+        (expr1', etyp1) <- funE expr1
+        (expr2', etyp2) <- funE expr2
+        TInt =| etyp1 `rethrow` Err.indexType
+        atyp <- typeofVar id
+        atyp =| TArray etyp2
         return $ SAssignArr id expr1' expr2'
       SReturn expr -> do
-        let expr' = expr --FIXME
-        typ <- funE expr
-        returns typ
+        (expr', etyp) <- funE expr
+        returns etyp
         return $ SReturn expr'
       SIf expr stmt -> do
-        let expr' = expr --FIXME
-        TBool =| funE expr
+        (expr', etyp) <- funE expr
+        TBool =| etyp
         stmt' <- funS stmt
         return $ SIf expr' stmt'
       SIfElse expr stmt1 stmt2 -> do
-        let expr' = expr --FIXME
-        TBool =| funE expr
+        (expr', etyp) <- funE expr
+        TBool =| etyp
         stmt1' <- funS stmt1
         stmt2' <- funS stmt2
         return $ SIfElse expr' stmt1' stmt2'
       SWhile expr stmt -> do
-        let expr' = expr --FIXME
-        TBool =| funE expr
+        (expr', etyp) <- funE expr
+        TBool =| etyp
         stmt' <- funS stmt
         return $ SWhile expr' stmt'
       SForeach typ id expr stmt -> do
-        let expr' = expr --FIXME
-        TArray typ -| funE expr
+        (expr', etyp) <- funE expr
+        TArray typ =| etyp
         stmt' <- declare (VIdent $ toStr id) typ $ funS stmt
         return $ SForeach typ id expr' stmt'
       SExpr expr -> do
-        let expr' = expr --FIXME
-        funE expr
+        (expr', _) <- funE expr
         return $ SExpr expr'
       SThrow expr -> do
-        let expr' = expr --FIXME
-        TString -| funE expr
+        (expr', etyp) <- funE expr
+        -- Temporary limit
+        TString =| etyp
+        throws TString
         return $ SThrow expr'
       STryCatch stmt1 typ id stmt2 -> do
         -- TODO temporary limitation
@@ -197,47 +215,58 @@ checkTypes = runTypeM typeenv0 . funS
         returns TVoid
         return x
       SEmpty -> return x
-    funE :: Expr -> TypeM Type
+    funE :: Expr -> TypeM (Expr, Type)
     funE x = case x of
-      EVar id -> typeofVar id
-      ELitInt n -> return TInt
-      ELitTrue -> return TBool
-      ELitFalse -> return TBool
-      ELitString str -> return TString
-      ELitChar c -> return TChar
-      ENull -> return TObject
+      EVar id -> do
+        typ <- typeofVar id
+        return (x, typ)
+      ELitInt n -> return (x, TInt)
+      ELitTrue -> return (x, TBool)
+      ELitFalse -> return (x, TBool)
+      ELitString str -> return (x, TString)
+      ELitChar c -> return (x, TChar)
+      ENull -> return (x, TObject)
       EAccessArr expr1 expr2 -> do
-        TInt =| funE expr2 `rethrow` Err.indexType
-        TArray elt <- funE expr1 `rethrow` Err.subscriptNonArray
-        return elt
+        (expr1', etyp1) <- funE expr1
+        (expr2', etyp2) <- funE expr2
+        TInt =| etyp2 `rethrow` Err.indexType
+        case etyp1 of
+          TArray typ -> return (EAccessArr expr1' expr2', typ)
+          _ -> throwError Err.subscriptNonArray
       EAccessFn expr id exprs -> do
-        exprt <- funE expr
-        exprst <- mapM funE exprs
-        TFunc ret args excepts <- typeofMFunc exprt id
+        (expr', etyp) <- funE expr
+        (exprs', etypes) <- mapAndUnzipM funE exprs
+        TFunc ret args excepts <- typeofMFunc etyp id
         forM excepts throws
-        (args == exprst) `instead` (throwError $ Err.argumentsNotMatch args exprst)
-        return ret
+        zipWithM_ (=|) args etypes `rethrow` Err.argumentsNotMatch args etypes
+        return (EAccessFn expr' id exprs', ret)
       EAccessVar expr id -> do
-        exprt <- funE expr
-        vart <- typeofMVar exprt id
-        return vart
+        (expr', etyp) <- funE expr
+        typ <- typeofMVar etyp id
+        return (EAccessVar expr' id, typ)
       EApp id exprs -> do
-        exprst <- mapM funE exprs
+        (exprs', etypes) <- mapAndUnzipM funE exprs
         TFunc ret args excepts <- typeofFunc id
         forM excepts throws
-        (args == exprst) `instead` (throwError $ Err.argumentsNotMatch args exprst)
-        return ret
+        zipWithM_ (=|) args etypes `rethrow` Err.argumentsNotMatch args etypes
+        return (EApp id exprs', ret)
       ENewArr typ expr -> do
-        TInt =| funE expr
-        -- TODO temporary limit
+        -- TODO temporary limitation
         (typ `elem` [TInt, TBool, TChar]) `instead` (throwError "non-primitive array")
-        return $ TArray typ
-      EUnaryT _ op expr -> case op of
-        Not -> TBool =| funE expr
-        Neg -> TInt =| funE expr
+        (expr', etyp) <- funE expr
+        TInt =| etyp
+        return (ENewArr typ expr', TArray typ)
+      EUnaryT _ op expr -> do
+        (expr', etyp) <- funE expr
+        case op of
+          Not -> TBool =| etyp
+          Neg -> TInt =| etyp
+        return (EUnaryT etyp op expr', etyp)
       EBinaryT _ opbin expr1 expr2 -> do
-        let typ = funE expr1 =||= funE expr2
-        case opbin of
+        (expr1', etyp1) <- funE expr1
+        (expr2', etyp2) <- funE expr2
+        typ <- etyp1 =||= etyp2
+        rett <- case opbin of
           Plus -> (TInt =| typ) `mplus` (TString =| typ) `rethrow` Err.badArithType
           And -> TBool =| typ
           Or -> TBool =| typ
@@ -253,4 +282,5 @@ checkTypes = runTypeM typeenv0 . funS
               GTH -> return TBool
               GEQ -> return TBool
               _ -> return TInt
+        return (EBinaryT rett opbin expr1' expr2', rett)
 
