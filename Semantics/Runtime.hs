@@ -4,6 +4,7 @@ import Control.Monad.Error
 import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Writer
+import Control.Monad.Cont
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
@@ -43,16 +44,9 @@ semantics = map (\(id, fun) -> (Ident id, \vals -> fun vals >> nop)) [
       \[] -> throwError $ VError Err.userError
   )]
 
--- TODO module commons
-compose :: [a -> a] -> a -> a
-compose fs = foldl (flip (.)) Prelude.id fs
-
 -- Implements runtime semantics and memory model, not that all type magic
 -- should be moved to type cheking phase. Runtime polimorphism (virtual
 -- functions) requires knowledge of runtime type.
-
--- The assumption that there is no syntactic hiding is EXTREMELY strong and
--- important, we can push new stack frame only when we CALL a function
 
 -- DATA REPRESENTATION --
 -------------------------
@@ -162,6 +156,9 @@ runUnit :: Stmt -> IO ((Either Value Result, RunState))
 runUnit = runRuntimeM runenv0 runstate0 . funS
 
 -- Executes given action in a new 'stack frame', restores old one afterwards
+-- The assumption that there is no syntactic hiding is EXTREMELY strong and
+-- important, we can push new stack frame only when we CALL a function
+-- ACHTUNG once again, we do NOT use newFrame outside of a function call!
 newFrame :: RuntimeM a -> RuntimeM a
 newFrame action = do
   st <- gets stack
@@ -177,8 +174,9 @@ alloc :: Value -> RuntimeM Value
 -- FIXME enforce above
 alloc val = do
   loc <- gets freeloc
-  modify (\state -> state { heap = Map.insert loc val (heap state) })
-  return $ VRef loc
+  let ref = VRef loc
+  update ref val
+  return ref
   where
     freeloc :: RunState -> Loc
     freeloc = (+1) . fst . Map.findMax . heap -- FIXME this is imperfect if we have GC
@@ -196,6 +194,9 @@ deref :: Value -> RuntimeM Value
 deref (VRef 0) = throwError (VError Err.nullPointerException)
 deref (VRef loc) = gets (Maybe.fromJust . Map.lookup loc . heap)
 
+update :: Value -> Value -> RuntimeM ()
+update (VRef loc) val = modify (\state -> state { heap = Map.insert loc val (heap state) })
+
 -- JVMM bytecode --
 -------------------
 -- One can obtain Jasmin mnemonics by prepending type indicator, and getting
@@ -206,8 +207,21 @@ nop = return result0
 load :: Ident -> RuntimeM Value
 load id = gets (Maybe.fromJust . Map.lookup id . stack)
 
+aload :: Value -> Value -> RuntimeM Value
+aload ref (VInt ind) = do
+  VArray arr <- deref ref
+  case Map.lookup ind arr of
+    Nothing -> throwError (VError $ Err.indexOutOfBounds ind)
+    Just val -> return val
+
 store :: Ident -> Value -> RuntimeM ()
-store id val = modify $ \env -> env { stack = Map.insert id val (stack env) }
+store id val = modify $ \state -> state { stack = Map.insert id val (stack state) }
+
+astore :: Value -> Value -> Value -> RuntimeM ()
+astore ref (VInt ind) val = do
+  VArray arr <- deref ref
+  unless (0 <= ind && ind < Map.size arr) $ throwError (VError $ Err.indexOutOfBounds ind)
+  update ref (VArray $ Map.insert ind val arr)
 
 invokestatic :: Ident -> [Value] -> RuntimeM Result
 invokestatic id vals = asks (Maybe.fromJust . Map.lookup id . funcs) >>= ($ vals)
@@ -215,8 +229,13 @@ invokestatic id vals = asks (Maybe.fromJust . Map.lookup id . funcs) >>= ($ vals
 throw :: Value -> RuntimeM Result
 throw = throwError . VException
 
-newarray :: Type -> Int -> RuntimeM Value
-newarray typ len = undefined
+newarray :: Type -> Value -> RuntimeM Value
+newarray typ (VInt len) = do
+  val <- defaultValue typ
+  alloc $ VArray $ foldl (\m i -> Map.insert i val m) Map.empty [0..(len - 1)]
+
+arraylength :: Value -> RuntimeM Value
+arraylength ref = deref ref >>= (\(VArray arr) -> return $ VInt $ Map.size arr)
 
 -- TODO classes and stuff
 getfield :: Ident -> Value -> RuntimeM Value
@@ -252,18 +271,21 @@ funS :: Stmt -> RuntimeM Result
 funS x = case x of
   Global stmts -> compose (map funD stmts) $ do
     invokestatic Builtins.entrypoint []
-  Local decls stmts -> newFrame $ compose (map funD decls) (mapM_ funS stmts)
+  Local decls stmts -> compose (map funD decls) (mapM_ funS stmts)
   SAssign id expr -> do
     val <- funE expr
     store id val
   SAssignArr id expr1 expr2 -> do
-    nop -- FIXME
-  SReturn expr -> do
-    nop -- FIXME
+    ref <- load id
+    ind <- funE expr1
+    val <- funE expr2
+    astore ref ind val
   SIf expr stmt -> do
-    nop -- FIXME
+    VBool val <- funE expr
+    if val then funS stmt else nop
   SIfElse expr stmt1 stmt2 -> do
-    nop -- FIXME
+    VBool val <- funE expr
+    if val then funS stmt1 else funS stmt2
   SWhile expr stmt -> do
     nop -- FIXME
   SForeach typ id expr stmt -> do
@@ -273,16 +295,20 @@ funS x = case x of
     ref <- funE expr
     throw ref
   STryCatch stmt1 typ id stmt2 -> do
-    newFrame (funS stmt1) `catchError` handler
+    funS stmt1 `catchError` handler
     where
       handler :: Value -> RuntimeM Result
       handler err = case err of
         VError _ -> throwError err
-        VException val -> newFrame $ do
+        VException val -> do
           store id val
           funS stmt2
-  SReturnV -> nop
+  SReturn expr -> nop -- FIXME
+  SReturnV -> nop -- FIXME
   SEmpty -> nop
+  where
+    compose :: [a -> a] -> a -> a
+    compose fs = foldl (flip (.)) Prelude.id fs
 
 -- Expressions
 funE :: Expr -> RuntimeM Value
@@ -299,11 +325,8 @@ funE x = case x of
   ENull -> return ref0
   EAccessArr expr1 expr2 -> do
     ref <- funE expr1
-    VArray arr <- deref ref
-    VInt ind <- funE expr2
-    case Map.lookup ind arr of
-      Nothing -> throwError (VError $ Err.indexOutOfBounds ind)
-      Just val -> return val
+    ind <- funE expr2
+    aload ref ind -- FIXME
   EAccessFn expr id exprs -> do
     ref <- funE expr
     vals <- mapM funE exprs
@@ -316,7 +339,7 @@ funE x = case x of
     invokestatic id vals
     return VVoid -- FIXME
   ENewArr typ expr -> do
-    VInt val <- funE expr
+    val <- funE expr
     newarray typ val
   EUnaryT _ Not expr -> do
     VBool val <- funE expr
