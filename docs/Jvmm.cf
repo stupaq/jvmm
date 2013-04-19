@@ -30,19 +30,19 @@ separator Stmt "";
 -- declarations/definitions --
 ------------------------------
 
-internal    SDefFunc. Stmt ::= Type Ident "(" [Arg] ")" "throws" [Type] Stmt;
+internal    SDefFunc. Stmt ::= Type Ident "(" [Stmt] ")" "throws" [Type] Stmt;
 
 internal    SDeclVar. Stmt ::= Type Ident ";";
 
-Arg.        Arg ::= Type Ident;
-separator Arg ",";
+P_Arg.      P_Arg ::= Type Ident;
+separator P_Arg ",";
 
-P_DefFunc.   P_DefFunc ::= Type Ident "(" [Arg] ")" P_FunExcepts P_Block;
+P_DefFunc.  P_DefFunc ::= Type Ident "(" [P_Arg] ")" P_FunExcepts P_Block;
 
-P_Excepts.   P_FunExcepts ::= "throws" [Type];
+P_Excepts.  P_FunExcepts ::= "throws" [Type];
 separator nonempty Type ",";
 
-P_NoExcept.  P_FunExcepts ::= ;
+P_NoExcept. P_FunExcepts ::= ;
 
 P_SDeclVar.  Stmt ::= Type [P_Item] ";";
 separator nonempty P_Item ",";

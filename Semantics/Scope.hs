@@ -10,7 +10,7 @@ import qualified Data.List as List
 import qualified Semantics.Errors as Err
 import Semantics.Errors (rethrow)
 import qualified Semantics.Builtins as Builtins
-import Syntax.AbsJvmm (Ident(..), Arg(..), Type(..), Expr(..), Stmt(..))
+import Syntax.AbsJvmm (Ident(..), Type(..), Expr(..), Stmt(..))
 
 -- TODO for scope resolution with classes we need to rewrite all EVar that
 -- refer to object's scope to EAccessVar this (same with methods)
@@ -143,12 +143,12 @@ scope stmt = fmap fst $ runScopeM scope0 (funS stmt)
         id' <- resVar id
         return $ SDeclVar typ' id'
       _ -> throwError $ Err.globalForbidden
-    funA :: Arg -> ScopeM Arg
-    funA (Arg typ id) = do
-      decVar id `rethrow` Err.duplicateArg (Arg typ id)
+    funA :: Stmt -> ScopeM Stmt
+    funA (SDeclVar typ id) = do
+      decVar id `rethrow` Err.duplicateArg typ id
       id' <- resVar id
       typ' <- resType typ
-      return $ Arg typ' id'
+      return $ SDeclVar typ' id'
     funS :: Stmt -> ScopeM Stmt
     funS x = case x of
       Global stmts -> do

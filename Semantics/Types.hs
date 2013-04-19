@@ -11,7 +11,7 @@ import qualified Semantics.Scope as Scope
 import qualified Semantics.Errors as Err
 import Semantics.Errors (rethrow)
 import Semantics.Trans (UIdent(..), toStr)
-import Syntax.AbsJvmm (Ident, Arg(..), Type(..), Expr(..), Stmt(..), OpBin(..), OpUn(..))
+import Syntax.AbsJvmm (Ident, Type(..), Expr(..), Stmt(..), OpBin(..), OpUn(..))
 
 -- Typing is fully static. We type each null as Object type (which is a
 -- superclass of every non-primitive value).
@@ -77,11 +77,8 @@ declare uid typ = local (\env -> env { idents = Map.insert uid typ (idents env) 
 -- Note that this does not recurse into function body
 declare' :: Stmt -> TypeM a -> TypeM a
 declare' x = case x of
-  SDefFunc typ id args excepts stmt -> declare (FIdent $ toStr id) (functype x) . sequential declare'' args
+  SDefFunc typ id args excepts stmt -> declare (FIdent $ toStr id) (functype x) . sequential declare' args
   SDeclVar typ id -> declare (VIdent $ toStr id) typ
-
-declare'' :: Arg -> TypeM a -> TypeM a
-declare'' (Arg typ id) = declare' (SDeclVar typ id)
 
 -- Note that this looks up members but does not recurse in methods body
 define' :: Stmt -> TypeM a -> TypeM a
@@ -97,7 +94,7 @@ call' :: Stmt -> TypeM a -> TypeM a
 call' = call . functype
 
 functype :: Stmt -> Type
-functype (SDefFunc typ _ args excepts _) = TFunc typ (map (\(Arg typ _) -> typ) args) excepts
+functype (SDefFunc typ _ args excepts _) = TFunc typ (map (\(SDeclVar typ _) -> typ) args) excepts
 
 -- We say that t <- t1 =||= t2 when t2 and t1 are subtypes of t, and no other
 -- type t' such that t =| t' has this property

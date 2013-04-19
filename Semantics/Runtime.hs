@@ -12,7 +12,7 @@ import qualified Semantics.Scope as Scope
 import qualified Semantics.Errors as Err
 import Semantics.Errors (rethrow)
 import Semantics.Trans (UIdent(..), toStr)
-import Syntax.AbsJvmm (Ident, Arg(..), Expr(..), Stmt(..), OpBin(..), OpUn(..), Type(..))
+import Syntax.AbsJvmm (Ident, Expr(..), Stmt(..), OpBin(..), OpUn(..), Type(..))
 
 -- Implements runtime semantics and memory model, not that all type magic
 -- should be moved to type cheking phase. Runtime polimorphism (virtual

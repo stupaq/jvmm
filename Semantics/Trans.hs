@@ -27,8 +27,8 @@ transAbs = tP_Prog
     tP_Prog (P_Prog pdeffuncs) = Global $ map tP_DefFunc pdeffuncs
 
     tP_DefFunc :: P_DefFunc -> Stmt
-    tP_DefFunc (P_DefFunc typ id args (P_Excepts excepts) pblock) = SDefFunc typ id args excepts $ tP_Block pblock
-    tP_DefFunc (P_DefFunc typ id args (P_NoExcept) pblock) = SDefFunc typ id args [] $ tP_Block pblock
+    tP_DefFunc (P_DefFunc typ id args (P_Excepts excepts) pblock) = SDefFunc typ id (tP_Args args) excepts $ tP_Block pblock
+    tP_DefFunc (P_DefFunc typ id args (P_NoExcept) pblock) = SDefFunc typ id (tP_Args args) [] $ tP_Block pblock
 
     tStmt :: Stmt -> [Stmt]
     tStmt x = case x of
@@ -66,6 +66,9 @@ transAbs = tP_Prog
     tStmt' x = case tStmt x of
       [stmt] -> stmt
       stmts -> Local [] stmts
+
+    tP_Args :: [P_Arg] -> [Stmt]
+    tP_Args = map (\(P_Arg typ id) -> SDeclVar typ id)
 
     tP_Item :: Type -> P_Item -> [Stmt]
     tP_Item typ x = case x of
