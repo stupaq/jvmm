@@ -4,6 +4,7 @@ import Semantics.Trans (UIdent(..))
 import Syntax.AbsJvmm (Ident(..), Type(..))
 
 -- TODO this is hackish, fix it when the time comes
+entrypoint = Ident "main$0"
 
 -- Types of builtin functions
 types = Map.fromList [

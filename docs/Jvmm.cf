@@ -22,7 +22,7 @@ separator nonempty P_DefFunc "";
 
 internal    Local. Stmt ::=  "{" [Stmt] ";" [Stmt] "}";
 
-internal    Global. Stmt ::= "{" [Stmt] "}";
+internal    Global. Stmt ::= "global" "{" [Stmt] "}";
 
 P_Block.    P_Block ::= "{" [Stmt] "}";
 separator Stmt "";

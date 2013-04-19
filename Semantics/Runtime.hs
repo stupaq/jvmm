@@ -12,12 +12,50 @@ import qualified Semantics.Scope as Scope
 import qualified Semantics.Errors as Err
 import Semantics.Errors (rethrow)
 import Semantics.Trans (UIdent(..), toStr)
-import Syntax.AbsJvmm (Ident, Expr(..), Stmt(..), OpBin(..), OpUn(..), Type(..))
+import Syntax.AbsJvmm (Ident(..), Expr(..), Stmt(..), OpBin(..), OpUn(..), Type(..))
+
+-- FIXME import it from somewhere
+-- FIXME remove nops
+-- TODO this is hackish, fix it when the time comes
+semantics = map (\(id, fun) -> (Ident id, \vals -> fun vals >> nop)) [
+  ("printInt$0",
+      \[VInt val] -> do
+        liftIO $ putStrLn (show val)
+        return VVoid
+  ),
+  ("readInt$0",
+      \[] -> do
+        val <- liftIO (readLn :: IO Int)
+        return $ VInt val
+  ),
+  ("printString$0",
+      \[ref] -> do
+        VString str <- deref ref
+        liftIO (putStrLn str)
+        return VVoid
+  ),
+  ("readString$0",
+      \[] -> do
+        val <- liftIO (readLn :: IO String)
+        return $ VString val
+  ),
+  ("error$0",
+      \[] -> throwError $ VError Err.userError
+  )]
+
+-- TODO module commons
+compose :: [a -> a] -> a -> a
+compose fs = foldl (flip (.)) Prelude.id fs
 
 -- Implements runtime semantics and memory model, not that all type magic
 -- should be moved to type cheking phase. Runtime polimorphism (virtual
 -- functions) requires knowledge of runtime type.
 
+-- The assumption that there is no syntactic hiding is EXTREMELY strong and
+-- important, we can push new stack frame only when we CALL a function
+
+-- DATA REPRESENTATION --
+-------------------------
 type Loc = Integer
 -- Null location
 loc0 = 0
@@ -39,7 +77,7 @@ data Value =
   | VChar Char
   | VBool Bool
   | VRef Loc
-  -- Things stored on heap
+  -- Things stored on heap are only referenced
   | VArray Array
   | VString String
   | VObject Composite
@@ -55,46 +93,9 @@ ref0 = VRef loc0
 instance Error Value where
   strMsg s = VError s
 
--- Visible part of a stack (without variables hidden by function calls)
-data RunEnv = RunEnv {
-  vars :: Map.Map Ident Value,
-  funcs :: Map.Map Ident Stmt
-}
-runenv0 = RunEnv {
-  vars = Map.empty,
-  funcs = Map.empty -- FIXME add builtins
-}
-
--- Every possible runtime error is represented by an exception, which cannot be
--- caught by user code
-data RunState = RunState {
-  -- Current stack
-  stack :: RunEnv,
-  heap :: Map.Map Loc Value
-}
-runstate0 = RunState {
-  stack = runenv0,
-  -- Reference with location == 0 is a null reference
-  heap = Map.singleton loc0 VVoid
-}
-
--- We need to be able to catch and exception without loosing the state -- this
--- is why we have to reverse the order of ErrorT and StateT
-type RuntimeM = ReaderT RunEnv (ErrorT Value (StateT RunState IO))
-runRuntimeM :: RunEnv -> RunState -> RuntimeM a -> IO (Either Value a, RunState)
-runRuntimeM r s m = runStateT (runErrorT (runReaderT m r)) s
-
-type Result = () -- FIXME figure out how to pass result of a Stmt
-runInterpreter :: IO ((Either Value Result, RunState)) -> IO ()
-runInterpreter = (=<<) $ \(x, state) -> case x of
-    Left err -> ioError $ userError (show err)
-    Right res -> do
-      putStrLn $ "Heap stats:\n\tallocated_count:\t" ++ (show $ Map.size (heap state))
-      return ()
-
 -- Default values of each type
-defval :: Type -> RuntimeM Value
-defval typ = return $ case typ of
+defaultValue :: Type -> RuntimeM Value
+defaultValue typ = return $ case typ of
   TInt -> VInt 0
   TChar -> VChar 'J' -- FIXME this is so fucking dumb I can't handle this
   TBool -> VBool False
@@ -104,8 +105,71 @@ defval typ = return $ case typ of
   TUser _ -> ref0
   TVoid -> VVoid
 
+-- STATIC ENVIRONMENT --
+------------------------
+type Func = [Value] -> RuntimeM Result
+type FuncEnv = Map.Map Ident Func
+funcenv0 = Map.fromList semantics
+
+data RunEnv = RunEnv {
+  funcs :: FuncEnv
+}
+runenv0 = RunEnv {
+  funcs = funcenv0
+}
+
+-- RUNTIME STATE --
+-------------------
+type StackFrame = Map.Map Ident Value
+stackframe0 = Map.empty
+
+data RunState = RunState {
+  stack :: StackFrame,
+  heap :: Map.Map Loc Value
+}
+runstate0 = RunState {
+  stack = stackframe0,
+  -- Reference with location == 0 is a null reference
+  heap = Map.singleton loc0 VVoid
+}
+
+-- RUNTIME MONAD --
+-------------------
+-- We need to be able to catch an exception without loosing the state -- this
+-- is why we have to reverse the order of ErrorT and StateT
+-- Lack of a stack in ReaderT monad (compare with StateT) is caused by the fact
+-- that we will never have to inspect hidden part of it
+type RuntimeM = ReaderT RunEnv (ErrorT Value (StateT RunState IO))
+runRuntimeM :: RunEnv -> RunState -> RuntimeM a -> IO (Either Value a, RunState)
+runRuntimeM r s m = runStateT (runErrorT (runReaderT m r)) s
+
+-- FIXME this is no enough, return should skip statements just like error does
+type Result = () -- FIXME figure out how to pass result of a Stmt
+result0 = ()
+
+runInterpreter :: IO ((Either Value Result, RunState)) -> IO ()
+runInterpreter = (=<<) $ \(x, state) -> case x of
+    Left err -> ioError $ userError (show err)
+    Right res -> do
+      putStrLn $ "Exit code:\t" ++ (show res)
+      putStrLn $ "Heap stats:\n\tallocated_count:\t" ++ (show $ Map.size (heap state Map.\\ heap runstate0))
+      return ()
+
+-- Executes _int main()_ function in given translation unit
+runUnit :: Stmt -> IO ((Either Value Result, RunState))
+runUnit = runRuntimeM runenv0 runstate0 . funS
+
+-- Executes given action in a new 'stack frame', restores old one afterwards
+newFrame :: RuntimeM a -> RuntimeM a
+newFrame action = do
+  st <- gets stack
+  res <- action
+  modify (\state -> state { stack = st })
+  return res
+
+-- MEMORY MODEL --
+------------------
 -- FIXME embed these in all monadic bytecode instructions
--- Heap management (returned values are references)
 -- One cannot allocate reference or primitive value on the heap
 alloc :: Value -> RuntimeM Value
 -- FIXME enforce above
@@ -130,105 +194,158 @@ deref :: Value -> RuntimeM Value
 deref (VRef 0) = throwError (VError Err.nullPointerException)
 deref (VRef loc) = gets (Maybe.fromJust . Map.lookup loc . heap)
 
--- JVMM bytecode instructions, monadic dialect
-load :: Ident -> RuntimeM Value
-load id = undefined
+-- JVMM bytecode --
+-------------------
+-- One can obtain Jasmin mnemonics by prepending type indicator, and getting
+-- arguments from the stack
+nop :: RuntimeM Result
+nop = return result0
 
-aload :: Value -> Int -> RuntimeM Value
-aload ref ind = undefined
+load :: Ident -> RuntimeM Value
+load id = gets (Maybe.fromJust . Map.lookup id . stack)
+
+store :: Ident -> Value -> RuntimeM ()
+store id val = modify $ \env -> env { stack = Map.insert id val (stack env) }
 
 newarray :: Type -> Int -> RuntimeM Value
 newarray typ len = undefined
 
-invokestatic :: Ident -> [Value] -> RuntimeM Value
-invokestatic id vals = undefined
+invokestatic :: Ident -> [Value] -> RuntimeM Result
+invokestatic id vals = asks (Maybe.fromJust . Map.lookup id . funcs) >>= ($ vals)
 
+-- TODO classes and stuff
 getfield :: Ident -> Value -> RuntimeM Value
-getfield = undefined -- TODO
+getfield = undefined
 
 invokevirtual :: Ident -> Value -> [Value] -> RuntimeM Value
-invokevirtual = undefined -- TODO
+invokevirtual = undefined
+-- TODO
 
--- Executes int main() function in given translation unit
-runUnit :: Stmt -> IO ((Either Value Result, RunState))
-runUnit = runRuntimeM runenv0 runstate0 . funS
+-- DENOTATIONAL SEMANTICS --
+----------------------------
+
+-- Declarations
+funD :: Stmt -> RuntimeM a -> RuntimeM a
+funD (SDefFunc typ id args excepts stmt) =
+  -- Functions are defined in global scope, we first scan this scope, collect
+  -- definitions and then, using environment with all global scope symbols, we
+  -- run our program. As a side effect we obtain mutually recursive functions.
+  -- NOTE there is no explicit fixpoint
+  local (\env -> env { funcs = Map.insert id fun (funcs env) })
   where
-    funS :: Stmt -> RuntimeM Result
-    funS x = case x of
-      _ -> undefined
-    funE :: Expr -> RuntimeM Value
-    funE x = case x of
-      -- Using JVMM monadic bytecode here might be misleading but during
-      -- compilation process we actually turn expression into series of
-      -- statements
-      EVar id -> load id
-      ELitInt n -> return (VInt $ fromInteger n)
-      ELitTrue -> return (VBool True)
-      ELitFalse -> return (VBool False)
-      ELitString str -> alloc (VString str)
-      ELitChar c -> return (VChar c)
-      ENull -> return ref0
-      EAccessArr expr1 expr2 -> do
-        ref <- funE expr1
-        VArray arr <- deref ref
-        VInt ind <- funE expr2
-        case Map.lookup ind arr of
-          Nothing -> throwError (VError $ Err.indexOutOfBounds ind)
-          Just val -> return val
-      EAccessFn expr id exprs -> do
-        ref <- funE expr
-        vals <- mapM funE exprs
-        invokevirtual id ref vals
-      EAccessVar expr id -> do
-        ref <- funE expr
-        getfield id ref
-      EApp id exprs -> do
-        vals <- mapM funE exprs
-        invokestatic id vals
-      ENewArr typ expr -> do
-        VInt val <- funE expr
-        newarray typ val
-      EUnaryT _ Not expr -> do
-        VBool val <- funE expr
-        return $ VBool (not val)
-      EUnaryT _ Neg expr -> do
-        VInt val <- funE expr
-        return $ VInt (negate val)
-      EBinaryT TString Plus expr1 expr2 -> do
-        ref1 <- funE expr1
-        ref2 <- funE expr2
-        VString str1 <- deref ref1
-        VString str2 <- deref ref2
-        free ref1
-        free ref2
-        alloc $ VString (str1 ++ str2)
-      EBinaryT TInt opbin expr1 expr2 -> do
-        VInt val1 <- funE expr1
-        VInt val2 <- funE expr2
-        return $ VInt $ case opbin of
-          Plus -> val1 + val2
-          Minus -> val1 - val2
-          Times -> val1 * val2
-          Div -> val1 `div` val2
-          Mod -> val1 `mod` val2
-      EBinaryT TBool opbin expr1 expr2 -> do
-        val1 <- funE expr1
-        val2 <- funE expr2
-        return $ VBool $ case opbin of
-          -- This works because of 'deriving (Eq, Ord)'
-          -- Note that references handling is automatic
-          EQU -> val1 == val2
-          NEQ -> val1 /= val2
-          LTH -> val1 < val2
-          LEQ -> val1 <= val2
-          GTH -> val1 > val2
-          GEQ -> val1 >= val2
-      EBinaryT TBool And expr1 expr2 -> do
-        VBool val1 <- funE expr1
-        VBool val2 <- funE expr2
-        return $ VBool (val1 && val2)
-      EBinaryT TBool Or expr1 expr2 -> do
-        VBool val1 <- funE expr1
-        VBool val2 <- funE expr2
-        return $ VBool (val1 || val2)
+    fun :: Func
+    fun vals = newFrame $ do
+      zipWithM_ (\(SDeclVar _ id) var -> store id var) args vals
+      -- This is a hack, but it's extremenly refined one, we get garbage
+      -- collection and all shit connected with that for free, it's exactly the
+      -- same code as in funS (Local ...)
+      funS $ Local args ((map (\(SDeclVar _ id) -> SAssign id (EVar id)) args) ++ [stmt])
+funD (SDeclVar typ id) = (>>) (defaultValue typ >>= store id)
+
+-- Statements
+funS :: Stmt -> RuntimeM Result
+funS x = case x of
+  Global stmts -> compose (map funD stmts) $ do
+    invokestatic Builtins.entrypoint []
+    nop -- FIXME
+  Local decls stmts -> newFrame $ compose (map funD decls) (mapM_ funS stmts)
+  SAssign id expr -> do
+    val <- funE expr
+    store id val
+  SAssignArr id expr1 expr2 -> do
+    nop -- FIXME
+  SReturn expr -> do
+    nop -- FIXME
+  SIf expr stmt -> do
+    nop -- FIXME
+  SIfElse expr stmt1 stmt2 -> do
+    nop -- FIXME
+  SWhile expr stmt -> do
+    nop -- FIXME
+  SForeach typ id expr stmt -> do
+    nop -- FIXME
+  SExpr expr -> funE expr >> nop
+  SThrow expr -> do
+    nop -- FIXME
+  STryCatch stmt1 typ id stmt2 -> do
+    nop -- FIXME
+  SReturnV -> nop
+  SEmpty -> nop
+
+-- Expressions
+funE :: Expr -> RuntimeM Value
+funE x = case x of
+  -- Using JVMM monadic bytecode here might be misleading but during
+  -- compilation process we actually turn expression into series of
+  -- statements
+  EVar id -> load id
+  ELitInt n -> return (VInt $ fromInteger n)
+  ELitTrue -> return (VBool True)
+  ELitFalse -> return (VBool False)
+  ELitString str -> alloc (VString str)
+  ELitChar c -> return (VChar c)
+  ENull -> return ref0
+  EAccessArr expr1 expr2 -> do
+    ref <- funE expr1
+    VArray arr <- deref ref
+    VInt ind <- funE expr2
+    case Map.lookup ind arr of
+      Nothing -> throwError (VError $ Err.indexOutOfBounds ind)
+      Just val -> return val
+  EAccessFn expr id exprs -> do
+    ref <- funE expr
+    vals <- mapM funE exprs
+    invokevirtual id ref vals
+  EAccessVar expr id -> do
+    ref <- funE expr
+    getfield id ref
+  EApp id exprs -> do
+    vals <- mapM funE exprs
+    invokestatic id vals >> return VVoid -- FIXME
+  ENewArr typ expr -> do
+    VInt val <- funE expr
+    newarray typ val
+  EUnaryT _ Not expr -> do
+    VBool val <- funE expr
+    return $ VBool (not val)
+  EUnaryT _ Neg expr -> do
+    VInt val <- funE expr
+    return $ VInt (negate val)
+  EBinaryT TString Plus expr1 expr2 -> do
+    ref1 <- funE expr1
+    ref2 <- funE expr2
+    VString str1 <- deref ref1
+    VString str2 <- deref ref2
+    free ref1
+    free ref2
+    alloc $ VString (str1 ++ str2)
+  EBinaryT TInt opbin expr1 expr2 -> do
+    VInt val1 <- funE expr1
+    VInt val2 <- funE expr2
+    return $ VInt $ case opbin of
+      Plus -> val1 + val2
+      Minus -> val1 - val2
+      Times -> val1 * val2
+      Div -> val1 `div` val2
+      Mod -> val1 `mod` val2
+  EBinaryT TBool opbin expr1 expr2 -> do
+    val1 <- funE expr1
+    val2 <- funE expr2
+    return $ VBool $ case opbin of
+      -- This works because of 'deriving (Eq, Ord)'
+      -- Note that references handling is automatic
+      EQU -> val1 == val2
+      NEQ -> val1 /= val2
+      LTH -> val1 < val2
+      LEQ -> val1 <= val2
+      GTH -> val1 > val2
+      GEQ -> val1 >= val2
+  EBinaryT TBool And expr1 expr2 -> do
+    VBool val1 <- funE expr1
+    VBool val2 <- funE expr2
+    return $ VBool (val1 && val2)
+  EBinaryT TBool Or expr1 expr2 -> do
+    VBool val1 <- funE expr1
+    VBool val2 <- funE expr2
+    return $ VBool (val1 || val2)
 
