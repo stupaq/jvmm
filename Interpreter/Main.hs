@@ -1,6 +1,7 @@
 module Main where
 import System.IO ( stdin, hGetContents )
 import System.Environment ( getArgs, getProgName )
+import Control.Monad.IO.Class
 import Data.Either
 import Syntax.LexJvmm
 import Syntax.ParJvmm
@@ -11,6 +12,7 @@ import Syntax.ErrM
 import Semantics.Trans
 import Semantics.Scope
 import Semantics.Types
+import Semantics.Runtime
 
 type ParseFun a = [Token] -> Err a
 
@@ -36,7 +38,9 @@ run v p s = let ts = myLexer s in case p ts of
       printlv (v - 1) $ "\n[Abstract Syntax]\n\n" ++ show tree'
       printlv (v + 1) $ "\n[Linearized tree]\n\n" ++ printTree tree'
       case staticTypes tree' of
-        Right tree'' -> printl $ "\n[Type check]\n\n" ++ printTree tree''
+        Right tree'' -> do
+          printl $ "\n[Type check]\n\n" ++ printTree tree''
+          runInterpreter $ runUnit tree''
         Left err -> fail err
     Left err -> fail err
 

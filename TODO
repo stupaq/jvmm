@@ -1,8 +1,5 @@
 TRANS:
-- remove assign ops
 - remove multiple expressions
-- add typed expressions
-- unify ops type
 - line markers (possibly newtype for speed)
 
 TEST:

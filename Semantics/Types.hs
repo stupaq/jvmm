@@ -11,8 +11,7 @@ import qualified Semantics.Scope as Scope
 import qualified Semantics.Errors as Err
 import Semantics.Errors (rethrow)
 import Semantics.Trans (UIdent(..), toStr)
-import Syntax.AbsJvmm (Arg(..), Type(..), Expr(..), Stmt(..), OpBin(..), OpUn(..))
-import Syntax.AbsJvmm (Ident)
+import Syntax.AbsJvmm (Ident, Arg(..), Type(..), Expr(..), Stmt(..), OpBin(..), OpUn(..))
 
 -- Typing is fully static. We type each null as Object type (which is a
 -- superclass of every non-primitive value).

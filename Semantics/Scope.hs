@@ -12,6 +12,9 @@ import Semantics.Errors (rethrow)
 import qualified Semantics.Builtins as Builtins
 import Syntax.AbsJvmm (Ident(..), Arg(..), Type(..), Expr(..), Stmt(..))
 
+-- TODO for scope resolution with classes we need to rewrite all EVar that
+-- refer to object's scope to EAccessVar this (same with methods)
+
 -- Each symbol in scoped tree has an identifier which is unique in its scope.
 -- In other words, there is no identifier hiding in scoped tree
 type Tag = Int

@@ -1,11 +1,11 @@
 int main() {
   int[] arr = new int[3];
-  int a;
-  a++;
+  int a = 1;
   for (int a : arr) {
-    a++;
+    a+=2;
     int a;
-    a++;
+    a+=10;
   }
-  a++;
+  a+=100;
+  return a;
 }
