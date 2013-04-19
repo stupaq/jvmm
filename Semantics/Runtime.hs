@@ -83,8 +83,10 @@ data Value =
   | VObject Composite
   -- For a function returning void, this partially solves Result problem
   | VVoid
--- This error can be thrown only by an interpreter itself, when irrecoverable
--- error occurs (null pointer exception, zero division etc.)
+  -- This is an exception, which can be thrown and caught by a user
+  | VException Value
+  -- This error can be thrown only by an interpreter itself when irrecoverable
+  -- error occurs (null pointer exception, zero division etc.)
   | VError String
   deriving (Eq, Ord, Show)
 -- Null reference
@@ -97,7 +99,7 @@ instance Error Value where
 defaultValue :: Type -> RuntimeM Value
 defaultValue typ = return $ case typ of
   TInt -> VInt 0
-  TChar -> VChar 'J' -- FIXME this is so fucking dumb I can't handle this
+  TChar -> VChar '\0' -- FIXME this is so fucking dumb I can't handle this
   TBool -> VBool False
   TString -> ref0
   TObject -> ref0
@@ -207,11 +209,14 @@ load id = gets (Maybe.fromJust . Map.lookup id . stack)
 store :: Ident -> Value -> RuntimeM ()
 store id val = modify $ \env -> env { stack = Map.insert id val (stack env) }
 
-newarray :: Type -> Int -> RuntimeM Value
-newarray typ len = undefined
-
 invokestatic :: Ident -> [Value] -> RuntimeM Result
 invokestatic id vals = asks (Maybe.fromJust . Map.lookup id . funcs) >>= ($ vals)
+
+throw :: Value -> RuntimeM Result
+throw = throwError . VException
+
+newarray :: Type -> Int -> RuntimeM Value
+newarray typ len = undefined
 
 -- TODO classes and stuff
 getfield :: Ident -> Value -> RuntimeM Value
@@ -247,7 +252,6 @@ funS :: Stmt -> RuntimeM Result
 funS x = case x of
   Global stmts -> compose (map funD stmts) $ do
     invokestatic Builtins.entrypoint []
-    nop -- FIXME
   Local decls stmts -> newFrame $ compose (map funD decls) (mapM_ funS stmts)
   SAssign id expr -> do
     val <- funE expr
@@ -266,9 +270,17 @@ funS x = case x of
     nop -- FIXME
   SExpr expr -> funE expr >> nop
   SThrow expr -> do
-    nop -- FIXME
+    ref <- funE expr
+    throw ref
   STryCatch stmt1 typ id stmt2 -> do
-    nop -- FIXME
+    newFrame (funS stmt1) `catchError` handler
+    where
+      handler :: Value -> RuntimeM Result
+      handler err = case err of
+        VError _ -> throwError err
+        VException val -> newFrame $ do
+          store id val
+          funS stmt2
   SReturnV -> nop
   SEmpty -> nop
 
@@ -301,7 +313,8 @@ funE x = case x of
     getfield id ref
   EApp id exprs -> do
     vals <- mapM funE exprs
-    invokestatic id vals >> return VVoid -- FIXME
+    invokestatic id vals
+    return VVoid -- FIXME
   ENewArr typ expr -> do
     VInt val <- funE expr
     newarray typ val
