@@ -207,7 +207,7 @@ staticTypes = runTypeM typeenv0 . funS
         stmt2' <- declare (VIdent $ toStr id) typ (funS stmt2)
         catches typ $ do
           stmt1' <- funS stmt1
-          return $ STryCatch stmt1 typ id stmt2
+          return $ STryCatch stmt1' typ id stmt2'
       SReturnV -> do
         returns TVoid
         return x
