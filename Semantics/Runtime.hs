@@ -23,32 +23,42 @@ import qualified Semantics.Scope as Scope
 --------------
 entrypoint = Scope.tagSymbol Scope.tag0 "main"
 
--- FIXME remove nops
 builtinGlobal = map (\(id, fun) -> (Scope.tagSymbol Scope.tag0 id, \vals -> fun vals >> nop)) [
   ("printInt",
       \[VInt val] -> do
         liftIO $ putStrLn (show val)
-        return VVoid
+        return'_
   ),
   ("readInt",
       \[] -> do
         val <- liftIO (readLn :: IO Int)
-        return $ VInt val
+        return_ $ VInt val
   ),
   ("printString",
       \[ref] -> do
         VString str <- deref ref
         liftIO (putStrLn str)
-        return VVoid
+        return'_
   ),
   ("readString",
       \[] -> do
-        val <- liftIO (readLn :: IO String)
-        return $ VString val
+        val <- liftIO (getLine :: IO String)
+        return_ $ VString val
   ),
   ("error",
-      \[] -> throwError $ VError Err.userError
+      \[] -> throwError $ RError Err.userError
   )]
+
+defaultValue :: Type -> RuntimeM Value
+defaultValue typ = return $ case typ of
+  TInt -> VInt 0
+  TChar -> VChar '\0'
+  TBool -> VBool False
+  TString -> ref0
+  TObject -> ref0
+  TArray _ -> ref0
+  TUser _ -> ref0
+  TVoid -> VVoid
 
 -- DATA REPRESENTATION --
 -------------------------
@@ -67,6 +77,20 @@ composite0 = Composite {
 
 type Array = Map.Map Int Value
 
+-- Result of executing a statement
+data Result =
+  -- Value returned from a function
+    RValue Value
+  -- This is an exception, which can be thrown and caught by a user
+  | RException Value
+  -- This error can be thrown only by an interpreter itself when irrecoverable
+  -- error occurs (null pointer exception, zero division etc.)
+  | RError String
+  deriving (Eq, Ord, Show)
+
+instance Error Result where
+  strMsg s = RError s
+
 -- FIXME split primitives and referenced values
 data Value =
   -- Things stored on stack and passed by value
@@ -78,35 +102,14 @@ data Value =
   | VArray Array
   | VString String
   | VObject Composite
-  -- For a function returning void, this partially solves Result problem
   | VVoid
-  -- This is an exception, which can be thrown and caught by a user
-  | VException Value
-  -- This error can be thrown only by an interpreter itself when irrecoverable
-  -- error occurs (null pointer exception, zero division etc.)
-  | VError String
   deriving (Eq, Ord, Show)
 -- Null reference
 ref0 = VRef loc0
 
-instance Error Value where
-  strMsg s = VError s
-
--- Default values of each type
-defaultValue :: Type -> RuntimeM Value
-defaultValue typ = return $ case typ of
-  TInt -> VInt 0
-  TChar -> VChar '\0'
-  TBool -> VBool False
-  TString -> ref0
-  TObject -> ref0
-  TArray _ -> ref0
-  TUser _ -> ref0
-  TVoid -> VVoid
-
 -- STATIC ENVIRONMENT --
 ------------------------
-type Func = [Value] -> RuntimeM Result
+type Func = [Value] -> RuntimeM ()
 type FuncEnv = Map.Map Ident Func
 funcenv0 = Map.fromList builtinGlobal
 
@@ -138,24 +141,21 @@ runstate0 = RunState {
 -- is why we have to reverse the order of ErrorT and StateT
 -- Lack of a stack in ReaderT monad (compare with StateT) is caused by the fact
 -- that we will never have to inspect hidden part of it
-type RuntimeM = ReaderT RunEnv (ErrorT Value (StateT RunState IO))
-runRuntimeM :: RunEnv -> RunState -> RuntimeM a -> IO (Either Value a, RunState)
+type RuntimeM = ReaderT RunEnv (ErrorT Result (StateT RunState IO))
+runRuntimeM :: RunEnv -> RunState -> RuntimeM a -> IO (Either Result a, RunState)
 runRuntimeM r s m = runStateT (runErrorT (runReaderT m r)) s
 
--- FIXME this is no enough, return should skip statements just like error does
-type Result = () -- FIXME figure out how to pass result of a Stmt
-result0 = ()
-
-runInterpreter :: IO ((Either Value Result, RunState)) -> IO ()
+runInterpreter :: IO ((Either Result (), RunState)) -> IO ()
 runInterpreter = (=<<) $ \(x, state) -> case x of
-    Left err -> ioError $ userError (show err)
-    Right res -> do
+    Left (RError err) -> ioError $ userError (show err)
+    Left (RException err) -> ioError $ userError (show err)
+    Left (RValue res) -> do
       putStrLn $ "Exit code:\t" ++ (show res)
       putStrLn $ "Heap stats:\n\tallocated_count:\t" ++ (show $ Map.size (heap state Map.\\ heap runstate0))
       return ()
 
 -- Executes _int main()_ function in given translation unit
-runUnit :: Stmt -> IO ((Either Value Result, RunState))
+runUnit :: Stmt -> IO ((Either Result (), RunState))
 runUnit = runRuntimeM runenv0 runstate0 . funS
 
 -- Executes given action in a new 'stack frame', restores old one afterwards
@@ -168,6 +168,26 @@ newFrame action = do
   res <- action
   modify (\state -> state { stack = st })
   return res
+
+getResult :: RuntimeM () -> RuntimeM Value
+getResult action = do
+  (action  >> return VVoid) `catchError` handler
+  where
+    handler :: Result -> RuntimeM Value
+    handler err = case err of
+      RValue val -> return val
+      _ -> throwError err
+
+tryCatch :: RuntimeM () -> Ident -> RuntimeM () -> RuntimeM ()
+tryCatch atry id acatch = do
+  atry `catchError` handler
+  where
+    handler :: Result -> RuntimeM ()
+    handler err = case err of
+      RException val -> do
+        store id val
+        acatch
+      _ -> throwError err
 
 -- MEMORY MODEL --
 ------------------
@@ -194,7 +214,7 @@ free :: Value -> RuntimeM ()
 free (VRef loc) = return () -- FIXME
 
 deref :: Value -> RuntimeM Value
-deref (VRef 0) = throwError (VError Err.nullPointerException)
+deref (VRef 0) = throwError (RError Err.nullPointerException)
 deref (VRef loc) = gets (Maybe.fromJust . Map.lookup loc . heap)
 
 update :: Value -> Value -> RuntimeM ()
@@ -204,8 +224,8 @@ update (VRef loc) val = modify (\state -> state { heap = Map.insert loc val (hea
 -------------------
 -- One can obtain Jasmin mnemonics by prepending type indicator, and getting
 -- arguments from the stack
-nop :: RuntimeM Result
-nop = return result0
+nop :: RuntimeM ()
+nop = return ()
 
 load :: Ident -> RuntimeM Value
 load id = gets (Maybe.fromJust . Map.lookup id . stack)
@@ -214,7 +234,7 @@ aload :: Value -> Value -> RuntimeM Value
 aload ref (VInt ind) = do
   VArray arr <- deref ref
   case Map.lookup ind arr of
-    Nothing -> throwError (VError $ Err.indexOutOfBounds ind)
+    Nothing -> throwError (RError $ Err.indexOutOfBounds ind)
     Just val -> return val
 
 store :: Ident -> Value -> RuntimeM ()
@@ -223,14 +243,20 @@ store id val = modify $ \state -> state { stack = Map.insert id val (stack state
 astore :: Value -> Value -> Value -> RuntimeM ()
 astore ref (VInt ind) val = do
   VArray arr <- deref ref
-  unless (0 <= ind && ind < Map.size arr) $ throwError (VError $ Err.indexOutOfBounds ind)
+  unless (0 <= ind && ind < Map.size arr) $ throwError (RError $ Err.indexOutOfBounds ind)
   update ref (VArray $ Map.insert ind val arr)
 
-invokestatic :: Ident -> [Value] -> RuntimeM Result
-invokestatic id vals = asks (Maybe.fromJust . Map.lookup id . funcs) >>= ($ vals)
+invokestatic :: Ident -> [Value] -> RuntimeM Value
+invokestatic id vals = getResult $ asks (Maybe.fromJust . Map.lookup id . funcs) >>= ($ vals)
 
-throw :: Value -> RuntimeM Result
-throw = throwError . VException
+throw :: Value -> RuntimeM ()
+throw = throwError . RException
+
+return_ :: Value -> RuntimeM ()
+return_ = throwError . RValue
+
+return'_ :: RuntimeM ()
+return'_ = return_ VVoid
 
 newarray :: Type -> Value -> RuntimeM Value
 newarray typ (VInt len) = do
@@ -245,12 +271,11 @@ getfield :: Ident -> Value -> RuntimeM Value
 getfield (Ident "length$0") ref = do
   arraylength ref
 
-invokevirtual :: Ident -> Value -> [Value] -> RuntimeM Value
--- FIXME ugly hack for now
+invokevirtual :: Ident -> Value -> [Value] -> RuntimeM ()
 invokevirtual (Ident "charAt$0") ref [VInt ind] = do
   VString str <- deref ref
-  unless (0 <= ind && ind < length str) $ throwError (VError $ Err.indexOutOfBounds ind)
-  return $ VChar $ head $ drop ind str
+  unless (0 <= ind && ind < length str) $ throwError (RError $ Err.indexOutOfBounds ind)
+  return_ $ VChar (head $ drop ind str)
 -- TODO
 
 -- DENOTATIONAL SEMANTICS --
@@ -275,10 +300,11 @@ funD (SDefFunc typ id args excepts stmt) =
 funD (SDeclVar typ id) = (>>) (defaultValue typ >>= store id)
 
 -- Statements
-funS :: Stmt -> RuntimeM Result
+funS :: Stmt -> RuntimeM ()
 funS x = case x of
   Global stmts -> applyAndCompose funD stmts $ do
-    invokestatic entrypoint []
+    mret <- invokestatic entrypoint []
+    return_ mret
   Local decls stmts -> applyAndCompose funD decls (mapM_ funS stmts)
   SAssign id expr -> do
     val <- funE expr
@@ -306,17 +332,11 @@ funS x = case x of
   SThrow expr -> do
     ref <- funE expr
     throw ref
-  STryCatch stmt1 typ id stmt2 -> do
-    funS stmt1 `catchError` handler
-    where
-      handler :: Value -> RuntimeM Result
-      handler err = case err of
-        VError _ -> throwError err
-        VException val -> do
-          store id val
-          funS stmt2
-  SReturn expr -> nop -- FIXME
-  SReturnV -> nop -- FIXME
+  STryCatch stmt1 typ id stmt2 -> tryCatch (funS stmt1) id (funS stmt2)
+  SReturn expr -> do
+    val <- funE expr
+    return_ val -- FIXME
+  SReturnV -> return'_
   SEmpty -> nop
 
 -- Expressions
@@ -339,14 +359,13 @@ funE x = case x of
   EAccessFn expr id exprs -> do
     ref <- funE expr
     vals <- mapM funE exprs
-    invokevirtual id ref vals
+    getResult $ invokevirtual id ref vals
   EAccessVar expr id -> do
     ref <- funE expr
     getfield id ref
   EApp id exprs -> do
     vals <- mapM funE exprs
     invokestatic id vals
-    return VVoid -- FIXME
   ENewArr typ expr -> do
     val <- funE expr
     newarray typ val
