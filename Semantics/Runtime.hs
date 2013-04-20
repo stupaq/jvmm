@@ -157,9 +157,9 @@ runRuntimeM r s m = runStateT (runErrorT (runReaderT m r)) s
 newFrame :: RuntimeM a -> RuntimeM a
 newFrame action = do
   st <- gets stack
-  res <- action
-  modify (\state -> state { stack = st })
-  return res
+  tryFinally action $
+    -- Pop stack frame no matter what happened (exception/error/return)
+    modify (\state -> state { stack = st })
 
 getResult :: RuntimeM () -> RuntimeM PrimValue
 getResult action = do
@@ -180,6 +180,15 @@ tryCatch atry id acatch = do
         store id val
         acatch
       _ -> throwError err
+
+tryFinally :: RuntimeM a -> RuntimeM () -> RuntimeM a
+tryFinally atry afinally = do
+  atry `catchError` handler
+  where
+    handler :: Result -> RuntimeM a
+    handler err = do
+      afinally
+      throwError err
 
 -- MEMORY MODEL --
 ------------------
