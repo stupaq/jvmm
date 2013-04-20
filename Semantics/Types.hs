@@ -128,21 +128,21 @@ call' = call . functype
 (=|), (|=) :: Type -> Type -> TypeM Type
 (=|) typ1 typ2 = do
   let bad = throwError (Err.unexpectedType typ1 typ2)
-      ok = return ()
+      ok = return typ1
   case (typ1, typ2) of
-    (TArray etyp1, TArray etyp2) -> etyp1 =| etyp2 >> return ()
+    (TArray etyp1, TArray etyp2) -> etyp1 =| etyp2
     (TInt, TInt) -> ok
     (TString, TString) -> ok
     (TChar, TChar) -> ok
     (TBool, TBool) -> ok
     (TVoid, TVoid) -> ok
+    (TObject, TString) -> ok
     (TObject, TObject) -> ok
     (TObject, TArray _) -> ok
     (TObject, TUser _) -> ok
     -- TODO hierarchy
     (TUser id1, TUser id2) -> bad
     _ -> bad
-  return typ1
 
 (|=) = flip (=|)
 
