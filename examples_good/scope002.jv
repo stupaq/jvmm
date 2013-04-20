@@ -6,13 +6,21 @@ int a() {
 int main() {
   int[] arr = new int[3];
   int a;
+  printInt(a);
   a++;
+  printInt(a);
   for (int a : arr) {
+    printInt(a);
     a++;
+    printInt(a);
     int a;
-    a++;
+    printInt(a);
+    a+= a();
+    printInt(a);
   }
+  printInt(a);
   a++;
+  printInt(a);
 }
 
 int b(int a) {

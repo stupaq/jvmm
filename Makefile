@@ -35,7 +35,11 @@ test-grammar: Syntax/TestJvmm
 	@echo SYNTAX ERRORS:
 	@$(foreach f, $(shell ls $(EXBAD)/*.txt), echo -n $(f) " : "; Syntax/TestJvmm $(f) | grep -q "Parse Successful!" && { echo FAIL; exit 1; } || echo OK;)
 
+test-examples: all
+	@./run_examples.sh
+
 clean:
+	-rm -f test.{err,out}
 	-rm -f Syntax/*.{log,aux,hi,o}
 	-rm -rf ghc-make
 

@@ -1,10 +1,7 @@
-TRANS:
-- remove multiple expressions
 - line markers (possibly newtype for speed)
 
 TEST:
 - tests for char and String
-- tests for dot operator
 - add output for all custom tests
 - tests for scope (a++)
 - tests for exceptions

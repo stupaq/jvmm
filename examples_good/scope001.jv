@@ -1,11 +1,18 @@
 int main() {
   int[] arr = new int[3];
   int a = 1;
+  printInt(a);
   for (int a : arr) {
+    printInt(a);
     a+=2;
+    printInt(a);
     int a;
+    printInt(a);
     a+=10;
+    printInt(a);
   }
+  printInt(a);
   a+=100;
+  printInt(a);
   return a;
 }

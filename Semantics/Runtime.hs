@@ -270,7 +270,10 @@ arraylength ref = deref ref >>= (\(VArray arr) -> return $ VInt $ Map.size arr)
 -- TODO classes and stuff
 getfield :: Ident -> PrimValue -> RuntimeM PrimValue
 getfield (Ident "length$0") ref = do
-  arraylength ref
+  val <- deref ref
+  case val of
+    VArray _ -> arraylength ref
+    VString str -> return $ VInt (length str)
 
 invokevirtual :: Ident -> PrimValue -> [PrimValue] -> RuntimeM ()
 invokevirtual (Ident "charAt$0") ref [VInt ind] = do

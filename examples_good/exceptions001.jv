@@ -1,15 +1,25 @@
 int main(int a) {
   int a = 3;
+  printInt(a);
   try {
+    printInt(a);
     a = 5;
+    printInt(a);
     a();
+    printInt(a);
     int a = 4;
+    printInt(a);
   } catch(String s){
+    printInt(a);
     a = 6;
+    printInt(a);
     int a = 10;
+    printInt(a);
   }
+  printInt(a);
   a = 11;
-  return a;
+  printInt(a);
+  return 0;
 }
 
 int a() throws String {
