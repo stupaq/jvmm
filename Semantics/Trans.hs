@@ -71,7 +71,6 @@ transAbs = tP_Prog
             iditer = tempIdent id "iter"
         in return $ tP_Block $ P_Block $ [
           P_SDeclVar (TArray TInt) [P_Init idarr expr],
-          -- FIXME builtin member should be take from somewhere
           P_SDeclVar TInt [P_Init idlength (EAccessVar (EVar idarr) (Ident "length")), P_Init iditer (ELitInt 0)],
           SWhile (P_ERel (EVar iditer) LTH (EVar idlength)) $ P_SBlock $ P_Block [
             P_SDeclVar type' [P_Init id (EAccessArr (EVar idarr) (EVar iditer))],

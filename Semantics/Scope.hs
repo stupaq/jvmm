@@ -76,14 +76,13 @@ resolveLocal acc id = (get) >>= (lift . lift . (resolve acc id))
 resolveGlobal acc id = (asks fst) >>= (lift . lift . (resolve acc id))
 resolveParent acc id = (asks snd) >>= (lift . lift . (resolve acc id))
 
-decl :: (Scope -> Symbols) -> Ident -> ScopeM ()
-decl acc id = do
+checkRedeclaration:: (Scope -> Symbols) -> Ident -> ScopeM ()
+checkRedeclaration acc id = do
   -- resolve in block's beginning's scope
   idout <- resolveParent acc id `catchError` (\_ -> return id)
   -- resolve in current scope
   idin <- resolveLocal acc id `catchError` (\_ -> return id)
   unless (idin == idout) $ throwError $ Err.redeclaredSymbol id
-  where
 
 -- SCOPE CHANGING --
 --------------------
@@ -105,6 +104,14 @@ globalAsCurrent action = do
   put sc
   return res
 
+-- Runs action with current scope as global one, restores scope after action is
+-- executed
+currentAsGlobal action = do
+  sc <- get
+  res <- local (const (sc, sc)) action
+  put sc
+  return res
+
 -- Fills current scope (the one in state) with mutually recursive declarations
 -- Note that each class (user defined type) must reside within global
 -- scope, since it forms a global scope itself, when resolving field
@@ -119,15 +126,6 @@ buildGlobal stmts = forM_ stmts $ \stmt -> case stmt of
     decVar id
   _ -> throwError $ Err.globalForbidden
 
--- Runs action with current scope as global one, restores scope after action is
--- executed
-currentAsGlobal action = do
-  sc <- get
-  res <- local (const (sc, sc)) action
-  put sc
-  return res
-
--- TODO remove when ready
 resVar, resFunc :: Ident -> ScopeM Ident
 resVar = resolveLocal vars
 resFunc = resolveLocal funcs
@@ -137,153 +135,158 @@ resType typ = case typ of
   TUser id -> (resolveLocal types id) >> (return typ)
   _ -> return typ
 
+-- SCOPE RESOLUTION --
+----------------------
 decVar, decFunc, decType :: Ident -> ScopeM ()
 decVar id = do
-  decl vars id
+  checkRedeclaration vars id
   modify $ (\sc -> sc { vars = newOccurence (vars sc) id })
 decFunc id = do
-  decl funcs id
+  checkRedeclaration funcs id
   modify $ (\sc -> sc { funcs = newOccurence (funcs sc) id })
 decType id = do
-  decl types id
+  checkRedeclaration types id
   modify $ (\sc -> sc { types = newOccurence (types sc) id })
--- TODO
 
 -- Creates scoped tree from translated AST
 scope :: Stmt -> Either String Stmt
 scope stmt = fmap fst $ runScopeM scope0 (funS stmt)
-  where
-    funND x = case x of
-      -- We are in mutually recursive scope, these symbols are already defined
-      SDefFunc typ id args excepts stmt -> do
-        typ' <- resType typ
-        id' <- resFunc id
-        newLocal $ do
-          args' <- mapM funA args `rethrow` (show x)
-          stmt' <- newLocal (funS stmt)
-          return $ SDefFunc typ' id' args' excepts stmt'
-      SDeclVar typ id -> do
-        typ' <- resType typ
-        id' <- resVar id
-        return $ SDeclVar typ' id'
-      _ -> throwError $ Err.globalForbidden
-    funA :: Stmt -> ScopeM Stmt
-    funA (SDeclVar typ id) = do
-      decVar id `rethrow` Err.duplicateArg typ id
+
+funND :: Stmt -> ScopeM Stmt
+funND x = case x of
+  -- We are in mutually recursive scope, these symbols are already defined
+  SDefFunc typ id args excepts stmt -> do
+    typ' <- resType typ
+    id' <- resFunc id
+    newLocal $ do
+      args' <- mapM funA args `rethrow` (show x)
+      stmt' <- newLocal (funS stmt)
+      return $ SDefFunc typ' id' args' excepts stmt'
+  SDeclVar typ id -> do
+    typ' <- resType typ
+    id' <- resVar id
+    return $ SDeclVar typ' id'
+  _ -> throwError $ Err.globalForbidden
+
+funA :: Stmt -> ScopeM Stmt
+funA (SDeclVar typ id) = do
+  decVar id `rethrow` Err.duplicateArg typ id
+  id' <- resVar id
+  typ' <- resType typ
+  return $ SDeclVar typ' id'
+
+funS :: Stmt -> ScopeM Stmt
+funS x = case x of
+  Global stmts -> do
+    buildGlobal stmts
+    stmts' <- currentAsGlobal $ mapM funND stmts
+    return $ Global stmts'
+  SDefFunc typ id args excepts stmt -> do
+    decFunc id
+    funND $ SDefFunc typ id args excepts stmt
+  SDeclVar typ id -> do
+    decVar id
+    funND $ SDeclVar typ id
+  Local _ stmts -> do -- definitions part of Local is empty at this point
+    stmts' <- newLocal (mapM funS stmts)
+    let (decls, instrs) = List.partition (\x -> case x of { SDeclVar _ _ -> True; _ -> False }) stmts'
+    return $ Local decls instrs
+  SAssign id expr -> do
+    expr' <- funE expr
+    id' <- resVar id
+    return $ SAssign id' expr'
+  SAssignArr id expr1 expr2 -> do
+    expr1' <- funE expr1
+    expr2' <- funE expr2
+    id' <- resVar id
+    return $ SAssignArr id' expr1' expr2'
+  SReturn expr -> do
+    expr' <- funE expr
+    return $ SReturn expr'
+  SIf expr stmt -> do
+    stmt' <- funS stmt
+    expr' <- funE expr
+    return $ SIf expr' stmt'
+  SIfElse expr stmt1 stmt2 -> do
+    stmt1' <- funS stmt1
+    stmt2' <- funS stmt2
+    expr' <- funE expr
+    return $ SIfElse expr' stmt1' stmt2'
+  SWhile expr stmt -> do
+    expr' <- funE expr
+    stmt' <- funS stmt
+    return $ SWhile expr' stmt'
+  SForeach typ id expr stmt -> do
+    typ' <- resType typ
+    expr' <- funE expr
+    newLocal $ do
+      decVar id
       id' <- resVar id
-      typ' <- resType typ
-      return $ SDeclVar typ' id'
-    funS :: Stmt -> ScopeM Stmt
-    funS x = case x of
-      Global stmts -> do
-        buildGlobal stmts
-        stmts' <- currentAsGlobal $ mapM funND stmts
-        return $ Global stmts'
-      SDefFunc typ id args excepts stmt -> do
-        decFunc id
-        funND $ SDefFunc typ id args excepts stmt
-      SDeclVar typ id -> do
-        decVar id
-        funND $ SDeclVar typ id
-      Local _ stmts -> do -- definitions part of Local is empty at this point
-        stmts' <- newLocal (mapM funS stmts)
-        let (decls, instrs) = List.partition (\x -> case x of { SDeclVar _ _ -> True; _ -> False }) stmts'
-        return $ Local decls instrs
-      SAssign id expr -> do
-        expr' <- funE expr
-        id' <- resVar id
-        return $ SAssign id' expr'
-      SAssignArr id expr1 expr2 -> do
-        expr1' <- funE expr1
-        expr2' <- funE expr2
-        id' <- resVar id
-        return $ SAssignArr id' expr1' expr2'
-      SReturn expr -> do
-        expr' <- funE expr
-        return $ SReturn expr'
-      SIf expr stmt -> do
-        stmt' <- funS stmt
-        expr' <- funE expr
-        return $ SIf expr' stmt'
-      SIfElse expr stmt1 stmt2 -> do
-        stmt1' <- funS stmt1
-        stmt2' <- funS stmt2
-        expr' <- funE expr
-        return $ SIfElse expr' stmt1' stmt2'
-      SWhile expr stmt -> do
-        expr' <- funE expr
-        stmt' <- funS stmt
-        return $ SWhile expr' stmt'
-      SForeach typ id expr stmt -> do
-        typ' <- resType typ
-        expr' <- funE expr
-        newLocal $ do
-          decVar id
-          id' <- resVar id
-          -- function body can hide iteration variable
-          stmt' <- newLocal (funS stmt)
-          return $ SForeach typ' id' expr' stmt'
-      SExpr expr -> do
-        expr' <- funE expr
-        return $ SExpr expr'
-      SThrow expr -> do
-        expr' <- funE expr
-        return $ SThrow expr'
-      STryCatch stmt1 typ2 id3 stmt4 -> do
-        stmt1' <- newLocal (funS stmt1)
-        newLocal $ do
-          decVar id3
-          id3' <- resVar id3
-          -- catch body can hide exception variable
-          stmt4' <- newLocal (funS stmt4)
-          return $ STryCatch stmt1' typ2 id3' stmt4'
-      SReturnV -> return SReturnV
-      SEmpty -> return SEmpty
-      Local _ _ -> undefined
-    funE :: Expr -> ScopeM Expr
-    funE x = case x of
-      EVar id -> do
-        id' <- resVar id
-        return $ EVar id'
-      EAccessArr expr1 expr2 -> do
-        expr1' <- funE expr1
-        expr2' <- funE expr2
-        return $ EAccessArr expr1' expr2'
-      EAccessFn expr id exprs -> do
-        expr' <- funE expr
-        exprs' <- mapM funE exprs
-        globalAsCurrent $ do
-          -- We are in global scope now, member (depending on type, which we
-          -- can't determine right now) may exist or not. We still can resolve
-          -- member's name, since it will be declared immediately on top of
-          -- global scope.
-          decFunc id
-          id' <- resFunc id
-          return $ EAccessFn expr' id' exprs'
-      EAccessVar expr id -> do
-        expr' <- funE expr
-        globalAsCurrent $ do
-          -- We are in global scope now, member (depending on type, which we
-          -- can't determine right now) may exist or not. We still can resolve
-          -- member's name, since it will be declared immediately on top of
-          -- global scope.
-          decVar id
-          id' <- resVar id
-          return $ EAccessVar expr' id'
-      EApp id exprs -> do
-        id' <- resFunc id
-        exprs' <- mapM funE exprs
-        return $ EApp id' exprs'
-      ENewArr typ expr -> do
-        typ' <- resType typ
-        expr' <- funE expr
-        return $ ENewArr typ' expr'
-      EUnaryT _ op expr -> do
-        expr' <- funE expr
-        return $ EUnaryT TUnknown op expr'
-      EBinaryT _ op expr1 expr2 -> do
-        expr1' <- funE expr1
-        expr2' <- funE expr2
-        return $ EBinaryT TUnknown op expr1' expr2'
-      _ -> return x -- TODO this is unsafe but good for rapid dev
+      -- function body can hide iteration variable
+      stmt' <- newLocal (funS stmt)
+      return $ SForeach typ' id' expr' stmt'
+  SExpr expr -> do
+    expr' <- funE expr
+    return $ SExpr expr'
+  SThrow expr -> do
+    expr' <- funE expr
+    return $ SThrow expr'
+  STryCatch stmt1 typ2 id3 stmt4 -> do
+    stmt1' <- newLocal (funS stmt1)
+    newLocal $ do
+      decVar id3
+      id3' <- resVar id3
+      -- catch body can hide exception variable
+      stmt4' <- newLocal (funS stmt4)
+      return $ STryCatch stmt1' typ2 id3' stmt4'
+  SReturnV -> return SReturnV
+  SEmpty -> return SEmpty
+  Local _ _ -> undefined
+
+funE :: Expr -> ScopeM Expr
+funE x = case x of
+  EVar id -> do
+    id' <- resVar id
+    return $ EVar id'
+  EAccessArr expr1 expr2 -> do
+    expr1' <- funE expr1
+    expr2' <- funE expr2
+    return $ EAccessArr expr1' expr2'
+  EAccessFn expr id exprs -> do
+    expr' <- funE expr
+    exprs' <- mapM funE exprs
+    globalAsCurrent $ do
+      -- We are in global scope now, member (depending on type, which we
+      -- can't determine right now) may exist or not. We still can resolve
+      -- member's name, since it will be declared immediately on top of
+      -- global scope.
+      decFunc id
+      id' <- resFunc id
+      return $ EAccessFn expr' id' exprs'
+  EAccessVar expr id -> do
+    expr' <- funE expr
+    globalAsCurrent $ do
+      -- We are in global scope now, member (depending on type, which we
+      -- can't determine right now) may exist or not. We still can resolve
+      -- member's name, since it will be declared immediately on top of
+      -- global scope.
+      decVar id
+      id' <- resVar id
+      return $ EAccessVar expr' id'
+  EApp id exprs -> do
+    id' <- resFunc id
+    exprs' <- mapM funE exprs
+    return $ EApp id' exprs'
+  ENewArr typ expr -> do
+    typ' <- resType typ
+    expr' <- funE expr
+    return $ ENewArr typ' expr'
+  EUnaryT _ op expr -> do
+    expr' <- funE expr
+    return $ EUnaryT TUnknown op expr'
+  EBinaryT _ op expr1 expr2 -> do
+    expr1' <- funE expr1
+    expr2' <- funE expr2
+    return $ EBinaryT TUnknown op expr1' expr2'
+  _ -> return x
 

@@ -22,6 +22,12 @@ builtinGlobal = Map.fromList $ map (\(name, typ) -> (FIdent $ Scope.tagSymbol' S
     ("readString", TFunc TString [] []),
     ("error", TFunc TVoid [] [])]
 
+builtinMember typ uid = case (typ, uid) of
+  (TArray _, VIdent "length$0") -> TInt
+  (TString, VIdent "length$0") -> TInt
+  (TString, FIdent "charAt$0") -> TFunc TChar [TInt] []
+  _ -> TUnknown
+
 -- Typing is fully static. We type each null as Object type (which is a
 -- superclass of every non-primitive value).
 -- Note that after scope resolution we can't throw undeclared errors (also for
@@ -67,9 +73,9 @@ typeof :: UIdent -> TypeM Type
 typeof uid = (asks idents >>= lookupM uid) `rethrow` Err.unknownSymbolType uid
 
 typeof' :: Type -> UIdent -> TypeM Type
--- FIXME ugly hack for now
-typeof' (TArray _) (VIdent "length$0") = return TInt
-typeof' typ uid = (asks types >>= lookupM typ >>= lookupM uid) `rethrow` Err.unknownMemberType typ uid
+typeof' typ uid = case builtinMember typ uid of
+  TUnknown -> (asks types >>= lookupM typ >>= lookupM uid) `rethrow` Err.unknownMemberType typ uid
+  typ -> return typ
 
 throws :: Type -> TypeM ()
 throws typ = do
@@ -153,6 +159,7 @@ typeofMFunc typ id = typeof' typ (FIdent $ toStr id)
 staticTypes :: Stmt -> Either String Stmt
 staticTypes = runTypeM typeenv0 . funS
   where
+
     funS :: Stmt -> TypeM Stmt
     funS x = case x of
       Global stmts -> applyAndCompose declare' stmts $ do
@@ -222,6 +229,7 @@ staticTypes = runTypeM typeenv0 . funS
         returns TVoid
         return x
       SEmpty -> return x
+
     funE :: Expr -> TypeM (Expr, Type)
     funE x = case x of
       EVar id -> do

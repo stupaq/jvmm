@@ -96,7 +96,7 @@ instance Error Value where
 defaultValue :: Type -> RuntimeM Value
 defaultValue typ = return $ case typ of
   TInt -> VInt 0
-  TChar -> VChar '\0' -- FIXME this is so fucking dumb I can't handle this
+  TChar -> VChar '\0'
   TBool -> VBool False
   TString -> ref0
   TObject -> ref0
