@@ -10,7 +10,7 @@ import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
 import Syntax.AbsJvmm (Ident(..), Expr(..), Stmt(..), OpBin(..), OpUn(..), Type(..))
 import Semantics.Commons
-import Semantics.Trans (UIdent(..), toStr)
+import Semantics.Trans (UIdent(..), toStr, tempIdent)
 import qualified Semantics.Errors as Err
 import Semantics.Errors (rethrow)
 import qualified Semantics.Scope as Scope
@@ -43,13 +43,14 @@ builtinGlobal = map (\(id, fun) -> (Scope.tagSymbol Scope.tag0 id, \vals -> fun 
   ("readString",
       \[] -> do
         val <- liftIO (getLine :: IO String)
-        return_ $ VString val
+        ref <- alloc (VString val)
+        return_ ref
   ),
   ("error",
       \[] -> throwError $ RError Err.userError
   )]
 
-defaultValue :: Type -> RuntimeM Value
+defaultValue :: Type -> RuntimeM PrimValue
 defaultValue typ = return $ case typ of
   TInt -> VInt 0
   TChar -> VChar '\0'
@@ -67,7 +68,7 @@ type Loc = Integer
 loc0 = 0
 
 data Composite = Composite {
-  fields :: Map.Map Ident Value,
+  fields :: Map.Map Ident PrimValue,
   methods :: Map.Map Ident Stmt
 } deriving (Eq, Ord, Show)
 composite0 = Composite {
@@ -75,14 +76,14 @@ composite0 = Composite {
   methods = Map.empty
 }
 
-type Array = Map.Map Int Value
+type Array = Map.Map Int PrimValue
 
 -- Result of executing a statement
 data Result =
   -- Value returned from a function
-    RValue Value
+    RValue PrimValue
   -- This is an exception, which can be thrown and caught by a user
-  | RException Value
+  | RException PrimValue
   -- This error can be thrown only by an interpreter itself when irrecoverable
   -- error occurs (null pointer exception, zero division etc.)
   | RError String
@@ -91,25 +92,28 @@ data Result =
 instance Error Result where
   strMsg s = RError s
 
--- FIXME split primitives and referenced values
-data Value =
+data PrimValue =
   -- Things stored on stack and passed by value
     VInt Int
   | VChar Char
   | VBool Bool
   | VRef Loc
-  -- Things stored on heap are only referenced
-  | VArray Array
-  | VString String
-  | VObject Composite
   | VVoid
   deriving (Eq, Ord, Show)
 -- Null reference
 ref0 = VRef loc0
 
+data RefValue =
+  -- Things stored on heap are only referenced
+    VArray Array
+  | VString String
+  | VObject Composite
+  | VNothing
+  deriving (Eq, Ord, Show)
+
 -- STATIC ENVIRONMENT --
 ------------------------
-type Func = [Value] -> RuntimeM ()
+type Func = [PrimValue] -> RuntimeM ()
 type FuncEnv = Map.Map Ident Func
 funcenv0 = Map.fromList builtinGlobal
 
@@ -122,17 +126,17 @@ runenv0 = RunEnv {
 
 -- RUNTIME STATE --
 -------------------
-type StackFrame = Map.Map Ident Value
+type StackFrame = Map.Map Ident PrimValue
 stackframe0 = Map.empty
 
 data RunState = RunState {
   stack :: StackFrame,
-  heap :: Map.Map Loc Value
+  heap :: Map.Map Loc RefValue
 }
 runstate0 = RunState {
   stack = stackframe0,
   -- Reference with location == 0 is a null reference
-  heap = Map.singleton loc0 VVoid
+  heap = Map.singleton loc0 VNothing
 }
 
 -- RUNTIME MONAD --
@@ -169,11 +173,11 @@ newFrame action = do
   modify (\state -> state { stack = st })
   return res
 
-getResult :: RuntimeM () -> RuntimeM Value
+getResult :: RuntimeM () -> RuntimeM PrimValue
 getResult action = do
   (action  >> return VVoid) `catchError` handler
   where
-    handler :: Result -> RuntimeM Value
+    handler :: Result -> RuntimeM PrimValue
     handler err = case err of
       RValue val -> return val
       _ -> throwError err
@@ -194,7 +198,7 @@ tryCatch atry id acatch = do
 -- FIXME embed these in all monadic bytecode instructions
 -- If one uses bytecode monadic instruction only the garbage collection is
 -- automatic, these functions should not be invoked directly.
-alloc :: Value -> RuntimeM Value
+alloc :: RefValue -> RuntimeM PrimValue
 alloc val = do
   loc <- gets freeloc
   let ref = VRef loc
@@ -205,19 +209,19 @@ alloc val = do
     freeloc = (+1) . fst . Map.findMax . heap -- FIXME this is imperfect if we have GC
 
 -- This is necessary for reference counting
-dupl :: Value -> RuntimeM Value
+dupl :: PrimValue -> RuntimeM PrimValue
 dupl (VRef 0) = return (VRef 0)
 dupl (VRef loc) = return (VRef loc) -- FIXME
 
 -- Argument can only be a reference (might be a null one)
-free :: Value -> RuntimeM ()
+free :: PrimValue -> RuntimeM ()
 free (VRef loc) = return () -- FIXME
 
-deref :: Value -> RuntimeM Value
+deref :: PrimValue -> RuntimeM RefValue
 deref (VRef 0) = throwError (RError Err.nullPointerException)
 deref (VRef loc) = gets (Maybe.fromJust . Map.lookup loc . heap)
 
-update :: Value -> Value -> RuntimeM ()
+update :: PrimValue -> RefValue -> RuntimeM ()
 update (VRef loc) val = modify (\state -> state { heap = Map.insert loc val (heap state) })
 
 -- JVMM bytecode --
@@ -227,51 +231,51 @@ update (VRef loc) val = modify (\state -> state { heap = Map.insert loc val (hea
 nop :: RuntimeM ()
 nop = return ()
 
-load :: Ident -> RuntimeM Value
+load :: Ident -> RuntimeM PrimValue
 load id = gets (Maybe.fromJust . Map.lookup id . stack)
 
-aload :: Value -> Value -> RuntimeM Value
+aload :: PrimValue -> PrimValue -> RuntimeM PrimValue
 aload ref (VInt ind) = do
   VArray arr <- deref ref
   case Map.lookup ind arr of
     Nothing -> throwError (RError $ Err.indexOutOfBounds ind)
     Just val -> return val
 
-store :: Ident -> Value -> RuntimeM ()
+store :: Ident -> PrimValue -> RuntimeM ()
 store id val = modify $ \state -> state { stack = Map.insert id val (stack state) }
 
-astore :: Value -> Value -> Value -> RuntimeM ()
+astore :: PrimValue -> PrimValue -> PrimValue -> RuntimeM ()
 astore ref (VInt ind) val = do
   VArray arr <- deref ref
   unless (0 <= ind && ind < Map.size arr) $ throwError (RError $ Err.indexOutOfBounds ind)
   update ref (VArray $ Map.insert ind val arr)
 
-invokestatic :: Ident -> [Value] -> RuntimeM Value
-invokestatic id vals = getResult $ asks (Maybe.fromJust . Map.lookup id . funcs) >>= ($ vals)
+invokestatic :: Ident -> [PrimValue] -> RuntimeM ()
+invokestatic id vals = asks (Maybe.fromJust . Map.lookup id . funcs) >>= ($ vals)
 
-throw :: Value -> RuntimeM ()
+throw :: PrimValue -> RuntimeM ()
 throw = throwError . RException
 
-return_ :: Value -> RuntimeM ()
+return_ :: PrimValue -> RuntimeM ()
 return_ = throwError . RValue
 
 return'_ :: RuntimeM ()
 return'_ = return_ VVoid
 
-newarray :: Type -> Value -> RuntimeM Value
+newarray :: Type -> PrimValue -> RuntimeM PrimValue
 newarray typ (VInt len) = do
   val <- defaultValue typ
   alloc $ VArray $ foldl (\m i -> Map.insert i val m) Map.empty [0..(len - 1)]
 
-arraylength :: Value -> RuntimeM Value
+arraylength :: PrimValue -> RuntimeM PrimValue
 arraylength ref = deref ref >>= (\(VArray arr) -> return $ VInt $ Map.size arr)
 
 -- TODO classes and stuff
-getfield :: Ident -> Value -> RuntimeM Value
+getfield :: Ident -> PrimValue -> RuntimeM PrimValue
 getfield (Ident "length$0") ref = do
   arraylength ref
 
-invokevirtual :: Ident -> Value -> [Value] -> RuntimeM ()
+invokevirtual :: Ident -> PrimValue -> [PrimValue] -> RuntimeM ()
 invokevirtual (Ident "charAt$0") ref [VInt ind] = do
   VString str <- deref ref
   unless (0 <= ind && ind < length str) $ throwError (RError $ Err.indexOutOfBounds ind)
@@ -292,19 +296,22 @@ funD (SDefFunc typ id args excepts stmt) =
   where
     fun :: Func
     fun vals = newFrame $ do
-      zipWithM_ (\(SDeclVar _ id) var -> store id var) args vals
+      -- We will once again use temp variables, this time we do not rewrite code
+      -- Note that temporary variables wre present in newFrame, they will
+      -- automatically vanish on function exit
+      zipWithM_ (\(SDeclVar _ id) var -> store (argId id) var) args vals
       -- This is a hack, but it's extremenly refined one, we get garbage
       -- collection and all shit connected with that for free, it's exactly the
       -- same code as in funS (Local ...)
-      funS $ Local args ((map (\(SDeclVar _ id) -> SAssign id (EVar id)) args) ++ [stmt])
+      funS $ Local args ((map (\(SDeclVar _ id) -> SAssign id (EVar (argId id))) args) ++ [stmt])
+        where
+          argId id = tempIdent id "arg"
 funD (SDeclVar typ id) = (>>) (defaultValue typ >>= store id)
 
 -- Statements
 funS :: Stmt -> RuntimeM ()
 funS x = case x of
-  Global stmts -> applyAndCompose funD stmts $ do
-    mret <- invokestatic entrypoint []
-    return_ mret
+  Global stmts -> applyAndCompose funD stmts $ invokestatic entrypoint []
   Local decls stmts -> applyAndCompose funD decls (mapM_ funS stmts)
   SAssign id expr -> do
     val <- funE expr
@@ -335,12 +342,12 @@ funS x = case x of
   STryCatch stmt1 typ id stmt2 -> tryCatch (funS stmt1) id (funS stmt2)
   SReturn expr -> do
     val <- funE expr
-    return_ val -- FIXME
+    return_ val
   SReturnV -> return'_
   SEmpty -> nop
 
 -- Expressions
-funE :: Expr -> RuntimeM Value
+funE :: Expr -> RuntimeM PrimValue
 funE x = case x of
   -- Using JVMM monadic bytecode here might be misleading but during
   -- compilation process we actually turn expression into series of
@@ -365,7 +372,7 @@ funE x = case x of
     getfield id ref
   EApp id exprs -> do
     vals <- mapM funE exprs
-    invokestatic id vals
+    getResult $ invokestatic id vals
   ENewArr typ expr -> do
     val <- funE expr
     newarray typ val
