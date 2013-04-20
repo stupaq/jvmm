@@ -1,5 +1,6 @@
 module Main where
 import System.IO (stderr, hPutStrLn)
+import System.Exit (exitSuccess, exitFailure)
 import System.Environment (getArgs, getProgName)
 import Control.Monad.IO.Class
 import Control.Monad.Reader
@@ -39,10 +40,15 @@ run s =
       printl Error $ "ERROR\n"
       printl Error $ s
       printl Error $ "\n[Tokens]\n\n" ++ (show ts)
+      liftIO $ exitFailure
     Ok tree ->  case scope $ transAbs tree of
-      Left err -> printl Error $ err
+      Left err -> do
+        printl Error $ err
+        liftIO $ exitFailure
       Right tree' -> case staticTypes tree' of
-        Left err -> printl Error $ err
+        Left err -> do
+          printl Error $ err
+          liftIO $ exitFailure
         Right tree'' -> do
           printl Warn $ "OK\n"
           verb <- ask
