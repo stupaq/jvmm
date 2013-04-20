@@ -216,15 +216,6 @@ funS x = case x of
     expr' <- funE expr
     stmt' <- funS stmt
     return $ SWhile expr' stmt'
-  SForeach typ id expr stmt -> do
-    typ' <- resType typ
-    expr' <- funE expr
-    newLocal $ do
-      decVar id
-      id' <- resVar id
-      -- function body can hide iteration variable
-      stmt' <- newLocal (funS stmt)
-      return $ SForeach typ' id' expr' stmt'
   SExpr expr -> do
     expr' <- funE expr
     return $ SExpr expr'

@@ -302,7 +302,6 @@ funS x = case x of
     -- This is a bit hackish, but there is no reason why it won't work and we
     -- want to apply normal chaining rules without too much ifology
     if val then funS $ Local [] [stmt, SWhile expr stmt] else nop
-  -- SYNTACTIC SUGAR: SForeach
   SExpr expr -> funE expr >> nop
   SThrow expr -> do
     ref <- funE expr

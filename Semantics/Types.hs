@@ -204,11 +204,6 @@ staticTypes = runTypeM typeenv0 . funS
         TBool =| etyp
         stmt' <- funS stmt
         return $ SWhile expr' stmt'
-      SForeach typ id expr stmt -> do
-        (expr', etyp) <- funE expr
-        TArray typ =| etyp
-        stmt' <- declare (VIdent $ toStr id) typ $ funS stmt
-        return $ SForeach typ id expr' stmt'
       SExpr expr -> do
         (expr', _) <- funE expr
         return $ SExpr expr'

@@ -78,7 +78,7 @@ SIfElse.    Stmt ::= "if" "(" Expr ")" Stmt "else" Stmt;
 
 SWhile.     Stmt ::= "while" "(" Expr ")" Stmt;
 
-SForeach.   Stmt ::= "for" "(" Type Ident ":" Expr ")" Stmt;
+P_SForeach. Stmt ::= "for" "(" Type Ident ":" Expr ")" Stmt;
 
 SExpr.      Stmt ::= Expr ";";
 

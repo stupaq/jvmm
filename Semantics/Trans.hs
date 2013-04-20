@@ -64,8 +64,7 @@ transAbs = tP_Prog
       SIf expr stmt -> return $ SIf (tExpr expr) (tStmt' stmt)
       SIfElse expr stmt1 stmt2 -> return $ SIfElse (tExpr expr) (tStmt' stmt1) (tStmt' stmt2)
       SWhile expr stmt -> return $ SWhile (tExpr expr) (tStmt' stmt)
-      -- SYNTACTIC SUGAR: SForeach
-      SForeach type' id expr stmt ->
+      P_SForeach type' id expr stmt -> -- SYNTACTIC SUGAR
         let idarr = tempIdent id "arr"
             idlength = tempIdent id "length"
             iditer = tempIdent id "iter"
