@@ -29,12 +29,6 @@ Syntax: $(BNFC) Syntax.diff
 	alex -g $@/LexJvmm.x
 	(cd $@/; $(PDFLATEX) DocJvmm.tex; )
 
-test-grammar: Syntax/TestJvmm
-	@echo CORRECT SYNTAX:
-	@$(foreach f, $(shell ls $(EXGOOD)/*$(JVMM_EXT) $(EXBAD)/*$(JVMM_EXT)), echo -n $(f) " : "; Syntax/TestJvmm $(f) | grep -q "Parse Successful!" && echo OK || { echo FAIL; exit 1; } ;)
-	@echo SYNTAX ERRORS:
-	@$(foreach f, $(shell ls $(EXBAD)/*.txt), echo -n $(f) " : "; Syntax/TestJvmm $(f) | grep -q "Parse Successful!" && { echo FAIL; exit 1; } || echo OK;)
-
 test-examples: all
 	@./run_examples.sh
 

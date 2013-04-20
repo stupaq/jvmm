@@ -423,7 +423,7 @@ funE x = case x of
       Minus -> val1 - val2
       Times -> val1 * val2
       Div -> val1 `div` val2
-      Mod -> val1 `mod` val2
+      Mod -> val1 `rem` val2 -- I'mma hipst'a!
   EBinaryT TBool And expr1 expr2 -> do
     VBool val1 <- funE expr1
     case val1 of

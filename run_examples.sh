@@ -2,6 +2,7 @@
 
 EXT=.jv
 RUN=./interpreter
+PARSE=./Syntax/TestJvmm
 OUT=test.out
 ERR=test.err
 GOOD=./examples_good/
@@ -15,7 +16,16 @@ function neg() {
 }
 
 function check() {
-  status=$?; [[ $status -ne 0 ]] && echo " FAILED" || echo " OK"; return $status;
+  status=$?;
+  if [[ $status -ne 0 ]]; then 
+    tput setaf 1;
+    echo -e "\t[FAILED]";
+  else
+    tput setaf 2;
+    echo -e "\t[OK]";
+  fi
+  tput sgr0;
+  return $status;
 }
 
 function show() {
@@ -42,13 +52,19 @@ function run_example() {
   output="${1%$EXT}.output"
   [[ -f $output ]] || output=/dev/null
 
-  echo -n "TEST $1: "
+  echo -ne "TEST\t$1: "
   $RUN $1 <$input 1>$OUT 2>$ERR && diff $OUT $output &>/dev/null
+}
+
+function parse_example() {
+  echo -ne "PARSE\t$1: "
+  $PARSE $1 | grep -q "Parse Successful!"
 }
 
 if [[ $# -eq 0 ]]; then
   fail=0
   for f in ${GOOD}*$EXT; do
+    parse_example $f; check;
     run_example $f; check || fail=`expr $fail + 1`
   done
   echo "TOTAL FAILED: $fail"
