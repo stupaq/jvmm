@@ -135,6 +135,7 @@ call' = call . functype
     (TString, TString) -> ok
     (TChar, TChar) -> ok
     (TBool, TBool) -> ok
+    (TVoid, TVoid) -> ok
     (TObject, TObject) -> ok
     (TObject, TArray _) -> ok
     (TObject, TUser _) -> ok

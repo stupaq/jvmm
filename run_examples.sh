@@ -19,11 +19,13 @@ function check() {
 }
 
 function show() {
-  echo "OUTPUT:"
-  cat $OUT
   echo "ERROR:"
   cat $ERR
+  echo "OUTPUT:"
+  cat $OUT
   if [[ $# -eq 1 ]]; then
+    echo "EXPECTED:"
+    cat "${1%$EXT}.output"
     echo "CODE:"
     cat $1
   fi

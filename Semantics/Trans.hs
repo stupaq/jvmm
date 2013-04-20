@@ -90,7 +90,11 @@ transAbs = tP_Prog
     tP_Item :: Type -> P_Item -> [Stmt]
     tP_Item typ x = case x of
       P_NoInit id -> [SDeclVar typ id]
-      P_Init id expr -> [SDeclVar typ id, SAssign id (tExpr expr)]
+      -- We use temporary variable with lifetime limited to four statements,
+      -- which cannot hide any user-defined variable
+      P_Init id expr -> -- SYNTACTIC SUGAR
+        let idtmp = tempIdent id "decl"
+        in [SDeclVar typ idtmp, SAssign idtmp (tExpr expr), SDeclVar typ id, SAssign id (EVar idtmp)]
 
     tP_Block :: P_Block -> Stmt
     tP_Block (P_Block stmts) = Local [] $ do

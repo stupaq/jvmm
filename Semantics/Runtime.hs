@@ -426,12 +426,14 @@ funE x = case x of
       Mod -> val1 `mod` val2
   EBinaryT TBool And expr1 expr2 -> do
     VBool val1 <- funE expr1
-    VBool val2 <- funE expr2
-    return $ VBool (val1 && val2)
+    case val1 of
+      True -> funE expr2
+      False -> return $ VBool False
   EBinaryT TBool Or expr1 expr2 -> do
     VBool val1 <- funE expr1
-    VBool val2 <- funE expr2
-    return $ VBool (val1 || val2)
+    case val1 of
+      True -> return $ VBool True
+      False -> funE expr2
   EBinaryT TBool opbin expr1 expr2 -> do
     val1 <- funE expr1
     val2 <- funE expr2
