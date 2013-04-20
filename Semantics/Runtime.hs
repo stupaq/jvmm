@@ -65,6 +65,7 @@ composite0 = Composite {
 
 type Array = Map.Map Int Value
 
+-- FIXME split primitives and referenced values
 data Value =
   -- Things stored on stack and passed by value
     VInt Int
@@ -169,9 +170,9 @@ newFrame action = do
 -- MEMORY MODEL --
 ------------------
 -- FIXME embed these in all monadic bytecode instructions
--- One cannot allocate reference or primitive value on the heap
+-- If one uses bytecode monadic instruction only the garbage collection is
+-- automatic, these functions should not be invoked directly.
 alloc :: Value -> RuntimeM Value
--- FIXME enforce above
 alloc val = do
   loc <- gets freeloc
   let ref = VRef loc
@@ -286,10 +287,19 @@ funS x = case x of
   SIfElse expr stmt1 stmt2 -> do
     VBool val <- funE expr
     if val then funS stmt1 else funS stmt2
+  -- Note that (once again) there is no lexical variable hiding, after one
+  -- iteration of a loop all variables declared inside fall out of the scope,
+  -- which means we can dispose them.
   SWhile expr stmt -> do
-    nop -- FIXME
+    TBool val <- funE expr
+    -- This is a bit hackish, but there is no reason why it won't work and we
+    -- want to apply normal chaining rules without too much ifology
+    if val then Local [] [stmt, SWhile expr stmt] else nop
   SForeach typ id expr stmt -> do
-    nop -- FIXME
+    ref <- funE expr
+    TInt len <- arraylength ref
+    -- Pure evilness, thank God for Haskell's laziness
+    funS $ Local [] $ map (\i -> Local [SDeclVar typ id] [stmt]) [0..(len - 1)]
   SExpr expr -> funE expr >> nop
   SThrow expr -> do
     ref <- funE expr
@@ -326,7 +336,7 @@ funE x = case x of
   EAccessArr expr1 expr2 -> do
     ref <- funE expr1
     ind <- funE expr2
-    aload ref ind -- FIXME
+    aload ref ind
   EAccessFn expr id exprs -> do
     ref <- funE expr
     vals <- mapM funE exprs

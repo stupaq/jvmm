@@ -12,9 +12,10 @@ toStr :: Ident -> String
 toStr (Ident id) = id
 
 -- Performs abstract syntax tree transformations that do not alter semantics
--- and simplify its structure.  After running translate on AST one can assume
+-- and simplify its structure. After running translate on AST one can assume
 -- non-existance of all labels prefixed with "P_" (type separation might be
--- introduced in the future)
+-- introduced in the future). This is always a good place to remove unnecessary
+-- syntactic sugar.
 transAbs :: P_Prog -> Stmt
 transAbs = tP_Prog
   where
