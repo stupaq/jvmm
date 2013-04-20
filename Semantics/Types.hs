@@ -262,7 +262,7 @@ funE x = case x of
     return (EApp id exprs', ret)
   ENewArr typ expr -> do
     -- TODO temporary limitation
-    (typ `elem` [TInt, TBool, TChar]) `instead` (throwError "non-primitive array")
+    (typ `elem` [TInt, TBool, TChar, TString]) `instead` (throwError "non-primitive array")
     (expr', etyp) <- funE expr
     TInt =| etyp
     return (ENewArr typ expr', TArray typ)
