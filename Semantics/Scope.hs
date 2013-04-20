@@ -1,4 +1,4 @@
-module Semantics.Scope (scope) where
+module Semantics.Scope (scope, tagSymbol, tagSymbol', untagSymbol, tag0) where
 import Control.Monad.Identity
 import Control.Monad.Error
 import Control.Monad.Reader
@@ -7,18 +7,39 @@ import Control.Monad.Writer
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.List as List
+import Syntax.AbsJvmm (Ident(..), Type(..), Expr(..), Stmt(..))
+import Semantics.Commons
 import qualified Semantics.Errors as Err
 import Semantics.Errors (rethrow)
-import qualified Semantics.Builtins as Builtins
-import Syntax.AbsJvmm (Ident(..), Type(..), Expr(..), Stmt(..))
 
 -- TODO for scope resolution with classes we need to rewrite all EVar that
 -- refer to object's scope to EAccessVar this (same with methods)
 
--- Each symbol in scoped tree has an identifier which is unique in its scope.
--- In other words, there is no identifier hiding in scoped tree
+-- BUILTINS --
+--------------
+builtinGlobal = Map.fromList $ map (\name -> (Ident name, tag0)) [
+    "printInt",
+    "readInt",
+    "printString",
+    "readString",
+    "error"]
+
+-- SCOPE REPRESENTATION --
+--------------------------
 type Tag = Int
 tag0 = 0 :: Tag
+
+tagSymbol :: Int -> String -> Ident
+tagSymbol tag = Ident . tagSymbol' tag
+
+tagSymbol' :: Int -> String -> String
+tagSymbol' tag name = concat [name, "$", show tag]
+
+untagSymbol :: Ident -> String
+untagSymbol (Ident id) = takeWhile (/= '$') id
+
+-- Each symbol in scoped tree has an identifier which is unique in its scope,
+-- in other words, there is no identifier hiding in scoped tree.
 type Symbols = Map.Map Ident Tag
 symbols0 = Map.empty
 
@@ -29,18 +50,20 @@ data Scope = Scope {
 } deriving (Eq, Show)
 scope0 = Scope {
   vars = symbols0,
-  funcs = foldl declare symbols0 Builtins.names,
+  funcs = builtinGlobal,
   types = symbols0
 }
 
-declare :: Symbols -> Ident -> Symbols
-declare m id = Map.insertWith (\_ -> (+1)) id tag0 m
+newOccurence :: Symbols -> Ident -> Symbols
+newOccurence m id = Map.insertWith (\_ -> (+1)) id tag0 m
 
 resolve :: (Scope -> Symbols) -> Ident -> Scope -> (ErrorT String Identity) Ident
 resolve acc id sc = case Map.lookup id (acc sc) of
   Just tag -> let (Ident name) = id in return $ Ident $ concat [name, "$", show tag]
   Nothing -> throwError $ Err.unboundSymbol id
 
+-- SCOPE MONAD --
+-----------------
 -- The first scope in reader monad is the global one, second is the one from
 -- beginning of a block, scope in state is the current one, we need all of them
 -- for tracking redeclarations in single block and resolving member symbols.
@@ -48,23 +71,24 @@ type ScopeM = StateT Scope (ReaderT (Scope, Scope) (ErrorT String Identity))
 runScopeM :: Scope -> ScopeM a -> Either String (a, Scope)
 runScopeM sc m = runIdentity $ runErrorT $ runReaderT (runStateT m sc) (sc, sc)
 
+resolveLocal, resolveGlobal, resolveParent :: (Scope -> Symbols) -> Ident -> ScopeM Ident
+resolveLocal acc id = (get) >>= (lift . lift . (resolve acc id))
+resolveGlobal acc id = (asks fst) >>= (lift . lift . (resolve acc id))
+resolveParent acc id = (asks snd) >>= (lift . lift . (resolve acc id))
+
 decl :: (Scope -> Symbols) -> Ident -> ScopeM ()
 decl acc id = do
   -- resolve in block's beginning's scope
-  idout <- res' acc id `catchError` (\_ -> return id)
+  idout <- resolveParent acc id `catchError` (\_ -> return id)
   -- resolve in current scope
-  idin <- res acc id `catchError` (\_ -> return id)
+  idin <- resolveLocal acc id `catchError` (\_ -> return id)
   unless (idin == idout) $ throwError $ Err.redeclaredSymbol id
   where
-    res' :: (Scope -> Symbols) -> Ident -> ScopeM Ident
-    res' acc id = (asks snd) >>= (lift . lift . (resolve acc id))
 
-res, glob :: (Scope -> Symbols) -> Ident -> ScopeM Ident
-res acc id = (get) >>= (lift . lift . (resolve acc id))
-glob acc id = (asks fst) >>= (lift . lift . (resolve acc id))
-
+-- SCOPE CHANGING --
+--------------------
 -- Pushes scope 'stack frame', runs action in it, restores 'stack frame'
-local' action = do
+newLocal action = do
   sc <- get
   (glob, _) <- ask
   res <- local (const (glob, sc)) action
@@ -73,7 +97,7 @@ local' action = do
 
 -- Runs action with global scope as current one, note that action will never
 -- modify global scope inside, restores scope after action is executed
-global' action = do
+globalAsCurrent action = do
   sc <- get
   glob <- asks fst
   put glob
@@ -97,7 +121,7 @@ buildGlobal stmts = forM_ stmts $ \stmt -> case stmt of
 
 -- Runs action with current scope as global one, restores scope after action is
 -- executed
-runGlobal action = do
+currentAsGlobal action = do
   sc <- get
   res <- local (const (sc, sc)) action
   put sc
@@ -105,24 +129,24 @@ runGlobal action = do
 
 -- TODO remove when ready
 resVar, resFunc :: Ident -> ScopeM Ident
-resVar = res vars
-resFunc = res funcs
+resVar = resolveLocal vars
+resFunc = resolveLocal funcs
 -- We do not support types hiding (but we want to check for redeclarations and usage of undeclared types)
 resType :: Type -> ScopeM Type
 resType typ = case typ of
-  TUser id -> (res types id) >> (return typ)
+  TUser id -> (resolveLocal types id) >> (return typ)
   _ -> return typ
 
 decVar, decFunc, decType :: Ident -> ScopeM ()
 decVar id = do
   decl vars id
-  modify $ (\sc -> sc { vars = declare (vars sc) id })
+  modify $ (\sc -> sc { vars = newOccurence (vars sc) id })
 decFunc id = do
   decl funcs id
-  modify $ (\sc -> sc { funcs = declare (funcs sc) id })
+  modify $ (\sc -> sc { funcs = newOccurence (funcs sc) id })
 decType id = do
   decl types id
-  modify $ (\sc -> sc { types = declare (types sc) id })
+  modify $ (\sc -> sc { types = newOccurence (types sc) id })
 -- TODO
 
 -- Creates scoped tree from translated AST
@@ -134,9 +158,9 @@ scope stmt = fmap fst $ runScopeM scope0 (funS stmt)
       SDefFunc typ id args excepts stmt -> do
         typ' <- resType typ
         id' <- resFunc id
-        local' $ do
+        newLocal $ do
           args' <- mapM funA args `rethrow` (show x)
-          stmt' <- local' (funS stmt)
+          stmt' <- newLocal (funS stmt)
           return $ SDefFunc typ' id' args' excepts stmt'
       SDeclVar typ id -> do
         typ' <- resType typ
@@ -153,7 +177,7 @@ scope stmt = fmap fst $ runScopeM scope0 (funS stmt)
     funS x = case x of
       Global stmts -> do
         buildGlobal stmts
-        stmts' <- runGlobal $ mapM funND stmts
+        stmts' <- currentAsGlobal $ mapM funND stmts
         return $ Global stmts'
       SDefFunc typ id args excepts stmt -> do
         decFunc id
@@ -162,7 +186,7 @@ scope stmt = fmap fst $ runScopeM scope0 (funS stmt)
         decVar id
         funND $ SDeclVar typ id
       Local _ stmts -> do -- definitions part of Local is empty at this point
-        stmts' <- local' (mapM funS stmts)
+        stmts' <- newLocal (mapM funS stmts)
         let (decls, instrs) = List.partition (\x -> case x of { SDeclVar _ _ -> True; _ -> False }) stmts'
         return $ Local decls instrs
       SAssign id expr -> do
@@ -193,11 +217,11 @@ scope stmt = fmap fst $ runScopeM scope0 (funS stmt)
       SForeach typ id expr stmt -> do
         typ' <- resType typ
         expr' <- funE expr
-        local' $ do
+        newLocal $ do
           decVar id
           id' <- resVar id
           -- function body can hide iteration variable
-          stmt' <- local' (funS stmt)
+          stmt' <- newLocal (funS stmt)
           return $ SForeach typ' id' expr' stmt'
       SExpr expr -> do
         expr' <- funE expr
@@ -206,12 +230,12 @@ scope stmt = fmap fst $ runScopeM scope0 (funS stmt)
         expr' <- funE expr
         return $ SThrow expr'
       STryCatch stmt1 typ2 id3 stmt4 -> do
-        stmt1' <- local' (funS stmt1)
-        local' $ do
+        stmt1' <- newLocal (funS stmt1)
+        newLocal $ do
           decVar id3
           id3' <- resVar id3
           -- catch body can hide exception variable
-          stmt4' <- local' (funS stmt4)
+          stmt4' <- newLocal (funS stmt4)
           return $ STryCatch stmt1' typ2 id3' stmt4'
       SReturnV -> return SReturnV
       SEmpty -> return SEmpty
@@ -228,7 +252,7 @@ scope stmt = fmap fst $ runScopeM scope0 (funS stmt)
       EAccessFn expr id exprs -> do
         expr' <- funE expr
         exprs' <- mapM funE exprs
-        global' $ do
+        globalAsCurrent $ do
           -- We are in global scope now, member (depending on type, which we
           -- can't determine right now) may exist or not. We still can resolve
           -- member's name, since it will be declared immediately on top of
@@ -238,7 +262,7 @@ scope stmt = fmap fst $ runScopeM scope0 (funS stmt)
           return $ EAccessFn expr' id' exprs'
       EAccessVar expr id -> do
         expr' <- funE expr
-        global' $ do
+        globalAsCurrent $ do
           -- We are in global scope now, member (depending on type, which we
           -- can't determine right now) may exist or not. We still can resolve
           -- member's name, since it will be declared immediately on top of

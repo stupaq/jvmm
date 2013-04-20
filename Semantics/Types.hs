@@ -1,4 +1,4 @@
-module Semantics.Types where
+module Semantics.Types (staticTypes) where
 import Control.Monad.Identity
 import Control.Monad.Error
 import Control.Monad.Reader
@@ -6,21 +6,31 @@ import Control.Monad.State
 import Control.Monad.Writer
 import qualified Data.Set as Set
 import qualified Data.Map as Map
-import qualified Semantics.Builtins as Builtins
-import qualified Semantics.Scope as Scope
+import Syntax.AbsJvmm (Ident, Type(..), Expr(..), Stmt(..), OpBin(..), OpUn(..))
+import Semantics.Commons
+import Semantics.Trans (UIdent(..), toStr)
 import qualified Semantics.Errors as Err
 import Semantics.Errors (rethrow)
-import Semantics.Trans (UIdent(..), toStr)
-import Syntax.AbsJvmm (Ident, Type(..), Expr(..), Stmt(..), OpBin(..), OpUn(..))
+import qualified Semantics.Scope as Scope
+
+-- BUILTINS --
+--------------
+builtinGlobal = Map.fromList $ map (\(name, typ) -> (FIdent $ Scope.tagSymbol' Scope.tag0 name, typ)) [
+    ("printInt", TFunc TVoid [TInt] []),
+    ("readInt", TFunc TInt [] []),
+    ("printString", TFunc TVoid [] []),
+    ("readString", TFunc TString [] []),
+    ("error", TFunc TVoid [] [])]
 
 -- Typing is fully static. We type each null as Object type (which is a
 -- superclass of every non-primitive value).
 -- Note that after scope resolution we can't throw undeclared errors (also for
 -- user defined types)
 
--- Typing data
+-- TYPE REPRESENTATION --
+-------------------------
 type Types = Map.Map UIdent Type
-types0 = Builtins.types
+types0 = Map.empty
 
 type MemberTypes = Map.Map Type Types
 membertypes0 = Map.empty
@@ -35,11 +45,15 @@ data TypeEnv = TypeEnv {
 typeenv0 = TypeEnv {
   function = Nothing,
   exceptions = Set.empty,
-  idents = types0,
+  idents = builtinGlobal,
   types = membertypes0
 }
 
--- Domain-specific dialect
+functype :: Stmt -> Type
+functype (SDefFunc typ _ args excepts _) = TFunc typ (map (\(SDeclVar typ _) -> typ) args) excepts
+
+-- TYPE MONAD --
+----------------
 type TypeM = ReaderT TypeEnv (ErrorT String Identity)
 runTypeM :: TypeEnv -> TypeM a -> Either String a
 runTypeM r m = runIdentity $ runErrorT $ runReaderT m r
@@ -72,22 +86,19 @@ returns typ = do
     Just (TFunc rett _ _) -> typ =| rett >> return ()
     Nothing -> throwError Err.danglingReturn
 
--- Declares symbol to be of a given type
+-- Declares symbol to be of a given type locally
 declare :: UIdent -> Type -> TypeM a -> TypeM a
 declare uid typ = local (\env -> env { idents = Map.insert uid typ (idents env) })
 
 -- Note that this does not recurse into function body
 declare' :: Stmt -> TypeM a -> TypeM a
 declare' x = case x of
-  SDefFunc typ id args excepts stmt -> declare (FIdent $ toStr id) (functype x) . sequential declare' args
+  SDefFunc typ id args excepts stmt -> declare (FIdent $ toStr id) (functype x) . applyAndCompose declare' args
   SDeclVar typ id -> declare (VIdent $ toStr id) typ
 
 -- Note that this looks up members but does not recurse in methods body
 define' :: Stmt -> TypeM a -> TypeM a
 define' x = Prelude.id -- TODO syntax for mutually recursive classes
-
-sequential :: (b -> TypeM a -> TypeM a) -> [b] -> TypeM a -> TypeM a
-sequential fun stmts = foldl (\acc stmt -> acc . (fun stmt)) Prelude.id stmts
 
 call :: Type -> TypeM a -> TypeM a
 call typ@(TFunc ret args excepts) = local (\env -> env { function = Just $ typ })
@@ -95,9 +106,8 @@ call typ@(TFunc ret args excepts) = local (\env -> env { function = Just $ typ }
 call' :: Stmt -> TypeM a -> TypeM a
 call' = call . functype
 
-functype :: Stmt -> Type
-functype (SDefFunc typ _ args excepts _) = TFunc typ (map (\(SDeclVar typ _) -> typ) args) excepts
-
+-- TYPE ARITHMETIC --
+---------------------
 -- We say that t <- t1 =||= t2 when t2 and t1 are subtypes of t, and no other
 -- type t' such that t =| t' has this property
 (=||=) :: Type -> Type -> TypeM Type
@@ -129,10 +139,6 @@ functype (SDefFunc typ _ args excepts _) = TFunc typ (map (\(SDeclVar typ _) -> 
 
 (|=) = flip (=|)
 
-infix 3 `instead`
-instead :: Bool -> TypeM a -> TypeM ()
-instead cond m = unless cond $ m >> return ()
-
 -- TODO remove these when ready
 typeofFunc, typeofVar :: Ident -> TypeM Type
 typeofVar id = typeof (VIdent $ toStr id)
@@ -142,19 +148,21 @@ typeofMVar typ id = typeof' typ (VIdent $ toStr id)
 typeofMFunc typ id = typeof' typ (FIdent $ toStr id)
 -- TODO
 
+-- MAIN --
+----------
 staticTypes :: Stmt -> Either String Stmt
 staticTypes = runTypeM typeenv0 . funS
   where
     funS :: Stmt -> TypeM Stmt
     funS x = case x of
-      Global stmts -> sequential declare' stmts $ do
+      Global stmts -> applyAndCompose declare' stmts $ do
         stmts' <- mapM funS stmts
         return $ Global stmts'
-      Local decls stmts -> sequential declare' decls $ do
+      Local decls stmts -> applyAndCompose declare' decls $ do
         stmts' <- mapM funS stmts
         return $ Local decls stmts'
       SDefFunc typ id args excepts stmt -> do
-        stmt' <- declare' x $ call' x $ sequential catches excepts $ funS stmt
+        stmt' <- declare' x $ call' x $ applyAndCompose catches excepts $ funS stmt
         return $ SDefFunc typ id args excepts stmt'
       SDeclVar typ id -> return x
       SAssign id expr -> do

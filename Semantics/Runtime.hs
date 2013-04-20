@@ -1,4 +1,4 @@
-module Semantics.Runtime where
+module Semantics.Runtime (runUnit, runInterpreter) where
 import Control.Monad.Identity
 import Control.Monad.Error
 import Control.Monad.Reader
@@ -8,45 +8,47 @@ import Control.Monad.Cont
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
-import qualified Semantics.Builtins as Builtins
-import qualified Semantics.Scope as Scope
+import Syntax.AbsJvmm (Ident(..), Expr(..), Stmt(..), OpBin(..), OpUn(..), Type(..))
+import Semantics.Commons
+import Semantics.Trans (UIdent(..), toStr)
 import qualified Semantics.Errors as Err
 import Semantics.Errors (rethrow)
-import Semantics.Trans (UIdent(..), toStr)
-import Syntax.AbsJvmm (Ident(..), Expr(..), Stmt(..), OpBin(..), OpUn(..), Type(..))
+import qualified Semantics.Scope as Scope
 
--- FIXME import it from somewhere
+-- Implements runtime semantics and memory model, not that all type magic
+-- should be moved to type cheking phase. Runtime polimorphism (virtual
+-- functions) requires knowledge of runtime type.
+
+-- BUILTINS --
+--------------
+entrypoint = Scope.tagSymbol Scope.tag0 "main"
+
 -- FIXME remove nops
--- TODO this is hackish, fix it when the time comes
-semantics = map (\(id, fun) -> (Ident id, \vals -> fun vals >> nop)) [
-  ("printInt$0",
+builtinGlobal = map (\(id, fun) -> (Scope.tagSymbol Scope.tag0 id, \vals -> fun vals >> nop)) [
+  ("printInt",
       \[VInt val] -> do
         liftIO $ putStrLn (show val)
         return VVoid
   ),
-  ("readInt$0",
+  ("readInt",
       \[] -> do
         val <- liftIO (readLn :: IO Int)
         return $ VInt val
   ),
-  ("printString$0",
+  ("printString",
       \[ref] -> do
         VString str <- deref ref
         liftIO (putStrLn str)
         return VVoid
   ),
-  ("readString$0",
+  ("readString",
       \[] -> do
         val <- liftIO (readLn :: IO String)
         return $ VString val
   ),
-  ("error$0",
+  ("error",
       \[] -> throwError $ VError Err.userError
   )]
-
--- Implements runtime semantics and memory model, not that all type magic
--- should be moved to type cheking phase. Runtime polimorphism (virtual
--- functions) requires knowledge of runtime type.
 
 -- DATA REPRESENTATION --
 -------------------------
@@ -106,7 +108,7 @@ defaultValue typ = return $ case typ of
 ------------------------
 type Func = [Value] -> RuntimeM Result
 type FuncEnv = Map.Map Ident Func
-funcenv0 = Map.fromList semantics
+funcenv0 = Map.fromList builtinGlobal
 
 data RunEnv = RunEnv {
   funcs :: FuncEnv
@@ -275,9 +277,9 @@ funD (SDeclVar typ id) = (>>) (defaultValue typ >>= store id)
 -- Statements
 funS :: Stmt -> RuntimeM Result
 funS x = case x of
-  Global stmts -> compose (map funD stmts) $ do
-    invokestatic Builtins.entrypoint []
-  Local decls stmts -> compose (map funD decls) (mapM_ funS stmts)
+  Global stmts -> applyAndCompose funD stmts $ do
+    invokestatic entrypoint []
+  Local decls stmts -> applyAndCompose funD decls (mapM_ funS stmts)
   SAssign id expr -> do
     val <- funE expr
     store id val
@@ -317,9 +319,6 @@ funS x = case x of
   SReturn expr -> nop -- FIXME
   SReturnV -> nop -- FIXME
   SEmpty -> nop
-  where
-    compose :: [a -> a] -> a -> a
-    compose fs = foldl (flip (.)) Prelude.id fs
 
 -- Expressions
 funE :: Expr -> RuntimeM Value
