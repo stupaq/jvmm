@@ -303,7 +303,10 @@ funD (SDefFunc typ id args excepts stmt) =
       -- This is a hack, but it's extremenly refined one, we get garbage
       -- collection and all shit connected with that for free, it's exactly the
       -- same code as in funS (Local ...)
-      funS $ Local args ((map (\(SDeclVar _ id) -> SAssign id (EVar (argId id))) args) ++ [stmt])
+      funS $ Local args ((map (\(SDeclVar _ id) -> SAssign id (EVar $ argId id)) args) ++ [stmt])
+      -- In case function does not return explicitly we do it here with default value
+      val <- defaultValue typ
+      return_ val
         where
           argId id = tempIdent id "arg"
 funD (SDeclVar typ id) = (>>) (defaultValue typ >>= store id)
@@ -399,6 +402,14 @@ funE x = case x of
       Times -> val1 * val2
       Div -> val1 `div` val2
       Mod -> val1 `mod` val2
+  EBinaryT TBool And expr1 expr2 -> do
+    VBool val1 <- funE expr1
+    VBool val2 <- funE expr2
+    return $ VBool (val1 && val2)
+  EBinaryT TBool Or expr1 expr2 -> do
+    VBool val1 <- funE expr1
+    VBool val2 <- funE expr2
+    return $ VBool (val1 || val2)
   EBinaryT TBool opbin expr1 expr2 -> do
     val1 <- funE expr1
     val2 <- funE expr2
@@ -411,12 +422,4 @@ funE x = case x of
       LEQ -> val1 <= val2
       GTH -> val1 > val2
       GEQ -> val1 >= val2
-  EBinaryT TBool And expr1 expr2 -> do
-    VBool val1 <- funE expr1
-    VBool val2 <- funE expr2
-    return $ VBool (val1 && val2)
-  EBinaryT TBool Or expr1 expr2 -> do
-    VBool val1 <- funE expr1
-    VBool val2 <- funE expr2
-    return $ VBool (val1 || val2)
 
