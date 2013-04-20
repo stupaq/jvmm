@@ -1,4 +1,5 @@
-module Semantics.Runtime (runUnit, runInterpreter) where
+module Semantics.Runtime (runUnit) where
+import qualified System.IO as IO
 import Control.Monad.Identity
 import Control.Monad.Error
 import Control.Monad.Reader
@@ -149,19 +150,6 @@ type RuntimeM = ReaderT RunEnv (ErrorT Result (StateT RunState IO))
 runRuntimeM :: RunEnv -> RunState -> RuntimeM a -> IO (Either Result a, RunState)
 runRuntimeM r s m = runStateT (runErrorT (runReaderT m r)) s
 
-runInterpreter :: IO ((Either Result (), RunState)) -> IO ()
-runInterpreter = (=<<) $ \(x, state) -> case x of
-    Left (RError err) -> ioError $ userError (show err)
-    Left (RException err) -> ioError $ userError (show err)
-    Left (RValue res) -> do
-      putStrLn $ "Exit code:\t" ++ (show res)
-      putStrLn $ "Heap stats:\n\tallocated_count:\t" ++ (show $ Map.size (heap state Map.\\ heap runstate0))
-      return ()
-
--- Executes _int main()_ function in given translation unit
-runUnit :: Stmt -> IO ((Either Result (), RunState))
-runUnit = runRuntimeM runenv0 runstate0 . funS
-
 -- Executes given action in a new 'stack frame', restores old one afterwards
 -- The assumption that there is no syntactic hiding is EXTREMELY strong and
 -- important, we can push new stack frame only when we CALL a function
@@ -284,6 +272,28 @@ invokevirtual (Ident "charAt$0") ref [VInt ind] = do
 
 -- DENOTATIONAL SEMANTICS --
 ----------------------------
+println :: String -> IO ()
+println = IO.hPutStrLn IO.stderr
+
+runUnit :: Bool -> Stmt -> IO Int
+runUnit debug stmt = do
+  (x, state) <- runtime stmt
+  case x of
+    Left (RError err) -> ioError $ userError err
+    Left (RException err) -> ioError $ userError (Err.uncaughtTopLevel err)
+    Left (RValue res) -> do
+      when debug $ do
+        println $ "+----------------------------------"
+        println $ "| Main returned:\t" ++ (show res)
+        println $ "| Heap stats:\n|\tallocated_count:\t" ++ (show $ Map.size (heap state Map.\\ heap runstate0))
+        println $ "+----------------------------------"
+      -- Main function shoul have integere return value
+      let VInt ret = res
+      return ret
+
+-- Executes _int main()_ function in given translation unit
+runtime :: Stmt -> IO ((Either Result (), RunState))
+runtime = runRuntimeM runenv0 runstate0 . funS
 
 -- Declarations
 funD :: Stmt -> RuntimeM a -> RuntimeM a

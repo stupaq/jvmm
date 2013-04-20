@@ -32,3 +32,4 @@ indexOutOfBounds ind = "index out of bounds: " ++ (show ind)
 
 -- Terminal error issued by a user
 userError = "error called"
+uncaughtTopLevel obj = "uncaught top level exception: " ++ (show obj)

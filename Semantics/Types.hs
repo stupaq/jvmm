@@ -158,139 +158,138 @@ typeofMFunc typ id = typeof' typ (FIdent $ toStr id)
 ----------
 staticTypes :: Stmt -> Either String Stmt
 staticTypes = runTypeM typeenv0 . funS
-  where
 
-    funS :: Stmt -> TypeM Stmt
-    funS x = case x of
-      Global stmts -> applyAndCompose declare' stmts $ do
-        stmts' <- mapM funS stmts
-        return $ Global stmts'
-      Local decls stmts -> applyAndCompose declare' decls $ do
-        stmts' <- mapM funS stmts
-        return $ Local decls stmts'
-      SDefFunc typ id args excepts stmt -> do
-        stmt' <- declare' x $ call' x $ applyAndCompose catches excepts $ funS stmt
-        return $ SDefFunc typ id args excepts stmt'
-      SDeclVar typ id -> return x
-      SAssign id expr -> do
-        (expr', etyp) <- funE expr
-        vtyp <- typeofVar id
-        vtyp =| etyp
-        return $ SAssign id expr'
-      SAssignArr id expr1 expr2 -> do
-        (expr1', etyp1) <- funE expr1
-        (expr2', etyp2) <- funE expr2
-        TInt =| etyp1 `rethrow` Err.indexType
-        atyp <- typeofVar id
-        atyp =| TArray etyp2
-        return $ SAssignArr id expr1' expr2'
-      SReturn expr -> do
-        (expr', etyp) <- funE expr
-        returns etyp
-        return $ SReturn expr'
-      SIf expr stmt -> do
-        (expr', etyp) <- funE expr
-        TBool =| etyp
-        stmt' <- funS stmt
-        return $ SIf expr' stmt'
-      SIfElse expr stmt1 stmt2 -> do
-        (expr', etyp) <- funE expr
-        TBool =| etyp
-        stmt1' <- funS stmt1
-        stmt2' <- funS stmt2
-        return $ SIfElse expr' stmt1' stmt2'
-      SWhile expr stmt -> do
-        (expr', etyp) <- funE expr
-        TBool =| etyp
-        stmt' <- funS stmt
-        return $ SWhile expr' stmt'
-      SExpr expr -> do
-        (expr', _) <- funE expr
-        return $ SExpr expr'
-      SThrow expr -> do
-        (expr', etyp) <- funE expr
-        -- Temporary limit
-        TString =| etyp
-        throws TString
-        return $ SThrow expr'
-      STryCatch stmt1 typ id stmt2 -> do
-        -- TODO temporary limitation
-        (typ `elem` [TString]) `instead` (throwError "bad exception type")
-        stmt2' <- declare (VIdent $ toStr id) typ (funS stmt2)
-        catches typ $ do
-          stmt1' <- funS stmt1
-          return $ STryCatch stmt1' typ id stmt2'
-      SReturnV -> do
-        returns TVoid
-        return x
-      SEmpty -> return x
+funS :: Stmt -> TypeM Stmt
+funS x = case x of
+  Global stmts -> applyAndCompose declare' stmts $ do
+    stmts' <- mapM funS stmts
+    return $ Global stmts'
+  Local decls stmts -> applyAndCompose declare' decls $ do
+    stmts' <- mapM funS stmts
+    return $ Local decls stmts'
+  SDefFunc typ id args excepts stmt -> do
+    stmt' <- declare' x $ call' x $ applyAndCompose catches excepts $ funS stmt
+    return $ SDefFunc typ id args excepts stmt'
+  SDeclVar typ id -> return x
+  SAssign id expr -> do
+    (expr', etyp) <- funE expr
+    vtyp <- typeofVar id
+    vtyp =| etyp
+    return $ SAssign id expr'
+  SAssignArr id expr1 expr2 -> do
+    (expr1', etyp1) <- funE expr1
+    (expr2', etyp2) <- funE expr2
+    TInt =| etyp1 `rethrow` Err.indexType
+    atyp <- typeofVar id
+    atyp =| TArray etyp2
+    return $ SAssignArr id expr1' expr2'
+  SReturn expr -> do
+    (expr', etyp) <- funE expr
+    returns etyp
+    return $ SReturn expr'
+  SIf expr stmt -> do
+    (expr', etyp) <- funE expr
+    TBool =| etyp
+    stmt' <- funS stmt
+    return $ SIf expr' stmt'
+  SIfElse expr stmt1 stmt2 -> do
+    (expr', etyp) <- funE expr
+    TBool =| etyp
+    stmt1' <- funS stmt1
+    stmt2' <- funS stmt2
+    return $ SIfElse expr' stmt1' stmt2'
+  SWhile expr stmt -> do
+    (expr', etyp) <- funE expr
+    TBool =| etyp
+    stmt' <- funS stmt
+    return $ SWhile expr' stmt'
+  SExpr expr -> do
+    (expr', _) <- funE expr
+    return $ SExpr expr'
+  SThrow expr -> do
+    (expr', etyp) <- funE expr
+    -- Temporary limit
+    TString =| etyp
+    throws TString
+    return $ SThrow expr'
+  STryCatch stmt1 typ id stmt2 -> do
+    -- TODO temporary limitation
+    (typ `elem` [TString]) `instead` (throwError "bad exception type")
+    stmt2' <- declare (VIdent $ toStr id) typ (funS stmt2)
+    catches typ $ do
+      stmt1' <- funS stmt1
+      return $ STryCatch stmt1' typ id stmt2'
+  SReturnV -> do
+    returns TVoid
+    return x
+  SEmpty -> return x
 
-    funE :: Expr -> TypeM (Expr, Type)
-    funE x = case x of
-      EVar id -> do
-        typ <- typeofVar id
-        return (x, typ)
-      ELitInt n -> return (x, TInt)
-      ELitTrue -> return (x, TBool)
-      ELitFalse -> return (x, TBool)
-      ELitString str -> return (x, TString)
-      ELitChar c -> return (x, TChar)
-      ENull -> return (x, TObject)
-      EAccessArr expr1 expr2 -> do
-        (expr1', etyp1) <- funE expr1
-        (expr2', etyp2) <- funE expr2
-        TInt =| etyp2 `rethrow` Err.indexType
-        case etyp1 of
-          TArray typ -> return (EAccessArr expr1' expr2', typ)
-          _ -> throwError Err.subscriptNonArray
-      EAccessFn expr id exprs -> do
-        (expr', etyp) <- funE expr
-        (exprs', etypes) <- mapAndUnzipM funE exprs
-        TFunc ret args excepts <- typeofMFunc etyp id
-        forM excepts throws
-        zipWithM_ (=|) args etypes `rethrow` Err.argumentsNotMatch args etypes
-        return (EAccessFn expr' id exprs', ret)
-      EAccessVar expr id -> do
-        (expr', etyp) <- funE expr
-        typ <- typeofMVar etyp id
-        return (EAccessVar expr' id, typ)
-      EApp id exprs -> do
-        (exprs', etypes) <- mapAndUnzipM funE exprs
-        TFunc ret args excepts <- typeofFunc id
-        forM excepts throws
-        zipWithM_ (=|) args etypes `rethrow` Err.argumentsNotMatch args etypes
-        return (EApp id exprs', ret)
-      ENewArr typ expr -> do
-        -- TODO temporary limitation
-        (typ `elem` [TInt, TBool, TChar]) `instead` (throwError "non-primitive array")
-        (expr', etyp) <- funE expr
-        TInt =| etyp
-        return (ENewArr typ expr', TArray typ)
-      EUnaryT _ op expr -> do
-        (expr', etyp) <- funE expr
-        case op of
-          Not -> TBool =| etyp
-          Neg -> TInt =| etyp
-        return (EUnaryT etyp op expr', etyp)
-      EBinaryT _ opbin expr1 expr2 -> do
-        (expr1', etyp1) <- funE expr1
-        (expr2', etyp2) <- funE expr2
-        typ <- etyp1 =||= etyp2
-        rett <- case opbin of
-          Plus -> (TInt =| typ) `mplus` (TString =| typ) `rethrow` Err.badArithType
-          And -> TBool =| typ
-          Or -> TBool =| typ
-          -- For primitives we have natural ==, for others we compare 'adresses'
-          EQU -> return TBool
-          NEQ -> return TBool
-          -- TInt-only operations: Times Div Mod Minus LTH LEQ GTH GEQ
-          _ -> do
-            TInt =| typ
-            case opbin of
-              LTH -> return TBool
-              LEQ -> return TBool
-              GTH -> return TBool
-              GEQ -> return TBool
-              _ -> return TInt
-        return (EBinaryT rett opbin expr1' expr2', rett)
+funE :: Expr -> TypeM (Expr, Type)
+funE x = case x of
+  EVar id -> do
+    typ <- typeofVar id
+    return (x, typ)
+  ELitInt n -> return (x, TInt)
+  ELitTrue -> return (x, TBool)
+  ELitFalse -> return (x, TBool)
+  ELitString str -> return (x, TString)
+  ELitChar c -> return (x, TChar)
+  ENull -> return (x, TObject)
+  EAccessArr expr1 expr2 -> do
+    (expr1', etyp1) <- funE expr1
+    (expr2', etyp2) <- funE expr2
+    TInt =| etyp2 `rethrow` Err.indexType
+    case etyp1 of
+      TArray typ -> return (EAccessArr expr1' expr2', typ)
+      _ -> throwError Err.subscriptNonArray
+  EAccessFn expr id exprs -> do
+    (expr', etyp) <- funE expr
+    (exprs', etypes) <- mapAndUnzipM funE exprs
+    TFunc ret args excepts <- typeofMFunc etyp id
+    forM excepts throws
+    zipWithM_ (=|) args etypes `rethrow` Err.argumentsNotMatch args etypes
+    return (EAccessFn expr' id exprs', ret)
+  EAccessVar expr id -> do
+    (expr', etyp) <- funE expr
+    typ <- typeofMVar etyp id
+    return (EAccessVar expr' id, typ)
+  EApp id exprs -> do
+    (exprs', etypes) <- mapAndUnzipM funE exprs
+    TFunc ret args excepts <- typeofFunc id
+    forM excepts throws
+    zipWithM_ (=|) args etypes `rethrow` Err.argumentsNotMatch args etypes
+    return (EApp id exprs', ret)
+  ENewArr typ expr -> do
+    -- TODO temporary limitation
+    (typ `elem` [TInt, TBool, TChar]) `instead` (throwError "non-primitive array")
+    (expr', etyp) <- funE expr
+    TInt =| etyp
+    return (ENewArr typ expr', TArray typ)
+  EUnaryT _ op expr -> do
+    (expr', etyp) <- funE expr
+    case op of
+      Not -> TBool =| etyp
+      Neg -> TInt =| etyp
+    return (EUnaryT etyp op expr', etyp)
+  EBinaryT _ opbin expr1 expr2 -> do
+    (expr1', etyp1) <- funE expr1
+    (expr2', etyp2) <- funE expr2
+    typ <- etyp1 =||= etyp2
+    rett <- case opbin of
+      Plus -> (TInt =| typ) `mplus` (TString =| typ) `rethrow` Err.badArithType
+      And -> TBool =| typ
+      Or -> TBool =| typ
+      -- For primitives we have natural ==, for others we compare 'adresses'
+      EQU -> return TBool
+      NEQ -> return TBool
+      -- TInt-only operations: Times Div Mod Minus LTH LEQ GTH GEQ
+      _ -> do
+        TInt =| typ
+        case opbin of
+          LTH -> return TBool
+          LEQ -> return TBool
+          GTH -> return TBool
+          GEQ -> return TBool
+          _ -> return TInt
+    return (EBinaryT rett opbin expr1' expr2', rett)
 

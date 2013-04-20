@@ -47,7 +47,7 @@ int main() throws String {
   printInt(a);
   a = 0;
   printInt(a);
-  String bla = readString();
+  String bla = "bla";
   printString("Read: " + bla);
   return 0;
   printString("This shouldn't come up.");
