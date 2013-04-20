@@ -11,6 +11,12 @@ data UIdent =
 toStr :: Ident -> String
 toStr (Ident id) = id
 
+-- Creates variable-associated identifier from given one (for temporary and
+-- iteration variables). Only variable-associated identifiers drived from the
+-- same variable and with the same context will be hidden by the created one.
+tempIdent :: Ident -> String -> Ident
+tempIdent (Ident id) ctx = Ident $ id ++ "#" ++ ctx
+
 -- Performs abstract syntax tree transformations that do not alter semantics
 -- and simplify its structure. After running translate on AST one can assume
 -- non-existance of all labels prefixed with "P_" (type separation might be
@@ -58,7 +64,19 @@ transAbs = tP_Prog
       SIf expr stmt -> return $ SIf (tExpr expr) (tStmt' stmt)
       SIfElse expr stmt1 stmt2 -> return $ SIfElse (tExpr expr) (tStmt' stmt1) (tStmt' stmt2)
       SWhile expr stmt -> return $ SWhile (tExpr expr) (tStmt' stmt)
-      SForeach type' id expr stmt -> return $ SForeach type' id (tExpr expr) (tStmt' stmt)
+      -- SYNTACTIC SUGAR: SForeach
+      SForeach type' id expr stmt ->
+        let idarr = tempIdent id "arr"
+            idlength = tempIdent id "length"
+            iditer = tempIdent id "iter"
+        in return $ tP_Block $ P_Block $ [
+          P_SDeclVar (TArray TInt) [P_Init idarr expr],
+          -- FIXME builtin member should be take from somewhere
+          P_SDeclVar TInt [P_Init idlength (EAccessVar (EVar idarr) (Ident "length")), P_Init iditer (ELitInt 0)],
+          SWhile (P_ERel (EVar iditer) LTH (EVar idlength)) $ P_SBlock $ P_Block [
+            P_SDeclVar type' [P_Init id (EAccessArr (EVar idarr) (EVar iditer))],
+            stmt,
+            P_SPostInc iditer]]
       SExpr expr  -> return $ SExpr $ tExpr expr
       SThrow expr -> return $ SThrow $ tExpr expr
       STryCatch stmt1 type'2 id3 stmt4 -> return $ STryCatch (tStmt' stmt1) type'2 id3 (tStmt' stmt4)

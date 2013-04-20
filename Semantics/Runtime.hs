@@ -240,10 +240,15 @@ arraylength ref = deref ref >>= (\(VArray arr) -> return $ VInt $ Map.size arr)
 
 -- TODO classes and stuff
 getfield :: Ident -> Value -> RuntimeM Value
-getfield = undefined
+getfield (Ident "length$0") ref = do
+  arraylength ref
 
 invokevirtual :: Ident -> Value -> [Value] -> RuntimeM Value
-invokevirtual = undefined
+-- FIXME ugly hack for now
+invokevirtual (Ident "charAt$0") ref [VInt ind] = do
+  VString str <- deref ref
+  unless (0 <= ind && ind < length str) $ throwError (VError $ Err.indexOutOfBounds ind)
+  return $ VChar $ head $ drop ind str
 -- TODO
 
 -- DENOTATIONAL SEMANTICS --
@@ -291,15 +296,11 @@ funS x = case x of
   -- iteration of a loop all variables declared inside fall out of the scope,
   -- which means we can dispose them.
   SWhile expr stmt -> do
-    TBool val <- funE expr
+    VBool val <- funE expr
     -- This is a bit hackish, but there is no reason why it won't work and we
     -- want to apply normal chaining rules without too much ifology
-    if val then Local [] [stmt, SWhile expr stmt] else nop
-  SForeach typ id expr stmt -> do
-    ref <- funE expr
-    TInt len <- arraylength ref
-    -- Pure evilness, thank God for Haskell's laziness
-    funS $ Local [] $ map (\i -> Local [SDeclVar typ id] [stmt]) [0..(len - 1)]
+    if val then funS $ Local [] [stmt, SWhile expr stmt] else nop
+  -- SYNTACTIC SUGAR: SForeach
   SExpr expr -> funE expr >> nop
   SThrow expr -> do
     ref <- funE expr

@@ -53,6 +53,8 @@ typeof :: UIdent -> TypeM Type
 typeof uid = (asks idents >>= lookupM uid) `rethrow` Err.unknownSymbolType uid
 
 typeof' :: Type -> UIdent -> TypeM Type
+-- FIXME ugly hack for now
+typeof' (TArray _) (VIdent "length$0") = return TInt
 typeof' typ uid = (asks types >>= lookupM typ >>= lookupM uid) `rethrow` Err.unknownMemberType typ uid
 
 throws :: Type -> TypeM ()
