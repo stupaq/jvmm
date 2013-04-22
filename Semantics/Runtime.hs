@@ -130,14 +130,17 @@ runenv0 = RunEnv {
 type StackFrame = Map.Map Ident PrimValue
 stackframe0 = Map.empty
 
+type Heap = Map.Map Loc RefValue
+heap0 = Map.singleton loc0 VNothing
+
 data RunState = RunState {
   stack :: StackFrame,
-  heap :: Map.Map Loc RefValue
+  heap :: Heap
 }
 runstate0 = RunState {
   stack = stackframe0,
   -- Reference with location == 0 is a null reference
-  heap = Map.singleton loc0 VNothing
+  heap = heap0
 }
 
 -- RUNTIME MONAD --
@@ -160,6 +163,13 @@ newFrame action = do
   tryFinally action $
     -- Pop stack frame no matter what happened (exception/error/return)
     modify (\state -> state { stack = st })
+-- When it comes to GC -- note that we cannot really benefit from running gc
+-- when exiting from functions (with exception or result). In a good scenario
+-- we will immediately pas many stack frames and invoking GC on each one is a
+-- total waste of time (we cannot free objects referenced higher in the stack).
+-- It is much better to wait for seqential processing statements as returning
+-- from a function does not utilize more memory than we were using inside of a
+-- function body.
 
 getResult :: RuntimeM () -> RuntimeM PrimValue
 getResult action = do
@@ -189,6 +199,74 @@ tryFinally atry afinally = do
     handler err = do
       afinally
       throwError err
+
+-- We should look for references in these places:
+-- - stack variables
+-- - thrown exceptions
+-- - returned values
+-- - referenced objects (fixpoint)
+-- ACHTUNG this requires catching all returns and exceptions (to obtain
+-- references) and rethrowing them after GC phase with appropriately changed
+-- references
+-- Note that with given signature there is no other place whete one can 'hide
+-- information', everything is stored in one of the following: exception,
+-- result, runstate, environment
+
+-- Allows running GC in between statements, note that we should be sure that
+-- all pinned objects are referred from the stack in runtime state,
+-- might silently refuse to make a gc phase if the heap is small enough
+runGC :: RuntimeM ()
+runGC = do
+  st <- gets stack
+  -- TODO check heap size and run GC if exceeded some threshold set in RunEnv
+  hp <- gets heap
+  modify (\state -> state { heap = compactHeap (findRefs st) hp })
+
+-- Extracts referred locations from stack variables, does not recurse into
+-- objects in any way
+findRefs :: StackFrame -> Set.Set Loc
+findRefs = Set.fromList . map mp . filter flt . Map.elems
+  where
+    flt :: PrimValue -> Bool
+    flt (VRef _) = True
+    flt _ = False
+    mp :: PrimValue -> Loc
+    mp (VRef loc) = loc
+
+-- Returns garbage-collected heap, each object under location present in
+-- provided set is present in the new heap (if it was in the old one)
+-- In current implementation locations (addresses) does not change
+-- FIXME compact addresses
+compactHeap :: Set.Set Loc -> Heap -> Heap
+compactHeap pinned heap =
+  -- Iterate until no change in grey and black sets (<=> grey empty)
+  let left = snd $ fun (Set.insert loc0 pinned, Set.empty)
+  in Map.filterWithKey (\k _ -> Set.member k left) heap
+  where
+    fun :: (Set.Set Loc, Set.Set Loc) -> (Set.Set Loc, Set.Set Loc)
+    fun (grey, black)
+      | grey == Set.empty = (grey, black)
+      | otherwise =
+        let (loc, grey') = Set.deleteFindMin grey
+            black' = Set.insert loc black
+            grey''' = case Map.lookup loc heap of
+              Nothing -> error $ Err.danglingReference loc
+              Just (VArray arr) -> Map.foldl extract grey' arr
+              Just (VObject _) -> error "object" -- TODO add to grey'
+              -- We do not recurse (add to grey) in all other cases
+              _ -> grey'
+              where
+                extract :: Set.Set Loc -> PrimValue -> Set.Set Loc
+                extract grey'' elem = case elem of
+                  VRef loc -> case Set.member loc black' of
+                    -- Do not search again if already searched
+                    True -> grey''
+                    False -> Set.insert loc grey''
+                  _ -> grey''
+        in fun (grey''', black')
+
+dumpHeap :: RuntimeM ()
+dumpHeap = gets heap >>= liftIO . putStrLn . show
 
 -- MEMORY MODEL --
 ------------------
@@ -341,6 +419,7 @@ funS x = case x of
   SAssign id expr -> do
     val <- funE expr
     store id val
+    runGC -- FIXME find more generic place
   SAssignArr id expr1 expr2 -> do
     ref <- load id
     ind <- funE expr1

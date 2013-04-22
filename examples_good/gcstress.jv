@@ -1,0 +1,13 @@
+int main() {
+  int i = 0, n = 1000000000;
+  while (i < n) {
+    String str = getstr();
+    i++;
+  }
+  printInt(n);
+  printString("OK");
+}
+
+String getstr() {
+  return "Some not so short string, which might cause problems to non-gc interpreters, when repeated many times.";
+}
