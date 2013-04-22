@@ -1,0 +1,16 @@
+int main() {
+  printInt(7 - 3 - 1 - 11 * 13);
+  printInt(17 - 3 - 1 - - 13);
+  printInt(- 1 - - 13);
+  printBool(! ! true);
+  printBool(! ! ! false);
+  printBool(false || ! ! (3 != 4));
+}
+
+void printBool(boolean b) {
+  if (b) {
+    printString("true");
+  } else {
+    printString("false");
+  }
+}

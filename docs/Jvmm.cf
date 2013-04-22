@@ -4,6 +4,8 @@
 -- There are 2 shift/reduce conflicts
 -- SIf. | SIfElse. -- tested in examples_good/conflict001.jv
 -- SAssignArr. | EAccessArr. -- tested in examples_good/conflict002.jv
+-- There is 1 reduce/reduce conflict
+-- TUser. | any other type label -- tested everywhere
 -- Labels prefixed with "Pn_" are prunned in subsequent phases
 -- Note the ugly trick with coercion 0 for OpBin, this makes 2 (+) 3 * 4 a
 -- parse error. Without this trick one can promote binary operator 2 (+) 3 * 4 =
@@ -118,20 +120,6 @@ internal    EBinaryT. Expr ::= Type "=| (" OpBin ") (" Expr ") (" Expr ")";
 
 internal    EUnaryT. Expr ::= Type "=| (" OpUn ") (" Expr ")";
 
-P_ENeg.     Expr5 ::= "-" Expr6;
-
-P_ENot.     Expr5 ::= "!" Expr6;
-
-P_EMul.     Expr4 ::= Expr4 OpBin4 Expr5 ;
-
-P_EAdd.     Expr3 ::= Expr3 OpBin3 Expr4 ;
-
-P_ERel.     Expr2 ::= Expr2 OpBin2 Expr3 ;
-
-P_EAnd.     Expr1 ::= Expr2 OpBin1 Expr1 ;
-
-P_EOr.      Expr ::= Expr1 OpBin Expr ;
-
 EVar.       Expr8 ::= Ident;
 
 ELitInt.    Expr8 ::= Integer;
@@ -155,6 +143,20 @@ EAccessVar. Expr7 ::= Expr8 "." Ident;
 EApp.       Expr7 ::= Ident "(" [Expr] ")";
 
 ENewArr.    Expr6 ::= "new" Type "[" Expr "]";
+
+P_ENeg.     Expr5 ::= "-" Expr5;
+
+P_ENot.     Expr5 ::= "!" Expr5;
+
+P_EMul.     Expr4 ::= Expr4 OpBin4 Expr5 ;
+
+P_EAdd.     Expr3 ::= Expr3 OpBin3 Expr4 ;
+
+P_ERel.     Expr2 ::= Expr2 OpBin2 Expr3 ;
+
+P_EAnd.     Expr1 ::= Expr2 OpBin1 Expr1 ;
+
+P_EOr.      Expr ::= Expr1 OpBin Expr ;
 
 coercions Expr 8;
 
