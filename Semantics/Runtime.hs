@@ -139,15 +139,18 @@ runenv0 = RunEnv {
 type StackFrame = Map.Map Ident PrimValue
 stackframe0 = Map.empty
 
+mapHead :: (a -> a) -> [a] -> [a]
+mapHead fun (x:xs) = (fun x:xs)
+
 type Heap = Map.Map Loc RefValue
 heap0 = Map.singleton loc0 VNothing
 
 data RunState = RunState {
-  stack :: StackFrame,
+  stack :: [StackFrame],
   heap :: Heap
 }
 runstate0 = RunState {
-  stack = stackframe0,
+  stack = [stackframe0],
   -- Reference with location == 0 is a null reference
   heap = heap0
 }
@@ -182,10 +185,13 @@ fromJust ctx (Just val) = val
 -- ACHTUNG once again, we do NOT use newFrame outside of a function call!
 newFrame :: RuntimeM a -> RuntimeM a
 newFrame action = do
-  st <- gets stack
+  -- Note that all functions have global scope as their base and cannot access
+  -- scope of their callers
+  modify (\state -> state { stack = [stackframe0] ++ stack state })
   tryFinally action $
-    -- Pop stack frame no matter what happened (exception/error/return)
-    modify (\state -> state { stack = st })
+    -- Pop stack frame no matter what happened (exception/error/return),
+    -- note that the stack might be modified due to GC runs
+    modify (\state -> state { stack = tail $ stack state })
 -- When it comes to GC -- note that we cannot really benefit from running gc
 -- when exiting from functions (with exception or result). In a good scenario
 -- we will immediately pas many stack frames and invoking GC on each one is a
@@ -252,8 +258,8 @@ doGCNow gcconf heap = Map.size heap > gcthresh gcconf
 
 -- Extracts referred locations from stack variables, does not recurse into
 -- objects in any way
-findRefs :: StackFrame -> Set.Set Loc
-findRefs = Set.fromList . map mp . filter flt . Map.elems
+findRefs :: [StackFrame] -> Set.Set Loc
+findRefs = Set.unions . map (Set.fromList . map mp . filter flt . Map.elems)
   where
     flt :: PrimValue -> Bool
     flt (VRef _) = True
@@ -319,7 +325,7 @@ nop :: RuntimeM ()
 nop = return ()
 
 load :: Ident -> RuntimeM PrimValue
-load id = gets (fromJust id . Map.lookup id . stack)
+load id = gets (fromJust id . Map.lookup id . head . stack)
 
 aload :: PrimValue -> PrimValue -> RuntimeM PrimValue
 aload ref (VInt ind) = do
@@ -330,7 +336,7 @@ aload ref (VInt ind) = do
 
 store :: Ident -> PrimValue -> RuntimeM ()
 store id val = do
-  modify $ \state -> state { stack = Map.insert id val (stack state) }
+  modify $ \state -> state { stack = mapHead (Map.insert id val) (stack state) }
   runGC --TODO move to some more sensible place
 
 astore :: PrimValue -> PrimValue -> PrimValue -> RuntimeM ()
