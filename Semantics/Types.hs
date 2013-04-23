@@ -15,6 +15,8 @@ import qualified Semantics.Scope as Scope
 
 -- BUILTINS --
 --------------
+entrypoint = (Scope.tagSymbol Scope.tag0 "main", TFunc TInt [] [])
+
 builtinGlobal = Map.fromList $ map (\(name, typ) -> (FIdent $ Scope.tagSymbol' Scope.tag0 name, typ)) [
     ("printInt", TFunc TVoid [TInt] []),
     ("readInt", TFunc TInt [] []),
@@ -89,7 +91,7 @@ returns :: Type -> TypeM ()
 returns typ = do
   ftyp <- asks function 
   case ftyp of
-    Just (TFunc rett _ _) -> typ =| rett >> return ()
+    Just (TFunc rett _ _) -> rett =| typ >> return ()
     Nothing -> throwError Err.danglingReturn
 
 -- Declares symbol to be of a given type locally
@@ -98,9 +100,11 @@ declare uid typ = local (\env -> env { idents = Map.insert uid typ (idents env) 
 
 -- Note that this does not recurse into function body
 declare' :: Stmt -> TypeM a -> TypeM a
-declare' x = case x of
-  SDefFunc typ id args excepts stmt -> declare (FIdent $ toStr id) (functype x) . applyAndCompose declare' args
-  SDeclVar typ id -> declare (VIdent $ toStr id) typ
+declare' x m = case x of
+  SDefFunc typ id args excepts stmt -> declare (FIdent $ toStr id) (functype x) . applyAndCompose declare' args $ m
+  SDeclVar typ id -> do
+    when (typ == TVoid) $ throwError Err.voidVarDecl
+    declare (VIdent $ toStr id) typ m
 
 -- Note that this looks up members but does not recurse in methods body
 define' :: Stmt -> TypeM a -> TypeM a
@@ -173,6 +177,8 @@ funS x = case x of
     stmts' <- mapM funS stmts
     return $ Local decls stmts'
   SDefFunc typ id args excepts stmt -> do
+    when (id == fst entrypoint) $
+      (snd entrypoint =| functype x >> return ()) `rethrow` Err.incompatibleMain
     stmt' <- declare' x $ call' x $ applyAndCompose catches excepts $ funS stmt
     return $ SDefFunc typ id args excepts stmt'
   SDeclVar typ id -> return x
@@ -190,6 +196,7 @@ funS x = case x of
     return $ SAssignArr id expr1' expr2'
   SReturn expr -> do
     (expr', etyp) <- funE expr
+    when (etyp == TVoid) $ throwError Err.voidNotIgnored
     returns etyp
     return $ SReturn expr'
   SIf expr stmt -> do

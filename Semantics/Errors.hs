@@ -21,6 +21,9 @@ unexpectedType expected actual = concat ["not matching type, expected: ", show e
 argumentsNotMatch expected actual = concat ["arguments do not match, expected: ", show expected, " actual: ", show actual]
 badArithType = "bad operands type for arithmetic operator"
 danglingReturn = "dangling return"
+voidVarDecl = "a variable cannot have void type"
+voidNotIgnored = "void value not ignored as it should be"
+incompatibleMain = "incompatible main() type"
 
 -- Static exception checking
 uncaughtException typ = "uncaught, undeclared exception " ++ (show typ)
@@ -30,6 +33,8 @@ noDefaultValue typ = "type " ++ (show typ) ++ " has no default value"
 nullPointerException = "attempt to dereference null"
 indexOutOfBounds ind = "index out of bounds: " ++ (show ind)
 nonVoidNoReturn = "no return value from non-void function"
+zeroDivision = "divided by zero"
+intOverflow = "integer overflow"
 
 -- Terminal error issued by a user
 userError = "error called"

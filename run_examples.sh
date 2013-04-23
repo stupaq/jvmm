@@ -92,17 +92,19 @@ function parse_example() {
 
 if [[ $# -eq 0 ]]; then
   fail=0
-  for f in ${GOOD}; do
-    parse_example $f
-    run_example $f || fail=`expr $fail + 1`
+
+  for f in ${BAD_PARSE}; do
+    parse_example $f || fail=`expr $fail + 1`
   done
   for f in ${BAD_EXEC}; do
     parse_example $f
     run_example $f || fail=`expr $fail + 1`
   done
-  for f in ${BAD_PARSE}; do
-    parse_example $f || fail=`expr $fail + 1`
+  for f in ${GOOD}; do
+    parse_example $f
+    run_example $f || fail=`expr $fail + 1`
   done
+
   echo "TOTAL FAILED: $fail"
   exit $fail
 else

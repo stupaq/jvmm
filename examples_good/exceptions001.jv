@@ -1,4 +1,4 @@
-int main(int a) {
+int main() {
   int a = 3;
   printInt(a);
   try {

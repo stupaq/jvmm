@@ -53,6 +53,12 @@ scope0 = Scope {
   funcs = builtinGlobal,
   types = symbols0
 }
+-- This is needed to track redeclarations of builtins
+scopeNull = Scope {
+  vars = Map.empty,
+  funcs = Map.empty,
+  types = Map.empty
+}
 
 newOccurence :: Symbols -> Ident -> Symbols
 newOccurence m id = Map.insertWith (\_ -> (+1)) id tag0 m
@@ -68,8 +74,8 @@ resolve acc id sc = case Map.lookup id (acc sc) of
 -- beginning of a block, scope in state is the current one, we need all of them
 -- for tracking redeclarations in single block and resolving member symbols.
 type ScopeM = StateT Scope (ReaderT (Scope, Scope) (ErrorT String Identity))
-runScopeM :: Scope -> ScopeM a -> Either String (a, Scope)
-runScopeM sc m = runIdentity $ runErrorT $ runReaderT (runStateT m sc) (sc, sc)
+runScopeM :: ScopeM a -> Either String (a, Scope)
+runScopeM m = runIdentity $ runErrorT $ runReaderT (runStateT m scope0) (scope0, scopeNull)
 
 resolveLocal, resolveGlobal, resolveParent :: (Scope -> Symbols) -> Ident -> ScopeM Ident
 resolveLocal acc id = (get) >>= (lift . lift . (resolve acc id))
@@ -150,7 +156,7 @@ decType id = do
 
 -- Creates scoped tree from translated AST
 scope :: Stmt -> Either String Stmt
-scope stmt = fmap fst $ runScopeM scope0 (funS stmt)
+scope stmt = fmap fst $ runScopeM (funS stmt)
 
 funND :: Stmt -> ScopeM Stmt
 funND x = case x of

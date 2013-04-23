@@ -62,6 +62,13 @@ defaultValue typ = return $ case typ of
   TUser _ -> ref0
   TVoid -> VVoid
 
+-- LIMITS --
+------------
+checkVal :: PrimValue -> RuntimeM ()
+checkVal val = case val of
+  VInt num -> unless (-2147483648 <= num && num <= 2147483647) $ throwError $ RError Err.intOverflow
+  _ -> return ()
+
 -- DATA REPRESENTATION --
 -------------------------
 type Loc = Integer
@@ -479,7 +486,10 @@ funE x = case x of
   -- compilation process we actually turn expression into series of
   -- statements
   EVar id -> load id
-  ELitInt n -> return (VInt $ fromInteger n)
+  ELitInt n -> do
+    let val = (VInt $ fromInteger n)
+    checkVal val
+    return val
   ELitTrue -> return (VBool True)
   ELitFalse -> return (VBool False)
   ELitString str -> alloc (VString str)
@@ -517,6 +527,7 @@ funE x = case x of
   EBinaryT TInt opbin expr1 expr2 -> do
     VInt val1 <- funE expr1
     VInt val2 <- funE expr2
+    when (opbin `elem` [Div, Mod] && val2 == 0) $ throwError $ RError Err.zeroDivision
     return $ VInt $ case opbin of
       Plus -> val1 + val2
       Minus -> val1 - val2
