@@ -138,16 +138,21 @@ call' = call . functype
       unless (length argt1 == length argt2) $ throwError noMsg
       zipWithM_ (=|) argt1 argt2
       ok
-    (TArray etyp1, TArray etyp2) -> etyp1 =| etyp2
     (TInt, TInt) -> ok
-    (TString, TString) -> ok
     (TChar, TChar) -> ok
     (TBool, TBool) -> ok
     (TVoid, TVoid) -> ok
+    (TNull, TNull) -> ok
+    (TArray _, TNull) -> ok
+    (TArray etyp1, TArray etyp2) -> etyp1 =| etyp2
+    (TString, TNull) -> ok
+    (TString, TString) -> ok
+    (TObject, TNull) -> ok
     (TObject, TString) -> ok
     (TObject, TObject) -> ok
     (TObject, TArray _) -> ok
     (TObject, TUser _) -> ok
+    (TUser _, TNull) -> ok
     -- TODO hierarchy
     (TUser id1, TUser id2) -> bad
     _ -> bad
@@ -246,7 +251,7 @@ funE x = case x of
   ELitFalse -> return (x, TBool)
   ELitString str -> return (x, TString)
   ELitChar c -> return (x, TChar)
-  ENull -> return (x, TObject)
+  ENull -> return (x, TNull)
   EAccessArr expr1 expr2 -> do
     (expr1', etyp1) <- funE expr1
     (expr2', etyp2) <- funE expr2

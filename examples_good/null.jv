@@ -1,0 +1,25 @@
+int main() {
+  String s = null;
+  printInt(length(s));
+  printInt(length(null));
+  printInt(length(""));
+  printInt(length("safd"));
+  printInt(length(nuller()));
+  if (null == null)
+    printString("OK");
+  if (nuller() == null)
+    printString("OK");
+  return 0;
+}
+
+String nuller() {
+  return null;
+}
+
+int length(String s) {
+  if (s != null) {
+    return s.length;
+  } else {
+    return -1;
+  }
+}

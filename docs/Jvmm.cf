@@ -95,6 +95,8 @@ internal    TFunc. Type ::= Type "(" [Type] ")" "throws" [Type];
 
 internal    TUnknown. Type ::= "unknown";
 
+internal    TNull. Type ::= "null";
+
 TArray.     Type1 ::= Type "[]";
 
 TInt.       Type ::= "int";

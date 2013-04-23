@@ -443,7 +443,9 @@ funD (SDeclVar typ id) = (>>) (defaultValue typ >>= store id)
 -- Statements
 funS :: Stmt -> RuntimeM ()
 funS x = case x of
-  Global stmts -> applyAndCompose funD stmts $ invokestatic entrypoint []
+  Global stmts -> applyAndCompose funD stmts $ do
+    code <- getResult $ invokestatic entrypoint []
+    return_ code
   Local decls stmts -> applyAndCompose funD decls (mapM_ funS stmts)
   SAssign id expr -> do
     val <- funE expr
