@@ -12,6 +12,7 @@ int main() {
 }
 
 void checkHidden(int n) {
+  String hidden = "hidden FAILED";
   if (n > 0)
     checkHidden(n - 1);
   runGC();

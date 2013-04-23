@@ -223,6 +223,8 @@ tryFinally atry afinally = do
       afinally
       throwError err
 
+-- MEMORY MODEL --
+------------------
 -- We should look for references in these places:
 -- - stack variables from all frames (be careful with stack variables hiding)
 -- - thrown exceptions
@@ -290,9 +292,6 @@ compactHeap pinned heap =
                   _ -> grey''
         in fun (grey''', black')
 
--- MEMORY MODEL --
-------------------
--- FIXME embed these in all monadic bytecode instructions
 -- If one uses bytecode monadic instruction only the garbage collection is
 -- automatic, these functions should not be invoked directly.
 alloc :: RefValue -> RuntimeM PrimValue
@@ -304,15 +303,6 @@ alloc val = do
   where
     freeloc :: RunState -> Loc
     freeloc = (+1) . fst . Map.findMax . heap -- FIXME this is imperfect if we have GC
-
--- This is necessary for reference counting
-dupl :: PrimValue -> RuntimeM PrimValue
-dupl (VRef 0) = return (VRef 0)
-dupl (VRef loc) = return (VRef loc) -- FIXME
-
--- Argument can only be a reference (might be a null one)
-free :: PrimValue -> RuntimeM ()
-free (VRef loc) = return () -- FIXME
 
 deref :: PrimValue -> RuntimeM RefValue
 deref (VRef 0) = throwError (RError Err.nullPointerException)
@@ -339,13 +329,16 @@ aload ref (VInt ind) = do
     Just val -> return val
 
 store :: Ident -> PrimValue -> RuntimeM ()
-store id val = modify $ \state -> state { stack = Map.insert id val (stack state) }
+store id val = do
+  modify $ \state -> state { stack = Map.insert id val (stack state) }
+  runGC --TODO move to some more sensible place
 
 astore :: PrimValue -> PrimValue -> PrimValue -> RuntimeM ()
 astore ref (VInt ind) val = do
   VArray arr <- deref ref
   unless (0 <= ind && ind < Map.size arr) $ throwError (RError $ Err.indexOutOfBounds ind)
   update ref (VArray $ Map.insert ind val arr)
+  runGC --TODO move to some more sensible place
 
 invokestatic :: Ident -> [PrimValue] -> RuntimeM ()
 invokestatic id vals = asks (fromJust id . Map.lookup id . funcs) >>= ($ vals)
@@ -441,7 +434,6 @@ funS x = case x of
   SAssign id expr -> do
     val <- funE expr
     store id val
-    --runGC -- FIXME find more generic place
   SAssignArr id expr1 expr2 -> do
     ref <- load id
     ind <- funE expr1
@@ -514,8 +506,6 @@ funE x = case x of
     ref2 <- funE expr2
     VString str1 <- deref ref1
     VString str2 <- deref ref2
-    free ref1
-    free ref2
     alloc $ VString (str1 ++ str2)
   EBinaryT TInt opbin expr1 expr2 -> do
     VInt val1 <- funE expr1

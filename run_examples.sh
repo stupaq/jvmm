@@ -79,5 +79,7 @@ else
   
   [[ -z $file ]] && fatal "Can't find file $1."
   run_example $file; check;
-  if [[ $2 == -v* ]]; then show $file; else show; fi
+  if [[ $? -ne 0 ]] || [[ $2 == -v* ]]; then
+    [[ $2 == -v* ]] && show $file || show
+  fi
 fi
