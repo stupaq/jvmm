@@ -118,11 +118,20 @@ type Func = [PrimValue] -> RuntimeM ()
 type FuncEnv = Map.Map Ident Func
 funcenv0 = Map.fromList builtinGlobal
 
+data GCConf = GCConf {
+  gcthresh :: Int
+}
+gcconf0 = GCConf {
+  gcthresh = 100
+}
+
 data RunEnv = RunEnv {
-  funcs :: FuncEnv
+  funcs :: FuncEnv,
+  gcconf :: GCConf
 }
 runenv0 = RunEnv {
-  funcs = funcenv0
+  funcs = funcenv0,
+  gcconf = gcconf0
 }
 
 -- RUNTIME STATE --
@@ -142,6 +151,15 @@ runstate0 = RunState {
   -- Reference with location == 0 is a null reference
   heap = heap0
 }
+
+-- RUNTIME DEBUG --
+-------------------
+
+dumpHeap :: RuntimeM ()
+dumpHeap = do
+  hp <- gets heap
+  liftIO $ do
+    println $ "| Heap size: " ++ (show $ Map.size hp)
 
 -- RUNTIME MONAD --
 -------------------
@@ -201,26 +219,29 @@ tryFinally atry afinally = do
       throwError err
 
 -- We should look for references in these places:
--- - stack variables
+-- - stack variables from all frames (be careful with stack variables hiding)
 -- - thrown exceptions
 -- - returned values
 -- - referenced objects (fixpoint)
 -- ACHTUNG this requires catching all returns and exceptions (to obtain
 -- references) and rethrowing them after GC phase with appropriately changed
 -- references
--- Note that with given signature there is no other place whete one can 'hide
--- information', everything is stored in one of the following: exception,
--- result, runstate, environment
+-- ACHTUNG at the moment we only know current stack frame, there might be some
+-- references hidden in lower stack frames
 
--- Allows running GC in between statements, note that we should be sure that
--- all pinned objects are referred from the stack in runtime state,
--- might silently refuse to make a gc phase if the heap is small enough
+-- Allows running GC in between statements, might silently refuse to make a gc
+-- phase if the heap is small enough
 runGC :: RuntimeM ()
 runGC = do
-  st <- gets stack
-  -- TODO check heap size and run GC if exceeded some threshold set in RunEnv
   hp <- gets heap
-  modify (\state -> state { heap = compactHeap (findRefs st) hp })
+  gcc <- asks gcconf
+  when (doGCNow gcc hp) $ do
+    st <- gets stack
+    modify (\state -> state { heap = compactHeap (findRefs st) hp })
+    dumpHeap
+
+doGCNow :: GCConf -> Heap -> Bool
+doGCNow gcconf heap = Map.size heap > gcthresh gcconf
 
 -- Extracts referred locations from stack variables, does not recurse into
 -- objects in any way
@@ -236,7 +257,6 @@ findRefs = Set.fromList . map mp . filter flt . Map.elems
 -- Returns garbage-collected heap, each object under location present in
 -- provided set is present in the new heap (if it was in the old one)
 -- In current implementation locations (addresses) does not change
--- FIXME compact addresses
 compactHeap :: Set.Set Loc -> Heap -> Heap
 compactHeap pinned heap =
   -- Iterate until no change in grey and black sets (<=> grey empty)
@@ -264,9 +284,6 @@ compactHeap pinned heap =
                     False -> Set.insert loc grey''
                   _ -> grey''
         in fun (grey''', black')
-
-dumpHeap :: RuntimeM ()
-dumpHeap = gets heap >>= liftIO . putStrLn . show
 
 -- MEMORY MODEL --
 ------------------
@@ -438,6 +455,7 @@ funS x = case x of
     VBool val <- funE expr
     -- This is a bit hackish, but there is no reason why it won't work and we
     -- want to apply normal chaining rules without too much ifology
+    -- Note that GC works fine here because stmt creates heap objects in its own scope
     if val then funS $ Local [] [stmt, SWhile expr stmt] else nop
   SExpr expr -> funE expr >> nop
   SThrow expr -> do

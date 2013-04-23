@@ -41,4 +41,4 @@ distclean: clean
 	-rm -f $(DOCS) $(MAIN) *.zip ./interpreter
 	-rm -rf Syntax
 
-.PHONY: clean distclean test-grammar $(MAIN)
+.PHONY: clean distclean test-examples $(MAIN)

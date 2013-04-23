@@ -6,6 +6,7 @@ PARSE=./Syntax/TestJvmm
 OUT=test.out
 ERR=test.err
 GOOD=./examples_good/
+MEMLIMIT=50000
 
 function cleanup() {
   rm -f $OUT $ERR
@@ -53,6 +54,7 @@ function run_example() {
   [[ -f $output ]] || output=/dev/null
 
   echo -ne "TEST\t$1: "
+  ulimit -Sv $MEMLIMIT
   $RUN $1 <$input 1>$OUT 2>$ERR && diff $OUT $output &>/dev/null
 }
 
