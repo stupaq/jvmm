@@ -1,12 +1,24 @@
 #!/bin/bash
 
-EXT=.jv
-RUN="./interpreter" # +RTS -xc -RTS"
-PARSE=./Syntax/TestJvmm
-OUT=test.out
-ERR=test.err
-GOOD=./examples_good/
+PROGEXT=".jv"
+EXEC="./interpreter"
+PARSE="./Syntax/TestJvmm"
 MEMLIMIT=60000
+
+GOOD=`find ./examples_good/ -name "*$PROGEXT" | sort`
+BAD_EXEC=`find ./examples_bad/ -name "*$PROGEXT" | sort`
+BAD_PARSE=`find ./examples_bad/ -name "*.txt" | sort`
+
+OUT="test.out"
+ERR="test.err"
+VERB=1
+
+case $2 in
+  -v) VERB=3 ;;
+  -q) VERB=0 ;;
+  -vd) VERB=3; EXEC="$EXEC +RTS -xc -RTS" ;;
+  -qd) VERB=0; EXEC="$EXEC +RTS -xc -RTS" ;;
+esac
 
 function cleanup() {
   rm -f $OUT $ERR
@@ -34,9 +46,9 @@ function show() {
   cat $ERR
   echo "OUTPUT:"
   cat $OUT
-  if [[ $# -eq 1 ]]; then
+  if [[ $VERB -ge 1 ]]; then
     echo "EXPECTED:"
-    cat "${1%$EXT}.output"
+    cat "${1%$PROGEXT}.output"
     echo "CODE:"
     cat $1
   fi
@@ -48,14 +60,14 @@ function fatal() {
 }
 
 function run_example() {
-  input="${1%$EXT}.input"
+  input="${1%$PROGEXT}.input"
   [[ -f $input ]] || input=/dev/null
-  output="${1%$EXT}.output"
+  output="${1%$PROGEXT}.output"
   [[ -f $output ]] || output=/dev/null
 
   echo -ne "TEST\t$1: "
   ulimit -Sv $MEMLIMIT
-  $RUN $1 <$input 1>$OUT 2>$ERR && diff $OUT $output &>/dev/null
+  $EXEC $1 <$input 1>$OUT 2>$ERR && diff $OUT $output &>/dev/null
 }
 
 function parse_example() {
@@ -63,23 +75,34 @@ function parse_example() {
   $PARSE $1 | grep -q "Parse Successful!"
 }
 
+
 if [[ $# -eq 0 ]]; then
   fail=0
-  for f in ${GOOD}*$EXT; do
+  for f in ${GOOD}; do
     parse_example $f; check;
     run_example $f; check || fail=`expr $fail + 1`
+  done
+  for f in ${BAD_EXEC}; do
+    parse_example $f; check;
+    run_example $f; neg; check || fail=`expr $fail + 1`
+  done
+  for f in ${BAD_PARSE}; do
+    parse_example $f; neg; check || fail=`expr $fail + 1`
   done
   echo "TOTAL FAILED: $fail"
   exit $fail
 else
-  file=
-  [[ -f $1 ]] && file=$1
-  [[ -f ${GOOD}${1}${EXT} ]] && file=${GOOD}${1}${EXT}
-  [[ -f ${GOOD}${1} ]] && file=${GOOD}${1}
+  for f in $1 "./examples_good/${1%.*}$PROGEXT" "./examples_bad/${1%.*}$PROGEXT"; do
+    [[ -f $f ]] && file=$f;
+  done
   
-  [[ -z $file ]] && fatal "Can't find file $1."
-  run_example $file; check;
+  [[ -z $file ]] && fatal "cannot find test: $1"
+  if [[ $file == "*examples_good*" ]]; then
+    run_example $file; check;
+  else
+    run_example $file; neg; check;
+  fi
   if [[ $? -ne 0 ]] || [[ $2 == -v* ]]; then
-    [[ $2 == -v* ]] && show $file || show
+    show $file
   fi
 fi
