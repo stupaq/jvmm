@@ -25,11 +25,11 @@ function cleanup() {
 }
 
 function neg() {
-  status=$?; [[ $status -ne 0 ]] && return 0 || return 1;
+  status=$1; [[ $status -ne 0 ]] && return 0 || return 1;
 }
 
 function check() {
-  status=$?;
+  status=$1;
   if [[ $status -ne 0 ]]; then 
     tput setaf 1;
     echo -e "\t[FAILED]";
@@ -68,26 +68,40 @@ function run_example() {
   echo -ne "TEST\t$1: "
   ulimit -Sv $MEMLIMIT
   $EXEC $1 <$input 1>$OUT 2>$ERR && diff $OUT $output &>/dev/null
+  status=$?
+  if [[ $1 == *examples_good* ]]; then
+    check $status
+  else
+    neg $status
+    check $?
+  fi
 }
 
 function parse_example() {
   echo -ne "PARSE\t$1: "
-  $PARSE $1 | grep -q "Parse Successful!"
+  $PARSE $1 | grep "Parse Successful!" &>/dev/null
+  status=$?
+  if [[ $1 == *.jv ]]; then
+    check $status
+  else
+    neg $status
+    check $?
+  fi
 }
 
 
 if [[ $# -eq 0 ]]; then
   fail=0
   for f in ${GOOD}; do
-    parse_example $f; check;
-    run_example $f; check || fail=`expr $fail + 1`
+    parse_example $f
+    run_example $f || fail=`expr $fail + 1`
   done
   for f in ${BAD_EXEC}; do
-    parse_example $f; check;
-    run_example $f; neg; check || fail=`expr $fail + 1`
+    parse_example $f
+    run_example $f || fail=`expr $fail + 1`
   done
   for f in ${BAD_PARSE}; do
-    parse_example $f; neg; check || fail=`expr $fail + 1`
+    parse_example $f || fail=`expr $fail + 1`
   done
   echo "TOTAL FAILED: $fail"
   exit $fail
@@ -95,13 +109,10 @@ else
   for f in $1 "./examples_good/${1%.*}$PROGEXT" "./examples_bad/${1%.*}$PROGEXT"; do
     [[ -f $f ]] && file=$f;
   done
-  
   [[ -z $file ]] && fatal "cannot find test: $1"
-  if [[ $file == "*examples_good*" ]]; then
-    run_example $file; check;
-  else
-    run_example $file; neg; check;
-  fi
+
+  parse_example $file
+  run_example $file
   if [[ $? -ne 0 ]] || [[ $2 == -v* ]]; then
     show $file
   fi

@@ -5,16 +5,23 @@ int main() {
     printString("OK");
   if (dbool() == false)
     printString("OK");
+  return 0;
 }
 
 int dint() {
+  int val;
   printString("CALLED");
+  return val;
 }
 
 String dstring() {
+  String val;
   printString("CALLED");
+  return val;
 }
 
 boolean dbool() {
+  boolean val;
   printString("CALLED");
+  return val;
 }

@@ -21,6 +21,7 @@ int main() {
   printInt(a);
   a++;
   printInt(a);
+  return 0;
 }
 
 int b(int a) {

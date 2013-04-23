@@ -29,6 +29,7 @@ uncaughtException typ = "uncaught, undeclared exception " ++ (show typ)
 noDefaultValue typ = "type " ++ (show typ) ++ " has no default value"
 nullPointerException = "attempt to dereference null"
 indexOutOfBounds ind = "index out of bounds: " ++ (show ind)
+nonVoidNoReturn = "no return value from non-void function"
 
 -- Terminal error issued by a user
 userError = "error called"

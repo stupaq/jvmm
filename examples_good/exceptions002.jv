@@ -55,6 +55,7 @@ int main() throws String {
 }
 
 int def(int z){
+  return 0;
 }
 void c(String s) {
   s += "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";

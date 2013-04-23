@@ -202,7 +202,7 @@ newFrame action = do
 
 getResult :: RuntimeM () -> RuntimeM PrimValue
 getResult action = do
-  (action  >> return VVoid) `catchError` handler
+  (action >> throwError (RError Err.nonVoidNoReturn)) `catchError` handler
   where
     handler :: Result -> RuntimeM PrimValue
     handler err = case err of
@@ -425,11 +425,12 @@ funD (SDefFunc typ id args excepts stmt) =
       -- collection and all shit connected with that for free, it's exactly the
       -- same code as in funS (Local ...)
       funS $ Local args ((map (\(SDeclVar _ id) -> SAssign id (EVar $ argId id)) args) ++ [stmt])
-      -- In case function does not return explicitly we do it here with default value
-      val <- defaultValue typ
-      return_ val
-        where
-          argId id = tempIdent id "arg"
+      -- If function has _void_ return type (but only then) and does not return
+      -- explicitly we do it here
+      defval <- defaultValue typ
+      when (typ == TVoid) (return_ defval)
+      where
+        argId id = tempIdent id "arg"
 funD (SDeclVar typ id) = (>>) (defaultValue typ >>= store id)
 
 -- Statements

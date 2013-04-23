@@ -5,6 +5,7 @@ int main() {
   printBool(! ! true);
   printBool(! ! ! false);
   printBool(false || ! ! (3 != 4));
+  return 0;
 }
 
 void printBool(boolean b) {

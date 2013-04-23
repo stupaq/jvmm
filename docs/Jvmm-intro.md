@@ -15,8 +15,8 @@ defined by return value type, arguments list (each argument with specified
 type) and function body. Functions cannot be redefined in global scope, but
 they can be used before declaration. Each program must define _main()_ function
 with return type _int_ and no arguments, which is an entry point of a program.
-Function with type other than _void_ should explicitly return value otherwise
-default value of corresponding type is returned.
+Function with type other than _void_ must explicitly return value of a
+corresponding type.
 
 Passing style and memory management
 -----------------------------------

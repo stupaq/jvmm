@@ -9,6 +9,7 @@ int main() {
     printString(e);
   }
   printString(hidden);
+  return 0;
 }
 
 void checkHidden(int n) {
