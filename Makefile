@@ -6,7 +6,7 @@ EXBAD := examples_bad
 MAIN := Interpreter/Main Syntax/TestJvmm
 
 PDFLATEX := pdflatex -interaction=batchmode
-GHCMAKE := ghc -w -fwarn-incomplete-patterns --make -outputdir ghc-make
+GHCMAKE := ghc -w -fwarn-incomplete-patterns --make -outputdir ghc-make -rtsopts -prof
 
 all: $(MAIN)
 	ln -sf Interpreter/Main ./interpreter

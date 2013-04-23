@@ -1,7 +1,7 @@
 #!/bin/bash
 
 EXT=.jv
-RUN=./interpreter
+RUN="./interpreter +RTS -xc -RTS"
 PARSE=./Syntax/TestJvmm
 OUT=test.out
 ERR=test.err
