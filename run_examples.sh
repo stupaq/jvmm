@@ -1,12 +1,12 @@
 #!/bin/bash
 
 EXT=.jv
-RUN="./interpreter +RTS -xc -RTS"
+RUN="./interpreter" # +RTS -xc -RTS"
 PARSE=./Syntax/TestJvmm
 OUT=test.out
 ERR=test.err
 GOOD=./examples_good/
-MEMLIMIT=50000
+MEMLIMIT=60000
 
 function cleanup() {
   rm -f $OUT $ERR

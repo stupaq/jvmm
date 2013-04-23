@@ -171,6 +171,11 @@ type RuntimeM = ReaderT RunEnv (ErrorT Result (StateT RunState IO))
 runRuntimeM :: RunEnv -> RunState -> RuntimeM a -> IO (Either Result a, RunState)
 runRuntimeM r s m = runStateT (runErrorT (runReaderT m r)) s
 
+-- Map lookups handler
+fromJust :: (Show b) => b -> Maybe a -> a
+fromJust ctx Nothing = error (Err.fromJustFailure ctx)
+fromJust ctx (Just val) = val
+
 -- Executes given action in a new 'stack frame', restores old one afterwards
 -- The assumption that there is no syntactic hiding is EXTREMELY strong and
 -- important, we can push new stack frame only when we CALL a function
@@ -311,7 +316,7 @@ free (VRef loc) = return () -- FIXME
 
 deref :: PrimValue -> RuntimeM RefValue
 deref (VRef 0) = throwError (RError Err.nullPointerException)
-deref (VRef loc) = gets (Maybe.fromJust . Map.lookup loc . heap)
+deref (VRef loc) = gets (fromJust (VRef loc) . Map.lookup loc . heap)
 
 update :: PrimValue -> RefValue -> RuntimeM ()
 update (VRef loc) val = modify (\state -> state { heap = Map.insert loc val (heap state) })
@@ -324,7 +329,7 @@ nop :: RuntimeM ()
 nop = return ()
 
 load :: Ident -> RuntimeM PrimValue
-load id = gets (Maybe.fromJust . Map.lookup id . stack)
+load id = gets (fromJust id . Map.lookup id . stack)
 
 aload :: PrimValue -> PrimValue -> RuntimeM PrimValue
 aload ref (VInt ind) = do
@@ -343,7 +348,7 @@ astore ref (VInt ind) val = do
   update ref (VArray $ Map.insert ind val arr)
 
 invokestatic :: Ident -> [PrimValue] -> RuntimeM ()
-invokestatic id vals = asks (Maybe.fromJust . Map.lookup id . funcs) >>= ($ vals)
+invokestatic id vals = asks (fromJust id . Map.lookup id . funcs) >>= ($ vals)
 
 throw :: PrimValue -> RuntimeM ()
 throw = throwError . RException
@@ -436,7 +441,7 @@ funS x = case x of
   SAssign id expr -> do
     val <- funE expr
     store id val
-    runGC -- FIXME find more generic place
+    --runGC -- FIXME find more generic place
   SAssignArr id expr1 expr2 -> do
     ref <- load id
     ind <- funE expr1

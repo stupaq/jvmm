@@ -1,6 +1,6 @@
 int main() {
   String hidden = "hidden OK";
-  checkHidden();
+  checkHidden(100);
   String r = checkReturn(100);
   printString(r);
   try {
@@ -14,24 +14,26 @@ int main() {
 void checkHidden(int n) {
   if (n > 0)
     checkHidden(n - 1);
+  runGC();
 }
 
-String checkReturn(int n) {
-  if (n > 0)
-    return checkReturn(n - 1);
+String checkReturn(int m) {
+  if (m > 0)
+    return checkReturn(m - 1);
+  runGC();
   return "return OK";
 }
 
-void checkThrow(int n) throws String {
-  if (n > 0)
-    checkThrow(n - 1);
-  else
-    throw "throw OK";
+void checkThrow(int l) throws String {
+  if (l > 0)
+    checkThrow(l - 1);
+  runGC();
+  throw "throw OK";
 }
 
 void runGC() {
-  int i = 0, n = 1000;
-  while (i < n) {
+  int i = 0, k = 1000;
+  while (i < k) {
     String str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
                  "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
                  "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +

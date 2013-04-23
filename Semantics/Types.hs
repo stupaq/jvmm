@@ -18,7 +18,7 @@ import qualified Semantics.Scope as Scope
 builtinGlobal = Map.fromList $ map (\(name, typ) -> (FIdent $ Scope.tagSymbol' Scope.tag0 name, typ)) [
     ("printInt", TFunc TVoid [TInt] []),
     ("readInt", TFunc TInt [] []),
-    ("printString", TFunc TVoid [] []),
+    ("printString", TFunc TVoid [TString] []),
     ("readString", TFunc TString [] []),
     ("error", TFunc TVoid [] [])]
 
@@ -130,6 +130,10 @@ call' = call . functype
   let bad = throwError (Err.unexpectedType typ1 typ2)
       ok = return typ1
   case (typ1, typ2) of
+    (TFunc _ argt1 _, TFunc _ argt2 _) -> do
+      unless (length argt1 == length argt2) $ throwError noMsg
+      zipWithM_ (=|) argt1 argt2
+      ok
     (TArray etyp1, TArray etyp2) -> etyp1 =| etyp2
     (TInt, TInt) -> ok
     (TString, TString) -> ok
@@ -246,9 +250,9 @@ funE x = case x of
   EAccessFn expr id exprs -> do
     (expr', etyp) <- funE expr
     (exprs', etypes) <- mapAndUnzipM funE exprs
-    TFunc ret args excepts <- typeofMFunc etyp id
+    ftyp1@(TFunc ret args excepts) <- typeofMFunc etyp id
     forM excepts throws
-    zipWithM_ (=|) args etypes `rethrow` Err.argumentsNotMatch args etypes
+    (ftyp1 =| TFunc ret etypes []) `rethrow` Err.argumentsNotMatch args etypes
     return (EAccessFn expr' id exprs', ret)
   EAccessVar expr id -> do
     (expr', etyp) <- funE expr
@@ -256,9 +260,9 @@ funE x = case x of
     return (EAccessVar expr' id, typ)
   EApp id exprs -> do
     (exprs', etypes) <- mapAndUnzipM funE exprs
-    TFunc ret args excepts <- typeofFunc id
+    ftyp1@(TFunc ret args excepts) <- typeofFunc id
     forM excepts throws
-    zipWithM_ (=|) args etypes `rethrow` Err.argumentsNotMatch args etypes
+    (ftyp1 =| TFunc ret etypes []) `rethrow` Err.argumentsNotMatch args etypes
     return (EApp id exprs', ret)
   ENewArr typ expr -> do
     -- TODO temporary limitation

@@ -18,7 +18,7 @@ unknownSymbolType id = "unknown type: " ++ (show id)
 subscriptNonArray = "not an array subscripted"
 indexType = "invalid array index type"
 unexpectedType expected actual = concat ["not matching type, expected: ", show expected, " actual ", show actual]
-argumentsNotMatch expected actual = concat ["arguments do not match, expected: ", concat $ map show expected, " actual ", concat $ map show actual]
+argumentsNotMatch expected actual = concat ["arguments do not match, expected: ", show expected, " actual: ", show actual]
 badArithType = "bad operands type for arithmetic operator"
 danglingReturn = "dangling return"
 
@@ -36,3 +36,4 @@ uncaughtTopLevel obj = "uncaught top level exception: " ++ (show obj)
 
 -- Impossible situations
 danglingReference loc = "location: " ++ (show loc) ++ " does not exist"
+fromJustFailure ctx = "fromJust failed in context: " ++ (show ctx)

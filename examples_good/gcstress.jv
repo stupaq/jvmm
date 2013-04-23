@@ -1,5 +1,5 @@
 int main() {
-  int i = 0, n = 1000;
+  int i = 0, n = 2000;
   while (i < n) {
     String str = getstr();
     i++;
