@@ -31,7 +31,20 @@ transAbs = tP_Prog
     binary op expr1 expr2 = EBinaryT TUnknown op (tExpr expr1) (tExpr expr2)
 
     tP_Prog :: P_Prog -> Stmt
-    tP_Prog (P_Prog pdeffuncs) = Global $ map tP_DefFunc pdeffuncs
+    tP_Prog (P_Prog p_defglobals) = Global $ map tP_DefGlobal p_defglobals
+
+    tP_DefGlobal :: P_DefGlobal -> Stmt
+    tP_DefGlobal x = case x of
+      P_GlobFunc p_deffunc  -> tP_DefFunc p_deffunc
+      P_GlobClass p_defclass  -> tP_DefClass p_defclass
+
+    tP_DefClass :: P_DefClass -> Stmt
+    tP_DefClass x = case x of
+      P_DefClass id p_members  -> SDefClass id $ Global $ map tP_Member p_members
+
+    tP_Member :: P_Member -> Stmt
+    tP_Member x = case x of
+      P_Field type' id  -> SDeclVar type' id
 
     tP_DefFunc :: P_DefFunc -> Stmt
     tP_DefFunc (P_DefFunc typ id args (P_Excepts excepts) pblock) = SDefFunc typ id (tP_Args args) excepts $ tP_Block pblock
@@ -42,6 +55,7 @@ transAbs = tP_Prog
       -- internal
       Local stmts1 stmts2  -> undefined
       Global stmts  -> undefined
+      SDefClass id stmt  -> undefined
       SDefFunc type' id args types stmt  -> undefined
       SDeclVar type' id  -> undefined
       -- transform

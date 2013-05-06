@@ -16,8 +16,12 @@
 
 entrypoints P_Prog;
 
-P_Prog.      P_Prog ::= [P_DefFunc];
-separator nonempty P_DefFunc "";
+P_Prog.     P_Prog ::= [P_DefGlobal];
+separator nonempty P_DefGlobal "";
+
+P_GlobFunc. P_DefGlobal ::= P_DefFunc;
+
+P_GlobClass.P_DefGlobal ::= P_DefClass;
 
 -- blocks --
 ------------
@@ -31,6 +35,8 @@ separator Stmt "";
 
 -- declarations/definitions --
 ------------------------------
+
+internal    SDefClass.Stmt ::= "class" Ident Stmt;
 
 internal    SDefFunc. Stmt ::= Type Ident "(" [Stmt] ")" "throws" [Type] Stmt;
 
@@ -46,12 +52,18 @@ separator nonempty Type ",";
 
 P_NoExcept. P_FunExcepts ::= ;
 
-P_SDeclVar.  Stmt ::= Type [P_Item] ";";
+P_SDeclVar. Stmt ::= Type [P_Item] ";";
 separator nonempty P_Item ",";
 
 P_NoInit.   P_Item ::= Ident;
 
 P_Init.     P_Item ::= Ident "=" Expr;
+
+P_DefClass. P_DefClass ::= "class" Ident "{" [P_Member] "}";
+separator nonempty P_Member ";";
+terminator P_Member ";";
+
+P_Field.    P_Member ::= Type Ident;
 
 -- statements --
 ----------------
@@ -59,6 +71,10 @@ P_Init.     P_Item ::= Ident "=" Expr;
 P_SBlock.   Stmt ::= P_Block;
 
 P_SAssignOp. Stmt ::= Ident OpAssign Expr  ";";
+
+P_SAssignOpArr. Stmt ::= Ident OpAssign Expr  ";";
+
+P_SAssignOpFld. Stmt ::= Ident OpAssign Expr  ";";
 
 P_SPostInc. Stmt ::= Ident "++" ";";
 
@@ -69,6 +85,8 @@ SEmpty.     Stmt ::= ";";
 SAssign.    Stmt ::= Ident "=" Expr  ";";
 
 SAssignArr. Stmt ::= Ident "[" Expr "]" "=" Expr  ";";
+
+SAssignFld. Stmt ::= Ident "." Ident "=" Expr  ";";
 
 SReturn.    Stmt ::= "return" Expr ";";
 
@@ -145,6 +163,8 @@ EAccessVar. Expr7 ::= Expr8 "." Ident;
 EApp.       Expr7 ::= Ident "(" [Expr] ")";
 
 ENewArr.    Expr6 ::= "new" Type "[" Expr "]";
+
+ENewObj.    Expr6 ::= "new" Type;
 
 P_ENeg.     Expr5 ::= "-" Expr5;
 
