@@ -291,7 +291,7 @@ compactHeap pinned heap =
             black' = Set.insert loc black
             grey''' = case Map.lookup loc heap of
               Nothing -> error $ Err.danglingReference loc
-              Just (VArray arr) -> Map.foldl extract grey' arr
+              Just (VArray arr) -> Map.fold (flip extract) grey' arr
               Just (VObject _) -> error "object" -- TODO add to grey'
               -- We do not recurse (add to grey) in all other cases
               _ -> grey'
