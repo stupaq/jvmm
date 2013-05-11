@@ -1,4 +1,5 @@
 module Semantics.Trans where
+import Prelude hiding (id)
 import Syntax.AbsJvmm
 
 -- Unified identifier
@@ -61,18 +62,16 @@ transAbs = tP_Prog
       -- transform
       P_SDeclVar type' p_items  -> concat $ map (tP_Item type') p_items
       P_SBlock p_block  ->  return $ tP_Block p_block
-      P_SAssignOp id opassign expr  -> return $ SAssign id $ tExpr $ (case opassign of {
-        APlus -> P_EAdd (EVar id) Plus;
-        AMinus -> P_EAdd (EVar id) Minus;
-        ATimes -> P_EMul (EVar id) Times;
-        ADiv -> P_EMul (EVar id) Div;
-        AMod -> P_EMul (EVar id) Mod; }) (tExpr expr)
+      P_SAssignOp id opassign expr  -> return $ SAssign id $ tExpr $ tAssignOp opassign (EVar id) expr
+      P_SAssignOpArr id expr1 opassign2 expr3  ->  return $ SAssignArr id (tExpr expr1) $ tExpr $ tAssignOp opassign2 (EAccessArr (EVar id) expr1) expr3
+      P_SAssignOpFld id1 id2 opassign3 expr4  ->  return $ SAssignFld id1 id2 $ tExpr $ tAssignOp opassign3 (EAccessVar (EVar id1) id2) expr4
       P_SPostInc id  -> tStmt $ P_SAssignOp id APlus (ELitInt 1)
       P_SPostDec id  -> tStmt $ P_SAssignOp id AMinus (ELitInt 1)
       -- pass
       SEmpty  -> return x
       SAssign id expr  -> return $ SAssign id $ tExpr expr
       SAssignArr id expr1 expr2  ->  return $ SAssignArr id (tExpr expr1) (tExpr expr2)
+      SAssignFld id1 id2 expr3  -> return $ SAssignFld id1 id2 (tExpr expr3)
       SReturn expr  -> return $ SReturn $ tExpr expr
       SReturnV  -> return x
       SIf expr stmt -> return $ SIf (tExpr expr) (tStmt' stmt)
@@ -92,6 +91,14 @@ transAbs = tP_Prog
       SExpr expr  -> return $ SExpr $ tExpr expr
       SThrow expr -> return $ SThrow $ tExpr expr
       STryCatch stmt1 type'2 id3 stmt4 -> return $ STryCatch (tStmt' stmt1) type'2 id3 (tStmt' stmt4)
+      where
+      tAssignOp :: OpAssign -> Expr -> Expr -> Expr
+      tAssignOp opassign expr1 expr2 = case opassign of
+        APlus -> P_EAdd expr1 Plus expr2
+        AMinus -> P_EAdd expr1 Minus expr2
+        ATimes -> P_EMul expr1 Times expr2
+        ADiv -> P_EMul expr1 Div expr2
+        AMod -> P_EMul expr1 Mod expr2
 
     tStmt' :: Stmt -> Stmt
     tStmt' x = case tStmt x of
@@ -133,6 +140,7 @@ transAbs = tP_Prog
       EAccessVar expr id  -> EAccessVar (tExpr expr) id
       EApp id exprs  -> EApp id (map tExpr exprs)
       ENewArr type' expr  -> ENewArr type' (tExpr expr)
+      ENewObj type'  -> x
       -- translate
       P_ENeg expr  -> unary Neg expr
       P_ENot expr  -> unary Not expr

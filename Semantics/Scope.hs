@@ -130,6 +130,8 @@ buildGlobal stmts = forM_ stmts $ \stmt -> case stmt of
     decFunc id
   SDeclVar typ id -> do
     decVar id
+  SDefClass id (Global stmts) ->
+    decType id
   _ -> throwError $ Err.globalForbidden
 
 resVar, resFunc :: Ident -> ScopeM Ident
@@ -172,6 +174,10 @@ funND x = case x of
     typ' <- resType typ
     id' <- resVar id
     return $ SDeclVar typ' id'
+  SDefClass id stmt -> do
+    TUser id' <- resType $ TUser id
+    stmt' <- newLocal (funS stmt)
+    return $ SDefClass id' stmt'
   _ -> throwError $ Err.globalForbidden
 
 funA :: Stmt -> ScopeM Stmt

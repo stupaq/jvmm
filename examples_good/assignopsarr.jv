@@ -1,0 +1,27 @@
+int main() {
+  int[] arr = new int[15];
+  printInts(arr);
+  int i = 0;
+  while (i < arr.length) {
+    arr[i] += 2;
+    i++;
+  }
+  printInts(arr);
+  i = 0;
+  while (i < arr.length) {
+    arr[i] *= 3;
+    i++;
+  }
+  printInts(arr);
+  return 0;
+}
+
+void printInts(int[] array) {
+  int i = 0;
+  printString(">>>");
+  while (i < array.length) {
+    printInt(array[i]);
+    i++;
+  }
+  printString("<<<");
+}

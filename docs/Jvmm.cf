@@ -72,9 +72,9 @@ P_SBlock.   Stmt ::= P_Block;
 
 P_SAssignOp. Stmt ::= Ident OpAssign Expr  ";";
 
-P_SAssignOpArr. Stmt ::= Ident OpAssign Expr  ";";
+P_SAssignOpArr. Stmt ::= Ident "[" Expr "]" OpAssign Expr  ";";
 
-P_SAssignOpFld. Stmt ::= Ident OpAssign Expr  ";";
+P_SAssignOpFld. Stmt ::= Ident "." Ident OpAssign Expr  ";";
 
 P_SPostInc. Stmt ::= Ident "++" ";";
 
