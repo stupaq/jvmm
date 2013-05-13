@@ -31,7 +31,9 @@ builtinMember typ uid = case (typ, uid) of
   (TString, FIdent "charAt$0") -> TFunc TChar [TInt] []
   _ -> TUnknown
 
-builtinTypeNames = Set.fromList ["int", "char", "boolean", "String"]
+builtinTypeNames = ["int", "char", "boolean", "String"]
+
+primitiveTypes = [TVoid, TInt, TChar, TBool]
 
 -- Typing is fully static. Object type is a superclass of every non-primitive.
 -- Note that after scope resolution we can't throw undeclared errors (also for
@@ -62,10 +64,8 @@ typeenv0 = TypeEnv {
   types = membertypes0
 }
 
-mapFunction fun env = env { function = fun (function env) }
+setFunction x env = env { function = x }
 mapExceptions fun env = env { exceptions = fun (exceptions env) }
-mapIdents fun env = env { idents = fun (idents env) }
-mapTypes fun env = env { types = fun (types env) }
 
 typeof'' :: Stmt -> Type
 typeof'' x = case x of
@@ -106,7 +106,10 @@ returns typ = do
     Nothing -> throwError Err.danglingReturn
 
 decIdent :: UIdent -> Type -> TypeM a -> TypeM a
-decIdent uid typ = local (mapIdents $ Map.insert uid typ)
+decIdent uid typ = local (\env -> env { idents = Map.insert uid typ (idents env) })
+
+decType :: Type -> Types -> TypeM a -> TypeM a
+decType typ tenv = local (\env -> env { types = Map.insert typ tenv (types env) })
 
 -- Declares symbol to be of a given type or defines type
 declare :: Stmt -> TypeM a -> TypeM a
@@ -117,8 +120,12 @@ declare x m = case x of
     when (typ == TVoid) $ throwError Err.voidVarDecl
     decIdent (VIdent $ toStr id) typ m
   SDefClass id@(Ident sid) (Global stmts) -> do
-    when (Set.member sid builtinTypeNames) $ throwError (Err.redeclaredType id)
-    undefined
+    when (sid `elem` builtinTypeNames) $ throwError (Err.redeclaredType id)
+    -- We want to obtain all identifiers in class together with their types
+    cls <- local (const typeenv0) . applyAndCompose declare stmts $ do
+      env <- asks idents
+      return env
+    decType (TUser id) cls m
 
 -- TYPE ARITHMETIC --
 ---------------------
@@ -158,7 +165,9 @@ declare x m = case x of
     (TObject, TUser _) -> ok
     (TUser _, TNull) -> ok
     -- TODO hierarchy
-    (TUser id1, TUser id2) -> bad
+    (TUser id1, TUser id2)
+      | id1 == id2 -> ok
+      | otherwise -> bad
     _ -> bad
 
 (|=) = flip (=|)
@@ -183,15 +192,22 @@ funS x = case x of
   Local decls stmts -> applyAndCompose declare decls $ do
     stmts' <- mapM funS stmts
     return $ Local decls stmts'
+  -- This is already delared when we see it in funS
   SDefFunc typ id args excepts stmt -> do
     let ftyp@(TFunc _ _ _) = typeof'' x
     when (id == fst entrypoint) $
       (snd entrypoint =| ftyp >> return ()) `rethrow` Err.incompatibleMain
     declare x . applyAndCompose declare args . applyAndCompose catches excepts $
-      local (mapFunction $ const (Just ftyp)) $ do
+      local (setFunction (Just ftyp)) $ do
         stmt' <- funS stmt
         return $ SDefFunc typ id args excepts stmt'
+  -- This is already delared when we see it in funS
   SDeclVar typ id -> return x
+  -- This is already delared when we see it in funS
+  SDefClass id (Global stmts) -> do
+    declare x $ do
+      stmts' <- mapM funS stmts
+      return $ SDefClass id (Global stmts')
   SAssign id expr -> do
     (expr', etyp) <- funE expr
     vtyp <- typeofVar id
@@ -204,6 +220,12 @@ funS x = case x of
     atyp <- typeofVar id
     atyp =| TArray etyp2
     return $ SAssignArr id expr1' expr2'
+  SAssignFld ido idf expr -> do
+    (expr', etyp) <- funE expr
+    otyp <- typeofVar ido
+    ftyp <- typeofMVar otyp idf
+    ftyp =| etyp
+    return $ SAssignFld ido idf expr'
   SReturn expr -> do
     (expr', etyp) <- funE expr
     when (etyp == TVoid) $ throwError Err.voidNotIgnored
@@ -230,13 +252,11 @@ funS x = case x of
     return $ SExpr expr'
   SThrow expr -> do
     (expr', etyp) <- funE expr
-    -- Temporary limit
-    TString =| etyp
-    throws TString
+    when (etyp `elem` primitiveTypes) $ throwError (Err.referencedPrimitive etyp)
+    throws etyp
     return $ SThrow expr'
   STryCatch stmt1 typ id stmt2 -> do
-    -- TODO temporary limitation
-    (typ `elem` [TString]) `instead` (throwError "bad exception type")
+    when (typ `elem` primitiveTypes) $ throwError (Err.referencedPrimitive typ)
     stmt2' <- decIdent (VIdent $ toStr id) typ (funS stmt2)
     catches typ $ do
       stmt1' <- funS stmt1
@@ -282,11 +302,14 @@ funE x = case x of
     (ftyp1 =| TFunc ret etypes []) `rethrow` Err.argumentsNotMatch args etypes
     return (EApp id exprs', ret)
   ENewArr typ expr -> do
-    -- TODO temporary limitation
-    (typ `elem` [TInt, TBool, TChar, TString]) `instead` (throwError "non-primitive array")
+    when (typ == TVoid) $ throwError Err.voidNotIgnored
     (expr', etyp) <- funE expr
     TInt =| etyp
     return (ENewArr typ expr', TArray typ)
+  ENewObj typ -> do
+    -- Referenced type cannot be primitive
+    when (typ `elem` primitiveTypes) $ throwError (Err.referencedPrimitive typ)
+    return (ENewObj typ, typ)
   EUnaryT _ op expr -> do
     (expr', etyp) <- funE expr
     case op of

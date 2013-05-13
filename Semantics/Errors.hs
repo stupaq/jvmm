@@ -1,4 +1,5 @@
 module Semantics.Errors where
+import Prelude hiding (id)
 import Control.Monad.Error
 import qualified Data.List as List
 import Syntax.AbsJvmm
@@ -25,6 +26,7 @@ voidVarDecl = "a variable cannot have void type"
 voidNotIgnored = "void value not ignored as it should be"
 incompatibleMain = "incompatible main() type"
 redeclaredType id = "redeclared type name: " ++ (show id)
+referencedPrimitive typ = "primitive type cannot be referenced: " ++ (show typ)
 
 -- Static exception checking
 uncaughtException typ = "uncaught, undeclared exception " ++ (show typ)

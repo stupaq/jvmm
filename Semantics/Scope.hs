@@ -298,6 +298,9 @@ funE x = case x of
     typ' <- resType typ
     expr' <- funE expr
     return $ ENewArr typ' expr'
+  ENewObj typ -> do
+    typ' <- resType typ
+    return $ ENewObj typ'
   EUnaryT _ op expr -> do
     expr' <- funE expr
     return $ EUnaryT TUnknown op expr'
