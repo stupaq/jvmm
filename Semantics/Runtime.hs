@@ -314,7 +314,7 @@ alloc val = do
   return ref
   where
     freeloc :: RunState -> Loc
-    freeloc = (+1) . fst . Map.findMax . heap -- FIXME this is imperfect if we have GC
+    freeloc = (+1) . fst . Map.findMax . heap -- TODO this is imperfect since we have GC
 
 deref :: PrimValue -> RuntimeM RefValue
 deref (VRef 0) = throwError (RError Err.nullPointerException)
@@ -385,8 +385,8 @@ getfield id ref = do
     VObject obj -> case Map.lookup id (fields obj) of
       Just val -> return val
       Nothing -> do
-        --FIXME need type information
-        defaultValue TObject
+        --FIXME need type information, ps. findWithDefault
+        throwError (RError $ "usage of uninitialized class field: " ++ (show id))
 
 putfield :: Ident -> PrimValue -> PrimValue -> RuntimeM ()
 -- Types are already checked, we can simply store value in a map
