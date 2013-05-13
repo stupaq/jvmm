@@ -258,7 +258,6 @@ runGC = do
   when (doGCNow gcc hp) $ do
     st <- gets stack
     modify (\state -> state { heap = compactHeap (findRefs st) hp })
-    dumpHeap
 
 doGCNow :: GCConf -> Heap -> Bool
 doGCNow gcconf heap = Map.size heap > gcthresh gcconf
@@ -292,7 +291,7 @@ compactHeap pinned heap =
             grey''' = case Map.lookup loc heap of
               Nothing -> error $ Err.danglingReference loc
               Just (VArray arr) -> Map.fold (flip extract) grey' arr
-              Just (VObject _) -> error "object" -- TODO add to grey'
+              Just (VObject obj) -> Map.fold (flip extract) grey' (fields obj)
               -- We do not recurse (add to grey) in all other cases
               _ -> grey'
               where
@@ -373,20 +372,38 @@ newarray typ (VInt len) = do
 arraylength :: PrimValue -> RuntimeM PrimValue
 arraylength ref = deref ref >>= (\(VArray arr) -> return $ VInt $ Map.size arr)
 
--- TODO classes and stuff
+newobject :: Type -> RuntimeM PrimValue
+newobject typ = alloc $ VObject composite0
+
 getfield :: Ident -> PrimValue -> RuntimeM PrimValue
-getfield (Ident "length$0") ref = do
-  val <- deref ref
-  case val of
+-- Types are already checked, we can simply get value from a map
+getfield id ref = do
+  lval <- deref ref
+  case lval of
     VArray _ -> arraylength ref
     VString str -> return $ VInt (length str)
+    VObject obj -> case Map.lookup id (fields obj) of
+      Just val -> return val
+      Nothing -> do
+        --FIXME need type information
+        defaultValue TObject
+
+putfield :: Ident -> PrimValue -> PrimValue -> RuntimeM ()
+-- Types are already checked, we can simply store value in a map
+putfield id val ref = do
+  lval <- deref ref
+  case lval of
+    VArray _ -> throwError (RError $ Err.isConstant id)
+    VString _ -> throwError (RError $ Err.isConstant id)
+    VObject obj -> do
+      update ref (VObject $ obj { fields = Map.insert id val (fields obj) })
+      runGC --TODO move to some more sensible place
 
 invokevirtual :: Ident -> PrimValue -> [PrimValue] -> RuntimeM ()
 invokevirtual (Ident "charAt$0") ref [VInt ind] = do
   VString str <- deref ref
   unless (0 <= ind && ind < length str) $ throwError (RError $ Err.indexOutOfBounds ind)
   return_ $ VChar (head $ drop ind str)
--- TODO
 
 -- DENOTATIONAL SEMANTICS --
 ----------------------------
@@ -439,6 +456,8 @@ funD (SDefFunc typ id args excepts stmt) =
       where
         argId id = tempIdent id "arg"
 funD (SDeclVar typ id) = (>>) (defaultValue typ >>= store id)
+-- TODO declare all member functions when dealing with real classes
+funD (SDefClass id (Global stmts)) = Prelude.id
 
 -- Statements
 funS :: Stmt -> RuntimeM ()
@@ -455,6 +474,10 @@ funS x = case x of
     ind <- funE expr1
     val <- funE expr2
     astore ref ind val
+  SAssignFld ido idf expr -> do
+    val <- funE expr
+    ref <- load ido
+    putfield idf val ref
   SIf expr stmt -> do
     VBool val <- funE expr
     if val then funS stmt else nop
@@ -512,8 +535,10 @@ funE x = case x of
     vals <- mapM funE exprs
     getResult $ invokestatic id vals
   ENewArr typ expr -> do
-    val <- funE expr
-    newarray typ val
+    len <- funE expr
+    newarray typ len
+  ENewObj typ ->
+    newobject typ
   EUnaryT _ Not expr -> do
     VBool val <- funE expr
     return $ VBool (not val)

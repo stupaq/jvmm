@@ -38,6 +38,7 @@ indexOutOfBounds ind = "index out of bounds: " ++ (show ind)
 nonVoidNoReturn = "no return value from non-void function"
 zeroDivision = "divided by zero"
 intOverflow = "integer overflow"
+isConstant id = "constant cannot be modified: " ++ (show id)
 
 -- Terminal error issued by a user
 userError = "error called"
