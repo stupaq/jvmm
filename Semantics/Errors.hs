@@ -24,6 +24,7 @@ danglingReturn = "dangling return"
 voidVarDecl = "a variable cannot have void type"
 voidNotIgnored = "void value not ignored as it should be"
 incompatibleMain = "incompatible main() type"
+redeclaredType id = "redeclared type name: " ++ (show id)
 
 -- Static exception checking
 uncaughtException typ = "uncaught, undeclared exception " ++ (show typ)

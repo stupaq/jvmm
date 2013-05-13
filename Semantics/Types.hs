@@ -6,7 +6,8 @@ import Control.Monad.State
 import Control.Monad.Writer
 import qualified Data.Set as Set
 import qualified Data.Map as Map
-import Syntax.AbsJvmm (Ident, Type(..), Expr(..), Stmt(..), OpBin(..), OpUn(..))
+import qualified Data.List as List
+import Syntax.AbsJvmm (Ident(..), Type(..), Expr(..), Stmt(..), OpBin(..), OpUn(..))
 import Semantics.Commons
 import Semantics.Trans (UIdent(..), toStr)
 import qualified Semantics.Errors as Err
@@ -30,8 +31,9 @@ builtinMember typ uid = case (typ, uid) of
   (TString, FIdent "charAt$0") -> TFunc TChar [TInt] []
   _ -> TUnknown
 
--- Typing is fully static. We type each null as Object type (which is a
--- superclass of every non-primitive value).
+builtinTypeNames = Set.fromList ["int", "char", "boolean", "String"]
+
+-- Typing is fully static. Object type is a superclass of every non-primitive.
 -- Note that after scope resolution we can't throw undeclared errors (also for
 -- user defined types)
 
@@ -44,10 +46,13 @@ type MemberTypes = Map.Map Type Types
 membertypes0 = Map.empty
 
 data TypeEnv = TypeEnv {
+  -- Type of a function currently executed
   function :: Maybe Type,
+  -- Set of exceptions that are caught when throw in current context
   exceptions :: Set.Set Type,
+  -- Types of identifiers
   idents :: Types,
-  -- TODO handle composite types
+  -- Definitions of types
   types :: MemberTypes
 }
 typeenv0 = TypeEnv {
@@ -57,8 +62,14 @@ typeenv0 = TypeEnv {
   types = membertypes0
 }
 
-functype :: Stmt -> Type
-functype (SDefFunc typ _ args excepts _) = TFunc typ (map (\(SDeclVar typ _) -> typ) args) excepts
+mapFunction fun env = env { function = fun (function env) }
+mapExceptions fun env = env { exceptions = fun (exceptions env) }
+mapIdents fun env = env { idents = fun (idents env) }
+mapTypes fun env = env { types = fun (types env) }
+
+typeof'' :: Stmt -> Type
+typeof'' x = case x of
+  SDefFunc typ _ args excepts _ -> TFunc typ (map (\(SDeclVar typ _) -> typ) args) excepts
 
 -- TYPE MONAD --
 ----------------
@@ -85,7 +96,7 @@ throws typ = do
   unless (Set.member typ excepts) $ throwError $ Err.uncaughtException typ
 
 catches :: Type -> TypeM a -> TypeM a
-catches typ = local (\env -> env { exceptions = Set.insert typ (exceptions env) })
+catches typ = local (mapExceptions $ Set.insert typ)
 
 returns :: Type -> TypeM ()
 returns typ = do
@@ -94,27 +105,20 @@ returns typ = do
     Just (TFunc rett _ _) -> rett =| typ >> return ()
     Nothing -> throwError Err.danglingReturn
 
--- Declares symbol to be of a given type locally
-declare :: UIdent -> Type -> TypeM a -> TypeM a
-declare uid typ = local (\env -> env { idents = Map.insert uid typ (idents env) })
+decIdent :: UIdent -> Type -> TypeM a -> TypeM a
+decIdent uid typ = local (mapIdents $ Map.insert uid typ)
 
--- Note that this does not recurse into function body
-declare' :: Stmt -> TypeM a -> TypeM a
-declare' x m = case x of
-  SDefFunc typ id args excepts stmt -> declare (FIdent $ toStr id) (functype x) . applyAndCompose declare' args $ m
+-- Declares symbol to be of a given type or defines type
+declare :: Stmt -> TypeM a -> TypeM a
+declare x m = case x of
+  SDefFunc typ id args excepts stmt ->
+    decIdent (FIdent $ toStr id) (typeof'' x) m
   SDeclVar typ id -> do
     when (typ == TVoid) $ throwError Err.voidVarDecl
-    declare (VIdent $ toStr id) typ m
-
--- Note that this looks up members but does not recurse in methods body
-define' :: Stmt -> TypeM a -> TypeM a
-define' x = Prelude.id -- TODO syntax for mutually recursive classes
-
-call :: Type -> TypeM a -> TypeM a
-call typ@(TFunc ret args excepts) = local (\env -> env { function = Just $ typ })
-
-call' :: Stmt -> TypeM a -> TypeM a
-call' = call . functype
+    decIdent (VIdent $ toStr id) typ m
+  SDefClass id@(Ident sid) (Global stmts) -> do
+    when (Set.member sid builtinTypeNames) $ throwError (Err.redeclaredType id)
+    undefined
 
 -- TYPE ARITHMETIC --
 ---------------------
@@ -159,14 +163,12 @@ call' = call . functype
 
 (|=) = flip (=|)
 
--- TODO remove these when ready
 typeofFunc, typeofVar :: Ident -> TypeM Type
 typeofVar id = typeof (VIdent $ toStr id)
 typeofFunc id = typeof (FIdent $ toStr id)
 typeofMVar, typeofMFunc :: Type -> Ident -> TypeM Type
 typeofMVar typ id = typeof' typ (VIdent $ toStr id)
 typeofMFunc typ id = typeof' typ (FIdent $ toStr id)
--- TODO
 
 -- MAIN --
 ----------
@@ -175,17 +177,20 @@ staticTypes = runTypeM typeenv0 . funS
 
 funS :: Stmt -> TypeM Stmt
 funS x = case x of
-  Global stmts -> applyAndCompose declare' stmts $ do
+  Global stmts -> applyAndCompose declare stmts $ do
     stmts' <- mapM funS stmts
     return $ Global stmts'
-  Local decls stmts -> applyAndCompose declare' decls $ do
+  Local decls stmts -> applyAndCompose declare decls $ do
     stmts' <- mapM funS stmts
     return $ Local decls stmts'
   SDefFunc typ id args excepts stmt -> do
+    let ftyp@(TFunc _ _ _) = typeof'' x
     when (id == fst entrypoint) $
-      (snd entrypoint =| functype x >> return ()) `rethrow` Err.incompatibleMain
-    stmt' <- declare' x $ call' x $ applyAndCompose catches excepts $ funS stmt
-    return $ SDefFunc typ id args excepts stmt'
+      (snd entrypoint =| ftyp >> return ()) `rethrow` Err.incompatibleMain
+    declare x . applyAndCompose declare args . applyAndCompose catches excepts $
+      local (mapFunction $ const (Just ftyp)) $ do
+        stmt' <- funS stmt
+        return $ SDefFunc typ id args excepts stmt'
   SDeclVar typ id -> return x
   SAssign id expr -> do
     (expr', etyp) <- funE expr
@@ -232,7 +237,7 @@ funS x = case x of
   STryCatch stmt1 typ id stmt2 -> do
     -- TODO temporary limitation
     (typ `elem` [TString]) `instead` (throwError "bad exception type")
-    stmt2' <- declare (VIdent $ toStr id) typ (funS stmt2)
+    stmt2' <- decIdent (VIdent $ toStr id) typ (funS stmt2)
     catches typ $ do
       stmt1' <- funS stmt1
       return $ STryCatch stmt1' typ id stmt2'

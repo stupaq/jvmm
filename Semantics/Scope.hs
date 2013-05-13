@@ -195,10 +195,13 @@ funS x = case x of
     return $ Global stmts'
   SDefFunc typ id args excepts stmt -> do
     decFunc id
-    funND $ SDefFunc typ id args excepts stmt
+    funND x
   SDeclVar typ id -> do
     decVar id
-    funND $ SDeclVar typ id
+    funND x
+  SDefClass id stmt -> do
+    decType id
+    funND x
   Local _ stmts -> do -- definitions part of Local is empty at this point
     stmts' <- newLocal (mapM funS stmts)
     let (decls, instrs) = List.partition (\x -> case x of { SDeclVar _ _ -> True; _ -> False }) stmts'
@@ -212,6 +215,17 @@ funS x = case x of
     expr2' <- funE expr2
     id' <- resVar id
     return $ SAssignArr id' expr1' expr2'
+  SAssignFld id1 id2 expr -> do
+    expr' <- funE expr
+    id1' <- resVar id1
+    globalAsCurrent $ do
+      -- We are in global scope now, member (depending on type, which we
+      -- can't determine right now) may exist or not. We still can resolve
+      -- member's name, since it will be declared immediately on top of
+      -- global scope.
+      decVar id2
+      id2' <- resVar id2
+      return $ SAssignFld id1' id2' expr'
   SReturn expr -> do
     expr' <- funE expr
     return $ SReturn expr'
