@@ -155,7 +155,10 @@ declare x m = case x of
     (TVoid, TVoid) -> ok
     (TNull, TNull) -> ok
     (TArray _, TNull) -> ok
-    (TArray etyp1, TArray etyp2) -> etyp1 =| etyp2
+    (TArray etyp1, TArray etyp2)
+    -- This is an improvement when compared with Java
+      | etyp1 == etyp2 -> ok
+      | otherwise -> bad
     (TString, TNull) -> ok
     (TString, TString) -> ok
     (TObject, TNull) -> ok
