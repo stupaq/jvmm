@@ -1,4 +1,5 @@
 DOCS := $(patsubst %.md, %.pdf, $(wildcard docs/*.md))
+TESTSUITES := $(wildcard test-*)
 
 PDFLATEX := pdflatex -interaction=batchmode
 
@@ -10,8 +11,8 @@ all:
 $(DOCS): %.pdf : %.md
 	pandoc $< -o $@
 
-test-jvmm: all
-	@./test-jvmm/test-run.sh
+$(TESTSUITES): % : all
+	@./$@/test-run.sh
 
 clean:
 	$(MAKE) -C src/ clean

@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # testcases' locations
-TESTROOT="./test-jvmm/"
-EXECEXT=".jv"
+TESTROOT="./test-latte/"
+EXECEXT=".lat"
 
 # run tests
 source test-run-generic.sh
