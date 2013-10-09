@@ -1,13 +1,13 @@
 #!/bin/bash
 
 PROGEXT=".jv"
-EXEC="./interpreter"
-PARSE="./Syntax/TestJvmm"
+EXEC="./latc"
+PARSE="./latc_syntax"
 MEMLIMIT=60000
 
-GOOD=`find ./examples_good/ -name "*$PROGEXT" | sort`
-BAD_EXEC=`find ./examples_bad/ -name "*$PROGEXT" | sort`
-BAD_PARSE=`find ./examples_bad/ -name "*.txt" | sort`
+GOOD=`find ./test-jvmm/good/ -name "*$PROGEXT" | sort`
+BAD_EXEC=`find ./test-jvmm/bad/ -name "*$PROGEXT" | sort`
+BAD_PARSE=`find ./test-jvmm/bad/ -name "*.txt" | sort`
 
 OUT="test.out"
 ERR="test.err"
@@ -69,7 +69,7 @@ function run_example() {
   ulimit -Sv $MEMLIMIT
   $EXEC $1 <$input 1>$OUT 2>$ERR && diff $OUT $output &>/dev/null
   status=$?
-  if [[ $1 == *examples_good* ]]; then
+  if [[ $1 == *test-jvmm/good* ]]; then
     check $status
   else
     neg $status
@@ -81,7 +81,7 @@ function parse_example() {
   echo -ne "PARSE\t$1: "
   $PARSE $1 | grep "Parse Successful!" &>/dev/null
   status=$?
-  if [[ $1 == *.jv ]]; then
+  if [[ $1 == *$PROGEXT ]]; then
     check $status
   else
     neg $status
@@ -108,7 +108,7 @@ if [[ $# -eq 0 ]]; then
   echo "TOTAL FAILED: $fail"
   exit $fail
 else
-  for f in $1 "./examples_good/${1%.*}$PROGEXT" "./examples_bad/${1%.*}$PROGEXT"; do
+  for f in $1 "./test-jvmm/good/${1%.*}$PROGEXT" "./test-jvmm/bad/${1%.*}$PROGEXT"; do
     [[ -f $f ]] && file=$f;
   done
   [[ -z $file ]] && fatal "cannot find test: $1"
