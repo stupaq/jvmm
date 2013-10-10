@@ -117,7 +117,7 @@ if [[ $# -eq 0 ]]; then
   echo "TOTAL FAILED: $fail"
   exit $fail
 else
-  for f in $1 "$TESTROOT/good/${1%.*}$EXECEXT" "$TESTROOT/bad/${1%.*}$EXECEXT"; do
+  for f in $1 `find "$TESTROOT" -name "$1$PARSEEXT" -type f` `find "$TESTROOT" -name "$1$EXECEXT" -type f`; do
     [[ -f $f ]] && file=$f;
   done
   [[ -z $file ]] && fatal "cannot find test: $1"
