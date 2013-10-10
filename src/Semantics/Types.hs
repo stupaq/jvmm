@@ -31,7 +31,7 @@ builtinMember typ uid = case (typ, uid) of
   (TString, FIdent "charAt$0") -> TFunc TChar [TInt] []
   _ -> TUnknown
 
-builtinTypeNames = ["int", "char", "boolean", "String"]
+builtinTypeNames = ["int", "char", "boolean", "String", "string"]
 
 primitiveTypes = [TVoid, TInt, TChar, TBool]
 

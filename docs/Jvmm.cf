@@ -119,7 +119,9 @@ TArray.     Type1 ::= Type "[]";
 
 TInt.       Type ::= "int";
 
-TString.    Type ::= "String";
+TString.    Type ::= "String"; -- for compatibility with Java
+
+TString.    Type ::= "string";
 
 TChar.      Type ::= "char";
 
