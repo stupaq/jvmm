@@ -16,7 +16,7 @@ import qualified Semantics.Errors as Err
 import Semantics.Errors (rethrow)
 import qualified Semantics.Scope as Scope
 
--- Implements runtime semantics and memory model, not that all type magic
+-- Implements runtime semantics and memory model, note that all type magic
 -- should be moved to type cheking phase. Runtime polimorphism (virtual
 -- functions) requires knowledge of runtime type.
 

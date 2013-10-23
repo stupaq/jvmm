@@ -1,11 +1,6 @@
 -- Jvmm : BNF syntax specification --
 -------------------------------------
 
--- There are 2 shift/reduce conflicts
--- SIf. | SIfElse. -- tested in examples_good/conflict001.jv
--- SAssignArr. | EAccessArr. -- tested in examples_good/conflict002.jv
--- There is 1 reduce/reduce conflict
--- TUser. | any other type label -- tested everywhere
 -- Labels prefixed with "Pn_" are prunned in subsequent phases
 -- Note the ugly trick with coercion 0 for OpBin, this makes 2 (+) 3 * 4 a
 -- parse error. Without this trick one can promote binary operator 2 (+) 3 * 4 =
@@ -71,35 +66,32 @@ P_Field.    P_Member ::= Type Ident;
 P_SBlock.   Stmt ::= P_Block;
 
 P_SAssignOp. Stmt ::= Ident OpAssign Expr  ";";
-
 P_SAssignOpArr. Stmt ::= Ident "[" Expr "]" OpAssign Expr  ";";
-
 P_SAssignOpFld. Stmt ::= Ident "." Ident OpAssign Expr  ";";
 
 P_SPostInc. Stmt ::= Ident "++" ";";
-
 P_SPostDec. Stmt ::= Ident "--" ";";
 
 SEmpty.     Stmt ::= ";";
 
 SAssign.    Stmt ::= Ident "=" Expr  ";";
-
 SAssignArr. Stmt ::= Ident "[" Expr "]" "=" Expr  ";";
-
 SAssignFld. Stmt ::= Ident "." Ident "=" Expr  ";";
 
 SReturn.    Stmt ::= "return" Expr ";";
-
 SReturnV.   Stmt ::= "return" ";";
 
+-- The following two rules together create one additional shift/reduce
+-- conflict, tested in examples_good/conflict001.jv
 SIf.        Stmt ::= "if" "(" Expr ")" Stmt;
-
 SIfElse.    Stmt ::= "if" "(" Expr ")" Stmt "else" Stmt;
 
 SWhile.     Stmt ::= "while" "(" Expr ")" Stmt;
 
 P_SForeach. Stmt ::= "for" "(" Type Ident ":" Expr ")" Stmt;
 
+-- The following rule alone creates two additional shift/reduce and one
+-- reduce/reduce conflict.
 SExpr.      Stmt ::= Expr ";";
 
 SThrow.     Stmt ::= "throw" Expr ";";
@@ -115,23 +107,21 @@ internal    TUnknown. Type ::= "unknown";
 
 internal    TNull. Type ::= "null";
 
-TArray.     Type1 ::= Type "[]";
-
+TVoid.      Type ::= "void";
 TInt.       Type ::= "int";
-
-TString.    Type ::= "String"; -- for compatibility with Java
-
-TString.    Type ::= "string";
-
 TChar.      Type ::= "char";
-
 TBool.      Type ::= "boolean";
 
-TVoid.      Type ::= "void";
+TString.    Type ::= "String"; -- for compatibility with Java
+TString.    Type ::= "string";
 
+-- This rule creates one additional reduce/reduce conflict, one possible
+-- solution is to resolve any non-primitive in type checker.
 TUser.      Type ::= Ident;
 
 TObject.    Type ::= "Object";
+
+TArray.     Type1 ::= Type "[]";
 
 coercions Type 1;
 
@@ -147,7 +137,6 @@ EVar.       Expr8 ::= Ident;
 ELitInt.    Expr8 ::= Integer;
 
 ELitTrue.   Expr8 ::= "true";
-
 ELitFalse.  Expr8 ::= "false";
 
 ELitString. Expr8 ::= String;
@@ -159,17 +148,14 @@ ENull.      Expr8 ::= "null";
 EAccessArr. Expr7 ::= Expr8 "[" Expr "]";
 
 EAccessFn.  Expr7 ::= Expr8 "." Ident "(" [Expr] ")";
-
 EAccessVar. Expr7 ::= Expr8 "." Ident;
 
 EApp.       Expr7 ::= Ident "(" [Expr] ")";
 
+ENewObj.    Expr6 ::= "new" Type;
 ENewArr.    Expr6 ::= "new" Type "[" Expr "]";
 
-ENewObj.    Expr6 ::= "new" Type;
-
 P_ENeg.     Expr5 ::= "-" Expr5;
-
 P_ENot.     Expr5 ::= "!" Expr5;
 
 P_EMul.     Expr4 ::= Expr4 OpBin4 Expr5 ;
