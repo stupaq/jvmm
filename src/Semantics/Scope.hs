@@ -1,4 +1,4 @@
-module Semantics.Scope (scope, tagFIdent, tagSymbol, untagSymbol, tag0, tempIdent) where
+module Semantics.Scope (scope, tagGlobal, tempIdent) where
 import Control.Monad.Identity
 import Control.Monad.Error
 import Control.Monad.Reader
@@ -31,16 +31,11 @@ builtinGlobal = Map.fromList $ map (\name -> (FIdent name, tag0)) [
 type Tag = Int
 tag0 = 0 :: Tag
 
-tagFIdent :: Int -> String -> UIdent
-tagFIdent tag = FIdent . tagSymbol tag
+tagWith :: Tag -> UIdent -> UIdent
+tagWith tag = (+/+ concat ["$", show tag])
 
-tagSymbol :: Int -> String -> String
-tagSymbol tag name = concat [name, "$", show tag]
-
-untagSymbol :: UIdent -> String
-untagSymbol (VIdent id) = takeWhile (/= '$') id
-untagSymbol (FIdent id) = takeWhile (/= '$') id
-untagSymbol (TIdent id) = takeWhile (/= '$') id
+tagGlobal :: UIdent -> UIdent
+tagGlobal = tagWith tag0
 
 tempIdent :: UIdent -> String -> UIdent
 tempIdent id ctx = id +/+ "#" +/+ ctx
@@ -72,7 +67,7 @@ newOccurence m id = Map.insertWith (\_ -> (+1)) id tag0 m
 
 resolve :: (Scope -> Symbols) -> UIdent -> Scope -> (ErrorT String Identity) UIdent
 resolve acc id sc = case Map.lookup id (acc sc) of
-  Just tag -> return $ id +/+ "$" +/+ show tag
+  Just tag -> return $ tagWith tag id
   Nothing -> throwError $ Err.unboundSymbol id
 
 -- SCOPE MONAD --

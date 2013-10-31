@@ -21,9 +21,9 @@ import qualified Semantics.Scope as Scope
 
 -- BUILTINS --
 --------------
-entrypoint = Scope.tagFIdent Scope.tag0 "main"
+entrypoint = Scope.tagGlobal $ FIdent "main"
 
-builtinGlobal = map (\(id, fun) -> (Scope.tagFIdent Scope.tag0 id, \vals -> fun vals >> nop)) [
+builtinGlobal = map (\(name, fun) -> (Scope.tagGlobal $ FIdent name, \vals -> fun vals >> nop)) [
   ("printInt",
       \[VInt val] -> do
         liftIO $ putStrLn (show val)

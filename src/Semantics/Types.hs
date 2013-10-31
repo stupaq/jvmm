@@ -16,9 +16,9 @@ import qualified Semantics.Scope as Scope
 
 -- BUILTINS --
 --------------
-entrypoint = (Scope.tagFIdent Scope.tag0 "main", TFunc TInt [] [])
+entrypoint = (Scope.tagGlobal $ FIdent "main", TFunc TInt [] [])
 
-builtinGlobal = Map.fromList $ map (\(name, typ) -> (FIdent $ Scope.tagSymbol Scope.tag0 name, typ)) [
+builtinGlobal = Map.fromList $ map (\(name, typ) -> (Scope.tagGlobal $ FIdent name, typ)) [
     ("printInt", TFunc TVoid [TInt] []),
     ("readInt", TFunc TInt [] []),
     ("printString", TFunc TVoid [TString] []),
