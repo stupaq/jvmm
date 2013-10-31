@@ -37,7 +37,7 @@ transAbs = tP_Prog
 
     tP_Member :: P_Member -> O.Stmt
     tP_Member x = case x of
-      P_Field typ id  -> O.SDeclVar (tType typ) (tTIdent id)
+      P_Field typ id  -> O.SDeclVar (tType typ) (tVIdent id)
 
     tP_DefFunc :: P_DefFunc -> O.Stmt
     tP_DefFunc (P_DefFunc typ id args (P_Excepts excepts) pblock) = O.SDefFunc (tType typ) (tFIdent id) (tP_Args args) (map tType excepts) $ tP_Block pblock
@@ -128,7 +128,7 @@ transAbs = tP_Prog
       I.ELitChar c  -> O.ELitChar c
       I.ENull  -> O.ENull
       I.EAccessArr expr1 expr2  -> O.EAccessArr (tExpr expr1) (tExpr expr2)
-      I.EAccessFn expr id exprs  -> O.EAccessFn (tExpr expr) (tVIdent id) (map tExpr exprs)
+      I.EAccessFn expr id exprs  -> O.EAccessFn (tExpr expr) (tFIdent id) (map tExpr exprs)
       I.EAccessVar expr id  -> O.EAccessVar (tExpr expr) (tVIdent id)
       I.EApp id exprs  -> O.EApp (tFIdent id) (map tExpr exprs)
       I.ENewArr typ expr  -> O.ENewArr (tType typ) (tExpr expr)
@@ -171,9 +171,9 @@ transAbs = tP_Prog
       I.TChar -> O.TChar
       I.TBool -> O.TBool
       I.TString -> O.TString
-      I.TUser id -> O.TUser (tVIdent id)
+      I.TUser id -> O.TUser (tTIdent id)
       I.TObject -> O.TObject
-      I.TArray typ -> undefined
+      I.TArray typ -> O.TArray $ tType typ
 
     tVIdent, tFIdent, tTIdent :: I.Ident -> O.UIdent
     tVIdent (Ident id) = VIdent id

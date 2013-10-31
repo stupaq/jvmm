@@ -1,4 +1,4 @@
-module Semantics.Scope (scope, tagSymbol, tagSymbol', untagSymbol, tag0) where
+module Semantics.Scope (scope, tagFIdent, tagSymbol, untagSymbol, tag0, tempIdent) where
 import Control.Monad.Identity
 import Control.Monad.Error
 import Control.Monad.Reader
@@ -7,17 +7,19 @@ import Control.Monad.Writer
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.List as List
-import Syntax.AbsJvmm (Ident(..), Type(..), Expr(..), Stmt(..))
 import Semantics.Commons
 import qualified Semantics.Errors as Err
 import Semantics.Errors (rethrow)
+import Semantics.APTree
 
 -- TODO for scope resolution with classes we need to rewrite all EVar that
 -- refer to object's scope to EAccessVar this (same with methods)
+-- TODO can unify functions, variables and types since they have different
+-- identifiers
 
 -- BUILTINS --
 --------------
-builtinGlobal = Map.fromList $ map (\name -> (Ident name, tag0)) [
+builtinGlobal = Map.fromList $ map (\name -> (FIdent name, tag0)) [
     "printInt",
     "readInt",
     "printString",
@@ -29,18 +31,23 @@ builtinGlobal = Map.fromList $ map (\name -> (Ident name, tag0)) [
 type Tag = Int
 tag0 = 0 :: Tag
 
-tagSymbol :: Int -> String -> Ident
-tagSymbol tag = Ident . tagSymbol' tag
+tagFIdent :: Int -> String -> UIdent
+tagFIdent tag = FIdent . tagSymbol tag
 
-tagSymbol' :: Int -> String -> String
-tagSymbol' tag name = concat [name, "$", show tag]
+tagSymbol :: Int -> String -> String
+tagSymbol tag name = concat [name, "$", show tag]
 
-untagSymbol :: Ident -> String
-untagSymbol (Ident id) = takeWhile (/= '$') id
+untagSymbol :: UIdent -> String
+untagSymbol (VIdent id) = takeWhile (/= '$') id
+untagSymbol (FIdent id) = takeWhile (/= '$') id
+untagSymbol (TIdent id) = takeWhile (/= '$') id
+
+tempIdent :: UIdent -> String -> UIdent
+tempIdent id ctx = id +/+ "#" +/+ ctx
 
 -- Each symbol in scoped tree has an identifier which is unique in its scope,
 -- in other words, there is no identifier hiding in scoped tree.
-type Symbols = Map.Map Ident Tag
+type Symbols = Map.Map UIdent Tag
 symbols0 = Map.empty
 
 data Scope = Scope {
@@ -60,12 +67,12 @@ scopeNull = Scope {
   types = Map.empty
 }
 
-newOccurence :: Symbols -> Ident -> Symbols
+newOccurence :: Symbols -> UIdent -> Symbols
 newOccurence m id = Map.insertWith (\_ -> (+1)) id tag0 m
 
-resolve :: (Scope -> Symbols) -> Ident -> Scope -> (ErrorT String Identity) Ident
+resolve :: (Scope -> Symbols) -> UIdent -> Scope -> (ErrorT String Identity) UIdent
 resolve acc id sc = case Map.lookup id (acc sc) of
-  Just tag -> let (Ident name) = id in return $ Ident $ concat [name, "$", show tag]
+  Just tag -> return $ id +/+ "$" +/+ show tag
   Nothing -> throwError $ Err.unboundSymbol id
 
 -- SCOPE MONAD --
@@ -77,12 +84,12 @@ type ScopeM = StateT Scope (ReaderT (Scope, Scope) (ErrorT String Identity))
 runScopeM :: ScopeM a -> Either String (a, Scope)
 runScopeM m = runIdentity $ runErrorT $ runReaderT (runStateT m scope0) (scope0, scopeNull)
 
-resolveLocal, resolveGlobal, resolveParent :: (Scope -> Symbols) -> Ident -> ScopeM Ident
+resolveLocal, resolveGlobal, resolveParent :: (Scope -> Symbols) -> UIdent -> ScopeM UIdent
 resolveLocal acc id = (get) >>= (lift . lift . (resolve acc id))
 resolveGlobal acc id = (asks fst) >>= (lift . lift . (resolve acc id))
 resolveParent acc id = (asks snd) >>= (lift . lift . (resolve acc id))
 
-checkRedeclaration:: (Scope -> Symbols) -> Ident -> ScopeM ()
+checkRedeclaration:: (Scope -> Symbols) -> UIdent -> ScopeM ()
 checkRedeclaration acc id = do
   -- resolve in block's beginning's scope
   idout <- resolveParent acc id `catchError` (\_ -> return id)
@@ -130,11 +137,11 @@ buildGlobal stmts = forM_ stmts $ \stmt -> case stmt of
     decFunc id
   SDeclVar typ id -> do
     decVar id
-  SDefClass id (Global stmts) ->
+  SDefClass id (SGlobal stmts) ->
     decType id
   _ -> throwError $ Err.globalForbidden
 
-resVar, resFunc :: Ident -> ScopeM Ident
+resVar, resFunc :: UIdent -> ScopeM UIdent
 resVar = resolveLocal vars
 resFunc = resolveLocal funcs
 -- We do not support types hiding (but we want to check for redeclarations and usage of undeclared types)
@@ -145,7 +152,7 @@ resType typ = case typ of
 
 -- SCOPE RESOLUTION --
 ----------------------
-decVar, decFunc, decType :: Ident -> ScopeM ()
+decVar, decFunc, decType :: UIdent -> ScopeM ()
 decVar id = do
   checkRedeclaration vars id
   modify $ (\sc -> sc { vars = newOccurence (vars sc) id })
@@ -186,13 +193,14 @@ funA (SDeclVar typ id) = do
   id' <- resVar id
   typ' <- resType typ
   return $ SDeclVar typ' id'
+funA x = error $ show x
 
 funS :: Stmt -> ScopeM Stmt
 funS x = case x of
-  Global stmts -> do
+  SGlobal stmts -> do
     buildGlobal stmts
     stmts' <- currentAsGlobal $ mapM funND stmts
-    return $ Global stmts'
+    return $ SGlobal stmts'
   SDefFunc typ id args excepts stmt -> do
     decFunc id
     funND x
@@ -202,10 +210,10 @@ funS x = case x of
   SDefClass id stmt -> do
     decType id
     funND x
-  Local _ stmts -> do -- definitions part of Local is empty at this point
+  SLocal _ stmts -> do -- definitions part of SLocal is empty at this point
     stmts' <- newLocal (mapM funS stmts)
     let (decls, instrs) = List.partition (\x -> case x of { SDeclVar _ _ -> True; _ -> False }) stmts'
-    return $ Local decls instrs
+    return $ SLocal decls instrs
   SAssign id expr -> do
     expr' <- funE expr
     id' <- resVar id
@@ -258,7 +266,6 @@ funS x = case x of
       return $ STryCatch stmt1' typ2 id3' stmt4'
   SReturnV -> return SReturnV
   SEmpty -> return SEmpty
-  Local _ _ -> undefined
 
 funE :: Expr -> ScopeM Expr
 funE x = case x of
@@ -301,12 +308,12 @@ funE x = case x of
   ENewObj typ -> do
     typ' <- resType typ
     return $ ENewObj typ'
-  EUnaryT _ op expr -> do
+  EUnary _ op expr -> do
     expr' <- funE expr
-    return $ EUnaryT TUnknown op expr'
-  EBinaryT _ op expr1 expr2 -> do
+    return $ EUnary TUnknown op expr'
+  EBinary _ op expr1 expr2 -> do
     expr1' <- funE expr1
     expr2' <- funE expr2
-    return $ EBinaryT TUnknown op expr1' expr2'
+    return $ EBinary TUnknown op expr1' expr2'
   _ -> return x
 

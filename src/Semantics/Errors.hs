@@ -2,7 +2,6 @@ module Semantics.Errors where
 import Prelude hiding (id)
 import Control.Monad.Error
 import qualified Data.List as List
-import Syntax.AbsJvmm
 
 -- Discards error and throws provided one
 action `rethrow` except = action `catchError` (\_ -> throwError except)

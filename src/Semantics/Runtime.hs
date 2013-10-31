@@ -9,10 +9,8 @@ import Control.Monad.Cont
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
-import Syntax.AbsJvmm (Ident(..), Expr(..), Stmt(..), OpBin(..), OpUn(..), Type(..))
 import Semantics.Commons
-import Semantics.Trans (tempIdent)
-import Semantics.APTree (UIdent(..))
+import Semantics.APTree
 import qualified Semantics.Errors as Err
 import Semantics.Errors (rethrow)
 import qualified Semantics.Scope as Scope
@@ -23,9 +21,9 @@ import qualified Semantics.Scope as Scope
 
 -- BUILTINS --
 --------------
-entrypoint = Scope.tagSymbol Scope.tag0 "main"
+entrypoint = Scope.tagFIdent Scope.tag0 "main"
 
-builtinGlobal = map (\(id, fun) -> (Scope.tagSymbol Scope.tag0 id, \vals -> fun vals >> nop)) [
+builtinGlobal = map (\(id, fun) -> (Scope.tagFIdent Scope.tag0 id, \vals -> fun vals >> nop)) [
   ("printInt",
       \[VInt val] -> do
         liftIO $ putStrLn (show val)
@@ -77,8 +75,8 @@ type Loc = Integer
 loc0 = 0
 
 data Composite = Composite {
-  fields :: Map.Map Ident PrimValue,
-  methods :: Map.Map Ident Stmt
+  fields :: Map.Map UIdent PrimValue,
+  methods :: Map.Map UIdent Stmt
 } deriving (Eq, Ord, Show)
 composite0 = Composite {
   fields = Map.empty,
@@ -123,7 +121,7 @@ data RefValue =
 -- STATIC ENVIRONMENT --
 ------------------------
 type Func = [PrimValue] -> RuntimeM ()
-type FuncEnv = Map.Map Ident Func
+type FuncEnv = Map.Map UIdent Func
 funcenv0 = Map.fromList builtinGlobal
 
 data GCConf = GCConf {
@@ -144,7 +142,7 @@ runenv0 = RunEnv {
 
 -- RUNTIME STATE --
 -------------------
-type StackFrame = Map.Map Ident PrimValue
+type StackFrame = Map.Map UIdent PrimValue
 stackframe0 = Map.empty
 
 mapHead :: (a -> a) -> [a] -> [a]
@@ -217,7 +215,7 @@ getResult action = do
       RValue val -> return val
       _ -> throwError err
 
-tryCatch :: RuntimeM () -> Ident -> RuntimeM () -> RuntimeM ()
+tryCatch :: RuntimeM () -> UIdent -> RuntimeM () -> RuntimeM ()
 tryCatch atry id acatch = do
   atry `catchError` handler
   where
@@ -331,7 +329,7 @@ update (VRef loc) val = modify (\state -> state { heap = Map.insert loc val (hea
 nop :: RuntimeM ()
 nop = return ()
 
-load :: Ident -> RuntimeM PrimValue
+load :: UIdent -> RuntimeM PrimValue
 load id = gets (fromJust id . Map.lookup id . head . stack)
 
 aload :: PrimValue -> PrimValue -> RuntimeM PrimValue
@@ -341,7 +339,7 @@ aload ref (VInt ind) = do
     Nothing -> throwError (RError $ Err.indexOutOfBounds ind)
     Just val -> return val
 
-store :: Ident -> PrimValue -> RuntimeM ()
+store :: UIdent -> PrimValue -> RuntimeM ()
 store id val = do
   modify $ \state -> state { stack = mapHead (Map.insert id val) (stack state) }
   runGC --TODO move to some more sensible place
@@ -353,7 +351,7 @@ astore ref (VInt ind) val = do
   update ref (VArray $ Map.insert ind val arr)
   runGC --TODO move to some more sensible place
 
-invokestatic :: Ident -> [PrimValue] -> RuntimeM ()
+invokestatic :: UIdent -> [PrimValue] -> RuntimeM ()
 invokestatic id vals = asks (fromJust id . Map.lookup id . funcs) >>= ($ vals)
 
 throw :: PrimValue -> RuntimeM ()
@@ -376,7 +374,7 @@ arraylength ref = deref ref >>= (\(VArray arr) -> return $ VInt $ Map.size arr)
 newobject :: Type -> RuntimeM PrimValue
 newobject typ = alloc $ VObject composite0
 
-getfield :: Ident -> PrimValue -> RuntimeM PrimValue
+getfield :: UIdent -> PrimValue -> RuntimeM PrimValue
 -- Types are already checked, we can simply get value from a map
 getfield id ref = do
   lval <- deref ref
@@ -389,7 +387,7 @@ getfield id ref = do
         --FIXME need type information, ps. findWithDefault
         throwError (RError $ "usage of uninitialized class field: " ++ (show id))
 
-putfield :: Ident -> PrimValue -> PrimValue -> RuntimeM ()
+putfield :: UIdent -> PrimValue -> PrimValue -> RuntimeM ()
 -- Types are already checked, we can simply store value in a map
 putfield id val ref = do
   lval <- deref ref
@@ -400,8 +398,8 @@ putfield id val ref = do
       update ref (VObject $ obj { fields = Map.insert id val (fields obj) })
       runGC --TODO move to some more sensible place
 
-invokevirtual :: Ident -> PrimValue -> [PrimValue] -> RuntimeM ()
-invokevirtual (Ident "charAt$0") ref [VInt ind] = do
+invokevirtual :: UIdent -> PrimValue -> [PrimValue] -> RuntimeM ()
+invokevirtual (FIdent "charAt$0") ref [VInt ind] = do
   VString str <- deref ref
   unless (0 <= ind && ind < length str) $ throwError (RError $ Err.indexOutOfBounds ind)
   return_ $ VChar (head $ drop ind str)
@@ -448,25 +446,25 @@ funD (SDefFunc typ id args excepts stmt) =
       zipWithM_ (\(SDeclVar _ id) var -> store (argId id) var) args vals
       -- This is a hack, but it's extremenly refined one, we get garbage
       -- collection and all shit connected with that for free, it's exactly the
-      -- same code as in funS (Local ...)
-      funS $ Local args ((map (\(SDeclVar _ id) -> SAssign id (EVar $ argId id)) args) ++ [stmt])
+      -- same code as in funS (SLocal ...)
+      funS $ SLocal args ((map (\(SDeclVar _ id) -> SAssign id (EVar $ argId id)) args) ++ [stmt])
       -- If function has _void_ return type (but only then) and does not return
       -- explicitly we do it here
       defval <- defaultValue typ
       when (typ == TVoid) (return_ defval)
       where
-        argId id = tempIdent id "arg"
+        argId id = Scope.tempIdent id "arg"
 funD (SDeclVar typ id) = (>>) (defaultValue typ >>= store id)
 -- TODO declare all member functions when dealing with real classes
-funD (SDefClass id (Global stmts)) = Prelude.id
+funD (SDefClass id (SGlobal stmts)) = Prelude.id
 
 -- Statements
 funS :: Stmt -> RuntimeM ()
 funS x = case x of
-  Global stmts -> applyAndCompose funD stmts $ do
+  SGlobal stmts -> applyAndCompose funD stmts $ do
     code <- getResult $ invokestatic entrypoint []
     return_ code
-  Local decls stmts -> applyAndCompose funD decls (mapM_ funS stmts)
+  SLocal decls stmts -> applyAndCompose funD decls (mapM_ funS stmts)
   SAssign id expr -> do
     val <- funE expr
     store id val
@@ -493,7 +491,7 @@ funS x = case x of
     -- This is a bit hackish, but there is no reason why it won't work and we
     -- want to apply normal chaining rules without too much ifology
     -- Note that GC works fine here because stmt creates heap objects in its own scope
-    if val then funS $ Local [] [stmt, SWhile expr stmt] else nop
+    if val then funS $ SLocal [] [stmt, SWhile expr stmt] else nop
   SExpr expr -> funE expr >> nop
   SThrow expr -> do
     ref <- funE expr
@@ -540,48 +538,48 @@ funE x = case x of
     newarray typ len
   ENewObj typ ->
     newobject typ
-  EUnaryT _ Not expr -> do
+  EUnary _ OuNot expr -> do
     VBool val <- funE expr
     return $ VBool (not val)
-  EUnaryT _ Neg expr -> do
+  EUnary _ OuNeg expr -> do
     VInt val <- funE expr
     return $ VInt (negate val)
-  EBinaryT TString Plus expr1 expr2 -> do
+  EBinary TString ObPlus expr1 expr2 -> do
     ref1 <- funE expr1
     ref2 <- funE expr2
     VString str1 <- deref ref1
     VString str2 <- deref ref2
     alloc $ VString (str1 ++ str2)
-  EBinaryT TInt opbin expr1 expr2 -> do
+  EBinary TInt opbin expr1 expr2 -> do
     VInt val1 <- funE expr1
     VInt val2 <- funE expr2
-    when (opbin `elem` [Div, Mod] && val2 == 0) $ throwError $ RError Err.zeroDivision
+    when (opbin `elem` [ObDiv, ObMod] && val2 == 0) $ throwError $ RError Err.zeroDivision
     return $ VInt $ case opbin of
-      Plus -> val1 + val2
-      Minus -> val1 - val2
-      Times -> val1 * val2
-      Div -> val1 `div` val2
-      Mod -> val1 `rem` val2 -- I'mma hipst'a!
-  EBinaryT TBool And expr1 expr2 -> do
+      ObPlus -> val1 + val2
+      ObMinus -> val1 - val2
+      ObTimes -> val1 * val2
+      ObDiv -> val1 `div` val2
+      ObMod -> val1 `rem` val2 -- I'mma hipst'a!
+  EBinary TBool ObAnd expr1 expr2 -> do
     VBool val1 <- funE expr1
     case val1 of
       True -> funE expr2
       False -> return $ VBool False
-  EBinaryT TBool Or expr1 expr2 -> do
+  EBinary TBool ObOr expr1 expr2 -> do
     VBool val1 <- funE expr1
     case val1 of
       True -> return $ VBool True
       False -> funE expr2
-  EBinaryT TBool opbin expr1 expr2 -> do
+  EBinary TBool opbin expr1 expr2 -> do
     val1 <- funE expr1
     val2 <- funE expr2
     return $ VBool $ case opbin of
       -- This works because of 'deriving (Eq, Ord)'
       -- Note that references handling is automatic
-      EQU -> val1 == val2
-      NEQ -> val1 /= val2
-      LTH -> val1 < val2
-      LEQ -> val1 <= val2
-      GTH -> val1 > val2
-      GEQ -> val1 >= val2
+      ObEQU -> val1 == val2
+      ObNEQ -> val1 /= val2
+      ObLTH -> val1 < val2
+      ObLEQ -> val1 <= val2
+      ObGTH -> val1 > val2
+      ObGEQ -> val1 >= val2
 

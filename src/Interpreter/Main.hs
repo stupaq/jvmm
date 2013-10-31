@@ -53,8 +53,8 @@ run s =
           printl Warn $ "OK\n"
           verb <- ask
           lift $ runUnit (Info > verb) tree''
-          printl Debug $ "\n[Linearized tree]\n\n" ++ printTree tree'
-          printl Debug $ "\n[Type check]\n\n" ++ printTree tree''
+          printl Debug $ "\n[Linearized tree]\n\n" ++ show tree'
+          printl Debug $ "\n[Type check]\n\n" ++ show tree''
 
 main :: IO ()
 main = do

@@ -7,19 +7,18 @@ import Control.Monad.Writer
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Data.List as List
-import Syntax.AbsJvmm (Ident(..), Type(..), Expr(..), Stmt(..), OpBin(..), OpUn(..))
 import Semantics.Commons
 import Semantics.Trans (identToString)
-import Semantics.APTree (UIdent(..))
+import Semantics.APTree
 import qualified Semantics.Errors as Err
 import Semantics.Errors (rethrow)
 import qualified Semantics.Scope as Scope
 
 -- BUILTINS --
 --------------
-entrypoint = (Scope.tagSymbol Scope.tag0 "main", TFunc TInt [] [])
+entrypoint = (Scope.tagFIdent Scope.tag0 "main", TFunc TInt [] [])
 
-builtinGlobal = Map.fromList $ map (\(name, typ) -> (FIdent $ Scope.tagSymbol' Scope.tag0 name, typ)) [
+builtinGlobal = Map.fromList $ map (\(name, typ) -> (FIdent $ Scope.tagSymbol Scope.tag0 name, typ)) [
     ("printInt", TFunc TVoid [TInt] []),
     ("readInt", TFunc TInt [] []),
     ("printString", TFunc TVoid [TString] []),
@@ -115,12 +114,12 @@ decType typ tenv = local (\env -> env { types = Map.insert typ tenv (types env) 
 -- Declares symbol to be of a given type or defines type
 declare :: Stmt -> TypeM a -> TypeM a
 declare x m = case x of
-  SDefFunc typ id args excepts stmt ->
-    decIdent (FIdent $ identToString id) (typeof'' x) m
-  SDeclVar typ id -> do
+  SDefFunc typ id@(FIdent _) args excepts stmt ->
+    decIdent id (typeof'' x) m
+  SDeclVar typ id@(VIdent _) -> do
     when (typ == TVoid) $ throwError Err.voidVarDecl
-    decIdent (VIdent $ identToString id) typ m
-  SDefClass id@(Ident sid) (Global stmts) -> do
+    decIdent id typ m
+  SDefClass id@(TIdent sid) (SGlobal stmts) -> do
     when (sid `elem` builtinTypeNames) $ throwError (Err.redeclaredType id)
     -- We want to obtain all identifiers in class together with their types
     cls <- local (const typeenv0) . applyAndCompose declare stmts $ do
@@ -176,12 +175,12 @@ declare x m = case x of
 
 (|=) = flip (=|)
 
-typeofFunc, typeofVar :: Ident -> TypeM Type
-typeofVar id = typeof (VIdent $ identToString id)
-typeofFunc id = typeof (FIdent $ identToString id)
-typeofMVar, typeofMFunc :: Type -> Ident -> TypeM Type
-typeofMVar typ id = typeof' typ (VIdent $ identToString id)
-typeofMFunc typ id = typeof' typ (FIdent $ identToString id)
+typeofFunc, typeofVar :: UIdent -> TypeM Type
+typeofVar id@(VIdent _) = typeof id
+typeofFunc id@(FIdent _) = typeof id
+typeofMVar, typeofMFunc :: Type -> UIdent -> TypeM Type
+typeofMVar typ id@(VIdent _) = typeof' typ id
+typeofMFunc typ id@(FIdent _) = typeof' typ id
 
 -- MAIN --
 ----------
@@ -190,12 +189,12 @@ staticTypes = runTypeM typeenv0 . funS
 
 funS :: Stmt -> TypeM Stmt
 funS x = case x of
-  Global stmts -> applyAndCompose declare stmts $ do
+  SGlobal stmts -> applyAndCompose declare stmts $ do
     stmts' <- mapM funS stmts
-    return $ Global stmts'
-  Local decls stmts -> applyAndCompose declare decls $ do
+    return $ SGlobal stmts'
+  SLocal decls stmts -> applyAndCompose declare decls $ do
     stmts' <- mapM funS stmts
-    return $ Local decls stmts'
+    return $ SLocal decls stmts'
   -- This is already delared when we see it in funS
   SDefFunc typ id args excepts stmt -> do
     let ftyp@(TFunc _ _ _) = typeof'' x
@@ -208,10 +207,10 @@ funS x = case x of
   -- This is already delared when we see it in funS
   SDeclVar typ id -> return x
   -- This is already delared when we see it in funS
-  SDefClass id (Global stmts) -> do
+  SDefClass id (SGlobal stmts) -> do
     declare x $ do
       stmts' <- mapM funS stmts
-      return $ SDefClass id (Global stmts')
+      return $ SDefClass id (SGlobal stmts')
   SAssign id expr -> do
     (expr', etyp) <- funE expr
     vtyp <- typeofVar id
@@ -261,7 +260,7 @@ funS x = case x of
     return $ SThrow expr'
   STryCatch stmt1 typ id stmt2 -> do
     when (typ `elem` primitiveTypes) $ throwError (Err.referencedPrimitive typ)
-    stmt2' <- decIdent (VIdent $ identToString id) typ (funS stmt2)
+    stmt2' <- decIdent id typ (funS stmt2)
     catches typ $ do
       stmt1' <- funS stmt1
       return $ STryCatch stmt1' typ id stmt2'
@@ -314,31 +313,31 @@ funE x = case x of
     -- Referenced type cannot be primitive
     when (typ `elem` primitiveTypes) $ throwError (Err.referencedPrimitive typ)
     return (ENewObj typ, typ)
-  EUnaryT _ op expr -> do
+  EUnary _ op expr -> do
     (expr', etyp) <- funE expr
     case op of
-      Not -> TBool =| etyp
-      Neg -> TInt =| etyp
-    return (EUnaryT etyp op expr', etyp)
-  EBinaryT _ opbin expr1 expr2 -> do
+      OuNot -> TBool =| etyp
+      OuNeg -> TInt =| etyp
+    return (EUnary etyp op expr', etyp)
+  EBinary _ opbin expr1 expr2 -> do
     (expr1', etyp1) <- funE expr1
     (expr2', etyp2) <- funE expr2
     typ <- etyp1 =||= etyp2
     rett <- case opbin of
-      Plus -> (TInt =| typ) `mplus` (TString =| typ) `rethrow` Err.badArithType
-      And -> TBool =| typ
-      Or -> TBool =| typ
+      ObPlus -> (TInt =| typ) `mplus` (TString =| typ) `rethrow` Err.badArithType
+      ObAnd -> TBool =| typ
+      ObOr -> TBool =| typ
       -- For primitives we have natural ==, for others we compare 'adresses'
-      EQU -> return TBool
-      NEQ -> return TBool
+      ObEQU -> return TBool
+      ObNEQ -> return TBool
       -- TInt-only operations: Times Div Mod Minus LTH LEQ GTH GEQ
       _ -> do
         TInt =| typ
         case opbin of
-          LTH -> return TBool
-          LEQ -> return TBool
-          GTH -> return TBool
-          GEQ -> return TBool
+          ObLTH -> return TBool
+          ObLEQ -> return TBool
+          ObGTH -> return TBool
+          ObGEQ -> return TBool
           _ -> return TInt
-    return (EBinaryT rett opbin expr1' expr2', rett)
+    return (EBinary rett opbin expr1' expr2', rett)
 

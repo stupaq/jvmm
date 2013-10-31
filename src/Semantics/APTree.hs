@@ -1,5 +1,6 @@
 module Semantics.APTree where
 import Prelude hiding (id)
+import Data.List (partition, find)
 
 -- This module provides internal representation of abstract syntax tree that
 -- carries error reporting metadata, type information and many more.
@@ -14,6 +15,21 @@ data UIdent =
   | FIdent String
   | TIdent String
   deriving (Ord, Eq, Show)
+
+(+/+) :: UIdent -> String -> UIdent
+(VIdent id) +/+ str = VIdent $ id ++ str
+(FIdent id) +/+ str = FIdent $ id ++ str
+(TIdent id) +/+ str = TIdent $ id ++ str
+
+(+/) :: UIdent -> Char -> UIdent
+idt +/ char = case idt of
+  (VIdent id) -> VIdent $ strip id
+  (FIdent id) -> FIdent $ strip id
+  (TIdent id) -> TIdent $ strip id
+  where
+    strip :: String -> String
+    strip = takeWhile (/= char)
+
 
 data Stmt =
    SLocal [Stmt] [Stmt]
@@ -35,6 +51,7 @@ data Stmt =
  | STryCatch Stmt Type UIdent Stmt
   deriving (Eq,Ord,Show)
 
+
 data Type =
    TFunc Type [Type] [Type]
  | TUnknown
@@ -48,6 +65,7 @@ data Type =
  | TUser UIdent
  | TArray Type
   deriving (Eq,Ord,Show)
+
 
 data Expr =
    EBinary Type OpBin Expr Expr
@@ -67,10 +85,12 @@ data Expr =
  | ENewArr Type Expr
   deriving (Eq,Ord,Show)
 
+
 data OpUn =
    OuNeg
  | OuNot
   deriving (Eq,Ord,Show)
+
 
 data OpBin =
    ObTimes
