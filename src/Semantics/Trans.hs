@@ -41,12 +41,6 @@ transAbs = tP_Prog
 
     tStmt :: I.Stmt -> [O.Stmt]
     tStmt x = case x of
-      -- internal
-      I.Local stmts1 stmts2  -> undefined
-      I.Global stmts  -> undefined
-      I.SDefClass id stmt  -> undefined
-      I.SDefFunc typ id args types stmt  -> undefined
-      I.SDeclVar typ id  -> undefined
       -- transform
       I.P_SDeclVar typ p_items  -> concat $ map (tP_Item typ) p_items
       I.P_SBlock p_block  ->  return $ tP_Block p_block
@@ -112,9 +106,6 @@ transAbs = tP_Prog
 
     tExpr :: I.Expr -> O.Expr
     tExpr x = case x of
-      -- internal
-      I.EBinaryT typ opbin expr1 expr2  -> undefined
-      I.EUnaryT typ opun expr  -> undefined
       -- pass
       I.EVar id  -> O.EVar $ tVIdent id
       I.ELitInt n  -> O.ELitInt n
@@ -159,9 +150,6 @@ transAbs = tP_Prog
 
     tType :: I.Type -> O.Type
     tType x = case x of
-      I.TFunc typ types1 types2 -> undefined
-      I.TUnknown -> O.TUnknown
-      I.TNull -> undefined
       I.TVoid -> O.TVoid
       I.TInt -> O.TInt
       I.TChar -> O.TChar

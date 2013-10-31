@@ -21,21 +21,11 @@ P_GlobClass.P_DefGlobal ::= P_DefClass;
 -- blocks --
 ------------
 
-internal    Local. Stmt ::=  "{" [Stmt] ";" [Stmt] "}";
-
-internal    Global. Stmt ::= "global" "{" [Stmt] "}";
-
 P_Block.    P_Block ::= "{" [Stmt] "}";
 separator Stmt "";
 
 -- declarations/definitions --
 ------------------------------
-
-internal    SDefClass.Stmt ::= "class" Ident Stmt;
-
-internal    SDefFunc. Stmt ::= Type Ident "(" [Stmt] ")" "throws" [Type] Stmt;
-
-internal    SDeclVar. Stmt ::= Type Ident ";";
 
 P_Arg.      P_Arg ::= Type Ident;
 separator P_Arg ",";
@@ -101,12 +91,6 @@ STryCatch.  Stmt ::= "try" Stmt "catch" "(" Type Ident ")" Stmt;
 -- types --
 -----------
 
-internal    TFunc. Type ::= Type "(" [Type] ")" "throws" [Type];
-
-internal    TUnknown. Type ::= "unknown";
-
-internal    TNull. Type ::= "null";
-
 TVoid.      Type ::= "void";
 TInt.       Type ::= "int";
 TChar.      Type ::= "char";
@@ -127,10 +111,6 @@ coercions Type 1;
 
 -- expressions --
 -----------------
-
-internal    EBinaryT. Expr ::= Type "=| (" OpBin ") (" Expr ") (" Expr ")";
-
-internal    EUnaryT. Expr ::= Type "=| (" OpUn ") (" Expr ")";
 
 EVar.       Expr8 ::= Ident;
 
@@ -174,10 +154,6 @@ separator Expr ",";
 
 -- operators --
 ---------------
-
-internal    Neg. OpUn ::= "-";
-
-internal    Not. OpUn ::= "!";
 
 APlus.      OpAssign ::= "+=";
 
