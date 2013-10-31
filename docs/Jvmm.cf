@@ -1,7 +1,6 @@
 -- Jvmm : BNF syntax specification --
 -------------------------------------
 
--- Labels prefixed with "Pn_" are prunned in subsequent phases
 -- Note the ugly trick with coercion 0 for OpBin, this makes 2 (+) 3 * 4 a
 -- parse error. Without this trick one can promote binary operator 2 (+) 3 * 4 =
 -- (2 + 3) * 4, we don't really like that.
@@ -9,58 +8,56 @@
 -- programs --
 --------------
 
-entrypoints P_Prog;
+entrypoints Prog;
 
-P_Prog.     P_Prog ::= [P_DefGlobal];
-separator nonempty P_DefGlobal "";
+Prog.       Prog ::= [DefGlobal];
+separator nonempty DefGlobal "";
 
-P_GlobFunc. P_DefGlobal ::= P_DefFunc;
-
-P_GlobClass.P_DefGlobal ::= P_DefClass;
+GlobFunc.   DefGlobal ::= DefFunc;
+GlobClass.  DefGlobal ::= DefClass;
 
 -- blocks --
 ------------
 
-P_Block.    P_Block ::= "{" [Stmt] "}";
+Block.      Block ::= "{" [Stmt] "}";
 separator Stmt "";
 
 -- declarations/definitions --
 ------------------------------
 
-P_Arg.      P_Arg ::= Type Ident;
-separator P_Arg ",";
+Arg.        Arg ::= Type Ident;
+separator Arg ",";
 
-P_DefFunc.  P_DefFunc ::= Type Ident "(" [P_Arg] ")" P_FunExcepts P_Block;
+DefFunc.    DefFunc ::= Type Ident "(" [Arg] ")" FunExcepts Block;
 
-P_Excepts.  P_FunExcepts ::= "throws" [Type];
+Excepts.    FunExcepts ::= "throws" [Type];
 separator nonempty Type ",";
 
-P_NoExcept. P_FunExcepts ::= ;
+NoExcept.   FunExcepts ::= ;
 
-P_SDeclVar. Stmt ::= Type [P_Item] ";";
-separator nonempty P_Item ",";
+SDeclVar.   Stmt ::= Type [Item] ";";
+separator nonempty Item ",";
 
-P_NoInit.   P_Item ::= Ident;
+NoInit.     Item ::= Ident;
+Init.       Item ::= Ident "=" Expr;
 
-P_Init.     P_Item ::= Ident "=" Expr;
+DefClass.   DefClass ::= "class" Ident "{" [Member] "}";
+separator nonempty Member ";";
+terminator Member ";";
 
-P_DefClass. P_DefClass ::= "class" Ident "{" [P_Member] "}";
-separator nonempty P_Member ";";
-terminator P_Member ";";
-
-P_Field.    P_Member ::= Type Ident;
+Field.      Member ::= Type Ident;
 
 -- statements --
 ----------------
 
-P_SBlock.   Stmt ::= P_Block;
+SBlock.     Stmt ::= Block;
 
-P_SAssignOp. Stmt ::= Ident OpAssign Expr  ";";
-P_SAssignOpArr. Stmt ::= Ident "[" Expr "]" OpAssign Expr  ";";
-P_SAssignOpFld. Stmt ::= Ident "." Ident OpAssign Expr  ";";
+SAssignOp.    Stmt ::= Ident OpAssign Expr  ";";
+SAssignOpArr. Stmt ::= Ident "[" Expr "]" OpAssign Expr  ";";
+SAssignOpFld. Stmt ::= Ident "." Ident OpAssign Expr  ";";
 
-P_SPostInc. Stmt ::= Ident "++" ";";
-P_SPostDec. Stmt ::= Ident "--" ";";
+SPostInc.   Stmt ::= Ident "++" ";";
+SPostDec.   Stmt ::= Ident "--" ";";
 
 SEmpty.     Stmt ::= ";";
 
@@ -78,7 +75,7 @@ SIfElse.    Stmt ::= "if" "(" Expr ")" Stmt "else" Stmt;
 
 SWhile.     Stmt ::= "while" "(" Expr ")" Stmt;
 
-P_SForeach. Stmt ::= "for" "(" Type Ident ":" Expr ")" Stmt;
+SForeach. Stmt ::= "for" "(" Type Ident ":" Expr ")" Stmt;
 
 -- The following rule alone creates two additional shift/reduce and one
 -- reduce/reduce conflict.
@@ -129,24 +126,23 @@ EAccessArr. Expr7 ::= Expr8 "[" Expr "]";
 
 EAccessFn.  Expr7 ::= Expr8 "." Ident "(" [Expr] ")";
 EAccessVar. Expr7 ::= Expr8 "." Ident;
-
 EApp.       Expr7 ::= Ident "(" [Expr] ")";
 
 ENewObj.    Expr6 ::= "new" Type;
 ENewArr.    Expr6 ::= "new" Type "[" Expr "]";
 
-P_ENeg.     Expr5 ::= "-" Expr5;
-P_ENot.     Expr5 ::= "!" Expr5;
+ENeg.       Expr5 ::= "-" Expr5;
+ENot.       Expr5 ::= "!" Expr5;
 
-P_EMul.     Expr4 ::= Expr4 OpBin4 Expr5 ;
+EMul.       Expr4 ::= Expr4 OpBin4 Expr5 ;
 
-P_EAdd.     Expr3 ::= Expr3 OpBin3 Expr4 ;
+EAdd.       Expr3 ::= Expr3 OpBin3 Expr4 ;
 
-P_ERel.     Expr2 ::= Expr2 OpBin2 Expr3 ;
+ERel.       Expr2 ::= Expr2 OpBin2 Expr3 ;
 
-P_EAnd.     Expr1 ::= Expr2 OpBin1 Expr1 ;
+EAnd.       Expr1 ::= Expr2 OpBin1 Expr1 ;
 
-P_EOr.      Expr ::= Expr1 OpBin Expr ;
+EOr.        Expr ::= Expr1 OpBin Expr ;
 
 coercions Expr 8;
 
@@ -155,36 +151,25 @@ separator Expr ",";
 -- operators --
 ---------------
 
-APlus.      OpAssign ::= "+=";
-
-AMinus.     OpAssign ::= "-=";
-
 ATimes.     OpAssign ::= "*=";
-
 ADiv.       OpAssign ::= "/=";
-
 AMod.       OpAssign ::= "%=";
 
+APlus.      OpAssign ::= "+=";
+AMinus.     OpAssign ::= "-=";
+
 Times.      OpBin4 ::= "*";
-
 Div.        OpBin4 ::= "/";
-
 Mod.        OpBin4 ::= "%";
 
 Plus.       OpBin3 ::= "+";
-
 Minus.      OpBin3 ::= "-";
 
 LTH.        OpBin2 ::= "<";
-
 LEQ.        OpBin2 ::= "<=";
-
 GTH.        OpBin2 ::= ">";
-
 GEQ.        OpBin2 ::= ">=";
-
 EQU.        OpBin2 ::= "==";
-
 NEQ.        OpBin2 ::= "!=";
 
 And.        OpBin1 ::= "&&";
@@ -201,6 +186,5 @@ coercions OpBin 0;
 --------------
 
 comment  "//";
-
 comment  "/*" "*/";
 

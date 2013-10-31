@@ -35,13 +35,13 @@ runFile f = do
 run :: String -> (ReaderT Verbosity IO) ()
 run s =
   let ts = myLexer s
-  in case  pP_Prog ts of
+  in case  pProg ts of
     Bad s -> do
       printl Error $ "ERROR\n"
       printl Error $ s
       printl Error $ "\n[Tokens]\n\n" ++ (show ts)
       liftIO $ exitFailure
-    Ok tree ->  case scope $ transAbs tree of
+    Ok tree ->  case scope $ trans tree of
       Left err -> do
         printl Error $ err
         liftIO $ exitFailure
