@@ -18,16 +18,16 @@ trans = tProg
 
     tDefGlobal :: I.DefGlobal -> O.Stmt
     tDefGlobal x = case x of
-      I.GlobFunc deffunc  -> tDefFunc deffunc
-      I.GlobClass defclass  -> tDefClass defclass
+      I.GlobFunc deffunc -> tDefFunc deffunc
+      I.GlobClass defclass -> tDefClass defclass
 
     tDefClass :: I.DefClass -> O.Stmt
     tDefClass x = case x of
-      I.DefClass id members  -> O.SDefClass (tTIdent id) $ O.SGlobal $ map tMember members
+      I.DefClass id members -> O.SDefClass (tTIdent id) $ O.SGlobal $ map tMember members
 
     tMember :: I.Member -> O.Stmt
     tMember x = case x of
-      I.Field typ id  -> O.SDeclVar (tType typ) (tVIdent id)
+      I.Field typ id -> O.SDeclVar (tType typ) (tVIdent id)
 
     tDefFunc :: I.DefFunc -> O.Stmt
     tDefFunc (I.DefFunc typ id args (I.Excepts excepts) pblock) = O.SDefFunc (tType typ) (tFIdent id) (tArgs args) (map tType excepts) $ tBlock pblock
@@ -35,23 +35,23 @@ trans = tProg
 
     tStmt :: I.Stmt -> [O.Stmt]
     tStmt x = case x of
-      I.SDeclVar typ items  -> concat $ map (tItem typ) items
-      I.SBlock block  ->  return $ tBlock block
-      I.SAssignOp id opassign expr  -> return $ O.SAssign (tVIdent id) $ tExpr $ tAssignOp opassign (I.EVar id) expr
-      I.SAssignOpArr id expr1 opassign2 expr3  ->  return $ O.SAssignArr (tVIdent id) (tExpr expr1) $ tExpr $ tAssignOp opassign2 (I.EAccessArr (I.EVar id) expr1) expr3
-      I.SAssignOpFld id1 id2 opassign3 expr4  ->  return $ O.SAssignFld (tVIdent id1) (tVIdent id2) $ tExpr $ tAssignOp opassign3 (I.EAccessVar (I.EVar id1) id2) expr4
-      I.SPostInc id  -> tStmt $ I.SAssignOp id I.APlus (I.ELitInt 1)
-      I.SPostDec id  -> tStmt $ I.SAssignOp id I.AMinus (I.ELitInt 1)
-      I.SEmpty  -> return O.SEmpty
-      I.SAssign id expr  -> return $ O.SAssign (tVIdent id) $ tExpr expr
-      I.SAssignArr id expr1 expr2  ->  return $ O.SAssignArr (tVIdent id) (tExpr expr1) (tExpr expr2)
-      I.SAssignFld id1 id2 expr3  -> return $ O.SAssignFld (tVIdent id1) (tVIdent id2) (tExpr expr3)
-      I.SReturn expr  -> return $ O.SReturn $ tExpr expr
-      I.SReturnV  -> return O.SReturnV
+      I.SDeclVar typ items -> concat $ map (tItem typ) items
+      I.SBlock block ->  return $ tBlock block
+      I.SAssignOp id opassign expr -> return $ O.SAssign (tVIdent id) $ tExpr $ tAssignOp opassign (I.EVar id) expr
+      I.SAssignOpArr id expr1 opassign2 expr3 ->  return $ O.SAssignArr (tVIdent id) (tExpr expr1) $ tExpr $ tAssignOp opassign2 (I.EAccessArr (I.EVar id) expr1) expr3
+      I.SAssignOpFld id1 id2 opassign3 expr4 ->  return $ O.SAssignFld (tVIdent id1) (tVIdent id2) $ tExpr $ tAssignOp opassign3 (I.EAccessVar (I.EVar id1) id2) expr4
+      I.SPostInc id -> tStmt $ I.SAssignOp id I.APlus (I.ELitInt 1)
+      I.SPostDec id -> tStmt $ I.SAssignOp id I.AMinus (I.ELitInt 1)
+      I.SEmpty -> return O.SEmpty
+      I.SAssign id expr -> return $ O.SAssign (tVIdent id) $ tExpr expr
+      I.SAssignArr id expr1 expr2 ->  return $ O.SAssignArr (tVIdent id) (tExpr expr1) (tExpr expr2)
+      I.SAssignFld id1 id2 expr3 -> return $ O.SAssignFld (tVIdent id1) (tVIdent id2) (tExpr expr3)
+      I.SReturn expr -> return $ O.SReturn $ tExpr expr
+      I.SReturnV -> return O.SReturnV
       I.SIf expr stmt -> return $ O.SIf (tExpr expr) (tStmt' stmt)
       I.SIfElse expr stmt1 stmt2 -> return $ O.SIfElse (tExpr expr) (tStmt' stmt1) (tStmt' stmt2)
       I.SWhile expr stmt -> return $ O.SWhile (tExpr expr) (tStmt' stmt)
-      I.SForeach typ id expr stmt -> -- SYNTACTIC SUGAR
+      I.SForeach typ id expr stmt ->  -- SYNTACTIC SUGAR
         let idarr = tempIdent id "arr"
             idlength = tempIdent id "length"
             iditer = tempIdent id "iter"
@@ -62,7 +62,7 @@ trans = tProg
             I.SDeclVar typ [I.Init id (I.EAccessArr (I.EVar idarr) (I.EVar iditer))],
             stmt,
             I.SPostInc iditer]]
-      I.SExpr expr  -> return $ O.SExpr $ tExpr expr
+      I.SExpr expr -> return $ O.SExpr $ tExpr expr
       I.SThrow expr -> return $ O.SThrow $ tExpr expr
       I.STryCatch stmt1 typ2 id3 stmt4 -> return $ O.STryCatch (tStmt' stmt1) (tType typ2) (tVIdent id3) (tStmt' stmt4)
       where
@@ -87,7 +87,7 @@ trans = tProg
       I.NoInit id -> [O.SDeclVar (tType typ) (tVIdent id)]
       -- We use temporary variable with lifetime limited to four statements,
       -- which cannot hide any user-defined variable
-      I.Init id expr -> -- SYNTACTIC SUGAR
+      I.Init id expr ->  -- SYNTACTIC SUGAR
         let idtmp = tempIdent id "decl"
         in [O.SDeclVar (tType typ) (tVIdent idtmp), O.SAssign (tVIdent idtmp) (tExpr expr), O.SDeclVar (tType typ) (tVIdent id), O.SAssign (tVIdent id) (O.EVar (tVIdent idtmp))]
 
@@ -98,45 +98,48 @@ trans = tProg
 
     tExpr :: I.Expr -> O.Expr
     tExpr x = case x of
-      I.EVar id  -> O.EVar $ tVIdent id
-      I.ELitInt n  -> O.ELitInt n
-      I.ELitTrue  -> O.ELitTrue
-      I.ELitFalse  -> O.ELitFalse
-      I.ELitString str  -> O.ELitString str
-      I.ELitChar c  -> O.ELitChar c
-      I.ENull  -> O.ENull
-      I.EAccessArr expr1 expr2  -> O.EAccessArr (tExpr expr1) (tExpr expr2)
-      I.EAccessFn expr id exprs  -> O.EAccessFn (tExpr expr) (tFIdent id) (map tExpr exprs)
-      I.EAccessVar expr id  -> O.EAccessVar (tExpr expr) (tVIdent id)
-      I.EApp id exprs  -> O.EApp (tFIdent id) (map tExpr exprs)
-      I.ENewArr typ expr  -> O.ENewArr (tType typ) (tExpr expr)
-      I.ENewObj typ  -> O.ENewObj $ tType typ
-      I.ENeg expr  -> O.EUnary O.TUnknown O.OuNeg (tExpr expr)
-      I.ENot expr  -> O.EUnary O.TUnknown O.OuNot (tExpr expr)
-      I.EMul expr1 opbin2 expr3  -> bin opbin2 expr1 expr3
-      I.EAdd expr1 opbin2 expr3  -> bin opbin2 expr1 expr3
-      I.ERel expr1 opbin2 expr3  -> bin opbin2 expr1 expr3
-      I.EAnd expr1 opbin2 expr3  -> bin opbin2 expr1 expr3
-      I.EOr expr1 opbin2 expr3  -> bin opbin2 expr1 expr3
+      I.EVar id -> O.EVar $ tVIdent id
+      I.ELitInt n -> O.ELitInt n
+      I.ELitTrue -> O.ELitTrue
+      I.ELitFalse -> O.ELitFalse
+      I.ELitString str -> O.ELitString str
+      I.ELitChar c -> O.ELitChar c
+      I.ENull -> O.ENull
+      I.EAccessArr expr1 expr2 -> O.EAccessArr (tExpr expr1) (tExpr expr2)
+      I.EAccessFn expr id exprs -> O.EAccessFn (tExpr expr) (tFIdent id) (map tExpr exprs)
+      I.EAccessVar expr id -> O.EAccessVar (tExpr expr) (tVIdent id)
+      I.EAccessArrI ide expr2 -> O.EAccessArr (tExpr $ I.EVar ide) (tExpr expr2)  -- GRAMMAR IRREGULARITY
+      I.EAccessFnI ide id exprs -> O.EAccessFn (tExpr $ I.EVar ide) (tFIdent id) (map tExpr exprs)  -- GRAMMAR IRREGULARITY
+      I.EAccessVarI ide id -> O.EAccessVar (tExpr $ I.EVar ide) (tVIdent id)  -- GRAMMAR IRREGULARITY
+      I.EApp id exprs -> O.EApp (tFIdent id) (map tExpr exprs)
+      I.ENewArr typ expr -> O.ENewArr (tType typ) (tExpr expr)
+      I.ENewObj typ -> O.ENewObj $ tType typ
+      I.ENeg expr -> O.EUnary O.TUnknown O.OuNeg (tExpr expr)
+      I.ENot expr -> O.EUnary O.TUnknown O.OuNot (tExpr expr)
+      I.EMul expr1 opbin2 expr3 -> bin opbin2 expr1 expr3
+      I.EAdd expr1 opbin2 expr3 -> bin opbin2 expr1 expr3
+      I.ERel expr1 opbin2 expr3 -> bin opbin2 expr1 expr3
+      I.EAnd expr1 opbin2 expr3 -> bin opbin2 expr1 expr3
+      I.EOr expr1 opbin2 expr3 -> bin opbin2 expr1 expr3
       where
         bin :: I.OpBin -> I.Expr -> I.Expr -> O.Expr
         bin op expr1 expr2 = O.EBinary O.TUnknown (tOpBin op) (tExpr expr1) (tExpr expr2)
 
     tOpBin :: I.OpBin -> O.OpBin
     tOpBin x = case x of
-      I.Times  -> O.ObTimes
-      I.Div  -> O.ObDiv
-      I.Mod  -> O.ObMod
-      I.Plus  -> O.ObPlus
-      I.Minus  -> O.ObMinus
-      I.LTH  -> O.ObLTH
-      I.LEQ  -> O.ObLEQ
-      I.GTH  -> O.ObGTH
-      I.GEQ  -> O.ObGEQ
-      I.EQU  -> O.ObEQU
-      I.NEQ  -> O.ObNEQ
-      I.And  -> O.ObAnd
-      I.Or  -> O.ObOr
+      I.Times -> O.ObTimes
+      I.Div -> O.ObDiv
+      I.Mod -> O.ObMod
+      I.Plus -> O.ObPlus
+      I.Minus -> O.ObMinus
+      I.LTH -> O.ObLTH
+      I.LEQ -> O.ObLEQ
+      I.GTH -> O.ObGTH
+      I.GEQ -> O.ObGEQ
+      I.EQU -> O.ObEQU
+      I.NEQ -> O.ObNEQ
+      I.And -> O.ObAnd
+      I.Or -> O.ObOr
 
     tType :: I.Type -> O.Type
     tType x = case x of

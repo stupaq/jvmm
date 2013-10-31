@@ -17,7 +17,7 @@ Syntax: $(BNFC) Syntax.diff
 	bnfc -p $@ $<
 	(cd $@/; patch -p1 -i ../Syntax.diff)
 	@-rm -f $@/*.bak
-	happy -gca $@/ParJvmm.y
+	happy --info -gca $@/ParJvmm.y
 	alex -g $@/LexJvmm.x
 	(cd $@/; $(PDFLATEX) DocJvmm.tex; )
 

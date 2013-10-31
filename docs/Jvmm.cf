@@ -1,11 +1,7 @@
 -- Jvmm : BNF syntax specification --
 -------------------------------------
 
--- Note the ugly trick with coercion 0 for OpBin, this makes 2 (+) 3 * 4 a
--- parse error. Without this trick one can promote binary operator 2 (+) 3 * 4 =
--- (2 + 3) * 4, we don't really like that.
-
--- programs --
+-- program --
 --------------
 
 entrypoints Prog;
@@ -42,8 +38,7 @@ NoInit.     Item ::= Ident;
 Init.       Item ::= Ident "=" Expr;
 
 DefClass.   DefClass ::= "class" Ident "{" [Member] "}";
-separator nonempty Member ";";
-terminator Member ";";
+terminator nonempty Member ";";
 
 Field.      Member ::= Type Ident;
 
@@ -68,21 +63,17 @@ SAssignFld. Stmt ::= Ident "." Ident "=" Expr  ";";
 SReturn.    Stmt ::= "return" Expr ";";
 SReturnV.   Stmt ::= "return" ";";
 
--- The following two rules together create one additional shift/reduce
--- conflict, tested in examples_good/conflict001.jv
+-- The following two rules are responsible for the only shift/reduce conflict,
+-- tested in examples_good/conflict001.jv.
 SIf.        Stmt ::= "if" "(" Expr ")" Stmt;
 SIfElse.    Stmt ::= "if" "(" Expr ")" Stmt "else" Stmt;
 
 SWhile.     Stmt ::= "while" "(" Expr ")" Stmt;
-
 SForeach. Stmt ::= "for" "(" Type Ident ":" Expr ")" Stmt;
 
--- The following rule alone creates two additional shift/reduce and one
--- reduce/reduce conflict.
 SExpr.      Stmt ::= Expr ";";
 
 SThrow.     Stmt ::= "throw" Expr ";";
-
 STryCatch.  Stmt ::= "try" Stmt "catch" "(" Type Ident ")" Stmt;
 
 -- types --
@@ -95,56 +86,51 @@ TBool.      Type ::= "boolean";
 
 TString.    Type ::= "String"; -- for compatibility with Java
 TString.    Type ::= "string";
-
--- This rule creates one additional reduce/reduce conflict, one possible
--- solution is to resolve any non-primitive in type checker.
-TUser.      Type ::= Ident;
-
 TObject.    Type ::= "Object";
 
-TArray.     Type1 ::= Type "[]";
+TUser.      Type ::= Ident;
 
-coercions Type 1;
+TArray.     Type ::= Type "[]";
 
 -- expressions --
 -----------------
 
-EVar.       Expr8 ::= Ident;
+EAccessArr. Expr7 ::= Expr7 "[" Expr "]";
+EAccessFn.  Expr7 ::= Expr7 "." Ident "(" [Expr] ")";
+EAccessVar. Expr7 ::= Expr7 "." Ident;
 
-ELitInt.    Expr8 ::= Integer;
+EVar.       Expr6 ::= Ident;
+ELitInt.    Expr6 ::= Integer;
+ELitString. Expr6 ::= String;
+ELitChar.   Expr6 ::= Char;
 
-ELitTrue.   Expr8 ::= "true";
-ELitFalse.  Expr8 ::= "false";
+ELitTrue.   Expr6 ::= "true";
+ELitFalse.  Expr6 ::= "false";
+ENull.      Expr6 ::= "null";
 
-ELitString. Expr8 ::= String;
+EAccessArrI.  Expr5 ::= Ident "[" Expr "]";
+EAccessFnI.   Expr5 ::= Ident "." Ident "(" [Expr] ")";
+EAccessVarI.  Expr5 ::= Ident "." Ident;
 
-ELitChar.   Expr8 ::= Char;
+EApp.       Expr5 ::= Ident "(" [Expr] ")";
 
-ENull.      Expr8 ::= "null";
-
-EAccessArr. Expr7 ::= Expr8 "[" Expr "]";
-
-EAccessFn.  Expr7 ::= Expr8 "." Ident "(" [Expr] ")";
-EAccessVar. Expr7 ::= Expr8 "." Ident;
-EApp.       Expr7 ::= Ident "(" [Expr] ")";
-
-ENewObj.    Expr6 ::= "new" Type;
-ENewArr.    Expr6 ::= "new" Type "[" Expr "]";
+ENewObj.    Expr5 ::= "new" Type;
+ENewArr.    Expr5 ::= "new" Type "[" Expr "]";
 
 ENeg.       Expr5 ::= "-" Expr5;
 ENot.       Expr5 ::= "!" Expr5;
 
-EMul.       Expr4 ::= Expr4 OpBin4 Expr5 ;
+EMul.       Expr4 ::= Expr4 OpBin4 Expr5;
 
-EAdd.       Expr3 ::= Expr3 OpBin3 Expr4 ;
+EAdd.       Expr3 ::= Expr3 OpBin3 Expr4;
 
-ERel.       Expr2 ::= Expr2 OpBin2 Expr3 ;
+ERel.       Expr2 ::= Expr2 OpBin2 Expr3;
 
-EAnd.       Expr1 ::= Expr2 OpBin1 Expr1 ;
+EAnd.       Expr1 ::= Expr1 OpBin1 Expr2;
 
-EOr.        Expr ::= Expr1 OpBin Expr ;
+EOr.        Expr ::= Expr OpBin Expr1;
 
-coercions Expr 8;
+coercions Expr 9;
 
 separator Expr ",";
 
@@ -175,9 +161,6 @@ NEQ.        OpBin2 ::= "!=";
 And.        OpBin1 ::= "&&";
 
 Or.         OpBin ::= "||";
-
--- disable parentheses promotion
-coercions OpBin 0;
 
 -- tokens --
 ------------
