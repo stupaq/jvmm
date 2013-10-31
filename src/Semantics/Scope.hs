@@ -8,8 +8,8 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.List as List
 import Semantics.Commons
-import qualified Semantics.Errors as Err
 import Semantics.Errors (rethrow)
+import qualified Semantics.Errors as Err
 import Semantics.APTree
 
 -- TODO for scope resolution with classes we need to rewrite all EVar that

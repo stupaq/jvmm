@@ -7,9 +7,8 @@ import Data.List (partition, find)
 -- We call this representation Abstract Program Tree to distinguish from the
 -- shit that parser outputs..
 
--- FIXME rename UIdent to Ident
-
--- Unified identifier
+-- UNIFIED IDENTIFIER --
+------------------------
 data UIdent =
     VIdent String
   | FIdent String
@@ -30,7 +29,8 @@ idt +/ char = case idt of
     strip :: String -> String
     strip = takeWhile (/= char)
 
-
+-- STATEMENTS --
+----------------
 data Stmt =
    SLocal [Stmt] [Stmt]
  | SGlobal [Stmt]
@@ -51,7 +51,8 @@ data Stmt =
  | STryCatch Stmt Type UIdent Stmt
   deriving (Eq,Ord,Show)
 
-
+-- TYPES --
+-----------
 data Type =
    TFunc Type [Type] [Type]
  | TUnknown
@@ -66,7 +67,8 @@ data Type =
  | TArray Type
   deriving (Eq,Ord,Show)
 
-
+-- EXPRESSIONS --
+-----------------
 data Expr =
    EBinary Type OpBin Expr Expr
  | EUnary Type OpUn Expr
@@ -85,13 +87,15 @@ data Expr =
  | ENewArr Type Expr
   deriving (Eq,Ord,Show)
 
-
+-- BINARY OPERATIONS --
+-----------------------
 data OpUn =
    OuNeg
  | OuNot
   deriving (Eq,Ord,Show)
 
-
+-- UNARY OPERATIONS --
+----------------------
 data OpBin =
    ObTimes
  | ObDiv

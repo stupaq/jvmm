@@ -10,9 +10,9 @@ import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
 import Semantics.Commons
-import Semantics.APTree
-import qualified Semantics.Errors as Err
 import Semantics.Errors (rethrow)
+import qualified Semantics.Errors as Err
+import Semantics.APTree
 import qualified Semantics.Scope as Scope
 
 -- Implements runtime semantics and memory model, note that all type magic
@@ -200,7 +200,7 @@ newFrame action = do
     modify (\state -> state { stack = tail $ stack state })
 -- When it comes to GC -- note that we cannot really benefit from running gc
 -- when exiting from functions (with exception or result). In a good scenario
--- we will immediately pas many stack frames and invoking GC on each one is a
+-- we will immediately pass many stack frames and invoking GC on each one is a
 -- total waste of time (we cannot free objects referenced higher in the stack).
 -- It is much better to wait for seqential processing statements as returning
 -- from a function does not utilize more memory than we were using inside of a
@@ -303,7 +303,7 @@ compactHeap pinned heap =
                   _ -> grey''
         in fun (grey''', black')
 
--- If one uses bytecode monadic instruction only the garbage collection is
+-- If one uses bytecode monadic instruction only, the garbage collection is
 -- automatic, these functions should not be invoked directly.
 alloc :: RefValue -> RuntimeM PrimValue
 alloc val = do

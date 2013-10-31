@@ -8,10 +8,9 @@ import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Data.List as List
 import Semantics.Commons
-import Semantics.Trans (identToString)
-import Semantics.APTree
-import qualified Semantics.Errors as Err
 import Semantics.Errors (rethrow)
+import qualified Semantics.Errors as Err
+import Semantics.APTree
 import qualified Semantics.Scope as Scope
 
 -- BUILTINS --
