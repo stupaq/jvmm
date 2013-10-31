@@ -3,8 +3,6 @@ import Prelude hiding (id)
 import qualified Syntax.AbsJvmm as I
 import qualified Semantics.APTree as O
 
--- FIXME run translation on syntactic sugar (fixpoint)
-
 -- Creates variable-associated identifier from given one (for temporary and iteration variables).
 -- Only variable-associated identifiers derived from the same variable and with the same context
 -- will be hidden by the created one.
@@ -12,7 +10,6 @@ tempIdent :: I.Ident -> String -> I.Ident
 tempIdent (I.Ident id) ctx = I.Ident $ id ++ "#" ++ ctx
 
 -- Translates AST into APT performing several simplifications and syntactic sugar removal.
---
 trans :: I.Prog -> O.Stmt
 trans = tProg
   where
@@ -38,7 +35,6 @@ trans = tProg
 
     tStmt :: I.Stmt -> [O.Stmt]
     tStmt x = case x of
-      -- transform
       I.SDeclVar typ items  -> concat $ map (tItem typ) items
       I.SBlock block  ->  return $ tBlock block
       I.SAssignOp id opassign expr  -> return $ O.SAssign (tVIdent id) $ tExpr $ tAssignOp opassign (I.EVar id) expr
@@ -46,7 +42,6 @@ trans = tProg
       I.SAssignOpFld id1 id2 opassign3 expr4  ->  return $ O.SAssignFld (tVIdent id1) (tVIdent id2) $ tExpr $ tAssignOp opassign3 (I.EAccessVar (I.EVar id1) id2) expr4
       I.SPostInc id  -> tStmt $ I.SAssignOp id I.APlus (I.ELitInt 1)
       I.SPostDec id  -> tStmt $ I.SAssignOp id I.AMinus (I.ELitInt 1)
-      -- pass
       I.SEmpty  -> return O.SEmpty
       I.SAssign id expr  -> return $ O.SAssign (tVIdent id) $ tExpr expr
       I.SAssignArr id expr1 expr2  ->  return $ O.SAssignArr (tVIdent id) (tExpr expr1) (tExpr expr2)
@@ -103,7 +98,6 @@ trans = tProg
 
     tExpr :: I.Expr -> O.Expr
     tExpr x = case x of
-      -- pass
       I.EVar id  -> O.EVar $ tVIdent id
       I.ELitInt n  -> O.ELitInt n
       I.ELitTrue  -> O.ELitTrue
@@ -117,7 +111,6 @@ trans = tProg
       I.EApp id exprs  -> O.EApp (tFIdent id) (map tExpr exprs)
       I.ENewArr typ expr  -> O.ENewArr (tType typ) (tExpr expr)
       I.ENewObj typ  -> O.ENewObj $ tType typ
-      -- translate
       I.ENeg expr  -> O.EUnary O.TUnknown O.OuNeg (tExpr expr)
       I.ENot expr  -> O.EUnary O.TUnknown O.OuNot (tExpr expr)
       I.EMul expr1 opbin2 expr3  -> bin opbin2 expr1 expr3

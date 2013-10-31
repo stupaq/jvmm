@@ -46,3 +46,4 @@ uncaughtTopLevel obj = "uncaught top level exception: " ++ (show obj)
 -- Impossible situations
 danglingReference loc = "location: " ++ (show loc) ++ " does not exist"
 fromJustFailure ctx = "fromJust failed in context: " ++ (show ctx)
+unusedBranch ctx = "unused pattern branch entered: " ++ (show ctx)

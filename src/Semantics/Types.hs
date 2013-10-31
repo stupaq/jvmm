@@ -69,6 +69,7 @@ mapExceptions fun env = env { exceptions = fun (exceptions env) }
 typeof'' :: Stmt -> Type
 typeof'' x = case x of
   SDefFunc typ _ args excepts _ -> TFunc typ (map (\(SDeclVar typ _) -> typ) args) excepts
+  _ -> error $ Err.unusedBranch x
 
 -- TYPE MONAD --
 ----------------
@@ -103,6 +104,7 @@ returns typ = do
   case ftyp of
     Just (TFunc rett _ _) -> rett =| typ >> return ()
     Nothing -> throwError Err.danglingReturn
+    _ -> error $ Err.unusedBranch ftyp
 
 decIdent :: UIdent -> Type -> TypeM a -> TypeM a
 decIdent uid typ = local (\env -> env { idents = Map.insert uid typ (idents env) })
@@ -125,6 +127,7 @@ declare x m = case x of
       env <- asks idents
       return env
     decType (TUser id) cls m
+  _ -> error $ Err.unusedBranch x
 
 -- TYPE ARITHMETIC --
 ---------------------
@@ -174,13 +177,6 @@ declare x m = case x of
 
 (|=) = flip (=|)
 
-typeofFunc, typeofVar :: UIdent -> TypeM Type
-typeofVar id@(VIdent _) = typeof id
-typeofFunc id@(FIdent _) = typeof id
-typeofMVar, typeofMFunc :: Type -> UIdent -> TypeM Type
-typeofMVar typ id@(VIdent _) = typeof' typ id
-typeofMFunc typ id@(FIdent _) = typeof' typ id
-
 -- MAIN --
 ----------
 staticTypes :: Stmt -> Either String Stmt
@@ -210,22 +206,23 @@ funS x = case x of
     declare x $ do
       stmts' <- mapM funS stmts
       return $ SDefClass id (SGlobal stmts')
+  SDefClass _ _ -> error $ Err.unusedBranch x
   SAssign id expr -> do
     (expr', etyp) <- funE expr
-    vtyp <- typeofVar id
+    vtyp <- typeof id
     vtyp =| etyp
     return $ SAssign id expr'
   SAssignArr id expr1 expr2 -> do
     (expr1', etyp1) <- funE expr1
     (expr2', etyp2) <- funE expr2
     TInt =| etyp1 `rethrow` Err.indexType
-    atyp <- typeofVar id
+    atyp <- typeof id
     atyp =| TArray etyp2
     return $ SAssignArr id expr1' expr2'
   SAssignFld ido idf expr -> do
     (expr', etyp) <- funE expr
-    otyp <- typeofVar ido
-    ftyp <- typeofMVar otyp idf
+    otyp <- typeof ido
+    ftyp <- typeof' otyp idf
     ftyp =| etyp
     return $ SAssignFld ido idf expr'
   SReturn expr -> do
@@ -271,7 +268,7 @@ funS x = case x of
 funE :: Expr -> TypeM (Expr, Type)
 funE x = case x of
   EVar id -> do
-    typ <- typeofVar id
+    typ <- typeof id
     return (x, typ)
   ELitInt n -> return (x, TInt)
   ELitTrue -> return (x, TBool)
@@ -289,17 +286,17 @@ funE x = case x of
   EAccessFn expr id exprs -> do
     (expr', etyp) <- funE expr
     (exprs', etypes) <- mapAndUnzipM funE exprs
-    ftyp1@(TFunc ret args excepts) <- typeofMFunc etyp id
+    ftyp1@(TFunc ret args excepts) <- typeof' etyp id
     forM excepts throws
     (ftyp1 =| TFunc ret etypes []) `rethrow` Err.argumentsNotMatch args etypes
     return (EAccessFn expr' id exprs', ret)
   EAccessVar expr id -> do
     (expr', etyp) <- funE expr
-    typ <- typeofMVar etyp id
+    typ <- typeof' etyp id
     return (EAccessVar expr' id, typ)
   EApp id exprs -> do
     (exprs', etypes) <- mapAndUnzipM funE exprs
-    ftyp1@(TFunc ret args excepts) <- typeofFunc id
+    ftyp1@(TFunc ret args excepts) <- typeof id
     forM excepts throws
     (ftyp1 =| TFunc ret etypes []) `rethrow` Err.argumentsNotMatch args etypes
     return (EApp id exprs', ret)
