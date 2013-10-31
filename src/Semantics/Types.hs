@@ -9,7 +9,8 @@ import qualified Data.Map as Map
 import qualified Data.List as List
 import Syntax.AbsJvmm (Ident(..), Type(..), Expr(..), Stmt(..), OpBin(..), OpUn(..))
 import Semantics.Commons
-import Semantics.Trans (UIdent(..), toStr)
+import Semantics.Trans (identToString)
+import Semantics.APTree (UIdent(..))
 import qualified Semantics.Errors as Err
 import Semantics.Errors (rethrow)
 import qualified Semantics.Scope as Scope
@@ -115,10 +116,10 @@ decType typ tenv = local (\env -> env { types = Map.insert typ tenv (types env) 
 declare :: Stmt -> TypeM a -> TypeM a
 declare x m = case x of
   SDefFunc typ id args excepts stmt ->
-    decIdent (FIdent $ toStr id) (typeof'' x) m
+    decIdent (FIdent $ identToString id) (typeof'' x) m
   SDeclVar typ id -> do
     when (typ == TVoid) $ throwError Err.voidVarDecl
-    decIdent (VIdent $ toStr id) typ m
+    decIdent (VIdent $ identToString id) typ m
   SDefClass id@(Ident sid) (Global stmts) -> do
     when (sid `elem` builtinTypeNames) $ throwError (Err.redeclaredType id)
     -- We want to obtain all identifiers in class together with their types
@@ -176,11 +177,11 @@ declare x m = case x of
 (|=) = flip (=|)
 
 typeofFunc, typeofVar :: Ident -> TypeM Type
-typeofVar id = typeof (VIdent $ toStr id)
-typeofFunc id = typeof (FIdent $ toStr id)
+typeofVar id = typeof (VIdent $ identToString id)
+typeofFunc id = typeof (FIdent $ identToString id)
 typeofMVar, typeofMFunc :: Type -> Ident -> TypeM Type
-typeofMVar typ id = typeof' typ (VIdent $ toStr id)
-typeofMFunc typ id = typeof' typ (FIdent $ toStr id)
+typeofMVar typ id = typeof' typ (VIdent $ identToString id)
+typeofMFunc typ id = typeof' typ (FIdent $ identToString id)
 
 -- MAIN --
 ----------
@@ -260,7 +261,7 @@ funS x = case x of
     return $ SThrow expr'
   STryCatch stmt1 typ id stmt2 -> do
     when (typ `elem` primitiveTypes) $ throwError (Err.referencedPrimitive typ)
-    stmt2' <- decIdent (VIdent $ toStr id) typ (funS stmt2)
+    stmt2' <- decIdent (VIdent $ identToString id) typ (funS stmt2)
     catches typ $ do
       stmt1' <- funS stmt1
       return $ STryCatch stmt1' typ id stmt2'

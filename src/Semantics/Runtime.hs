@@ -11,7 +11,8 @@ import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
 import Syntax.AbsJvmm (Ident(..), Expr(..), Stmt(..), OpBin(..), OpUn(..), Type(..))
 import Semantics.Commons
-import Semantics.Trans (UIdent(..), toStr, tempIdent)
+import Semantics.Trans (tempIdent)
+import Semantics.APTree (UIdent(..))
 import qualified Semantics.Errors as Err
 import Semantics.Errors (rethrow)
 import qualified Semantics.Scope as Scope
