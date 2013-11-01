@@ -1,55 +1,64 @@
--- Jvmm : BNF syntax specification --
+-- JVMM : BNF syntax specification --
 -------------------------------------
 
--- program --
+entrypoints Program;
+
+-- DECLARATION --
+-----------------
+DVariable.    Declaration ::= Type Ident;
+
+-- PROGRAM --
 --------------
+Program.      Program ::= [Definition];
+separator nonempty Definition "";
 
-entrypoints Prog;
+DFunction.    Definition ::= Function;
+DClass.       Definition ::= Class;
 
-Prog.       Prog ::= [DefGlobal];
-separator nonempty DefGlobal "";
+-- FUNCTION --
+--------------
+Function.     Function ::= Type Ident "(" [Argument] ")" Exceptions "{" [Stmt] "}";
+separator Argument ",";
 
-GlobFunc.   DefGlobal ::= DefFunc;
-GlobClass.  DefGlobal ::= DefClass;
-
--- blocks --
-------------
-
-Block.      Block ::= "{" [Stmt] "}";
-separator Stmt "";
-
--- declarations/definitions --
-------------------------------
-
-Arg.        Arg ::= Type Ident;
-separator Arg ",";
-
-DefFunc.    DefFunc ::= Type Ident "(" [Arg] ")" FunExcepts Block;
-
-Excepts.    FunExcepts ::= "throws" [Type];
+NoExceptions. Exceptions ::= ;
+Exceptions.   Exceptions ::= "throws" [Type];
 separator nonempty Type ",";
 
-NoExcept.   FunExcepts ::= ;
+Argument.     Argument ::= Type Ident;
 
-SDeclVar.   Stmt ::= Type [Item] ";";
-separator nonempty Item ",";
-
-NoInit.     Item ::= Ident;
-Init.       Item ::= Ident "=" Expr;
-
-DefClass.   DefClass ::= "class" Ident Extends "{" [Member] "}";
+-- CLASS --
+-----------
+Class.        Class ::= "class" Ident Extends "{" [Member] "}";
 terminator nonempty Member "";
 
-Field.      Member ::= Type Ident ";";
-Method.     Member ::= DefFunc;
+Field.      Member ::= Declaration ";";
+Method.     Member ::= Function;
 
 SuperClass.   Extends ::= "extends" Type;
 SuperObject.  Extends ::= ;
 
--- statements --
-----------------
+-- TYPES --
+-----------
 
-SBlock.     Stmt ::= Block;
+TVoid.      Type ::= "void";
+TInt.       Type ::= "int";
+TChar.      Type ::= "char";
+TBool.      Type ::= "boolean";
+
+TString.    Type ::= "String"; -- for compatibility with Java
+TString.    Type ::= "string";
+TObject.    Type ::= "Object";
+TUser.      Type ::= Ident;
+
+TArray.     Type ::= Type "[]";
+
+
+-- TODO --
+
+-- STATEMENTS --
+----------------
+SBlock.       Stmt ::= "{" [Stmt] "}";
+separator Stmt "";
 
 SAssignOp.    Stmt ::= Ident OpAssign Expr  ";";
 SAssignOpArr. Stmt ::= Ident "[" Expr "]" OpAssign Expr  ";";
@@ -80,21 +89,11 @@ SExpr.      Stmt ::= Expr ";";
 SThrow.     Stmt ::= "throw" Expr ";";
 STryCatch.  Stmt ::= "try" Stmt "catch" "(" Type Ident ")" Stmt;
 
--- types --
------------
+SDeclVar.   Stmt ::= Type [Item] ";";
+separator nonempty Item ",";
 
-TVoid.      Type ::= "void";
-TInt.       Type ::= "int";
-TChar.      Type ::= "char";
-TBool.      Type ::= "boolean";
-
-TString.    Type ::= "String"; -- for compatibility with Java
-TString.    Type ::= "string";
-TObject.    Type ::= "Object";
-
-TUser.      Type ::= Ident;
-
-TArray.     Type ::= Type "[]";
+NoInit.     Item ::= Ident;
+Init.       Item ::= Ident "=" Expr;
 
 -- expressions --
 -----------------

@@ -35,7 +35,7 @@ runFile f = do
 run :: String -> (ReaderT Verbosity IO) ()
 run s =
   let ts = myLexer s
-  in case  pProg ts of
+  in case  pProgram ts of
     Bad s -> do
       printl Error $ "ERROR\n"
       printl Error $ s

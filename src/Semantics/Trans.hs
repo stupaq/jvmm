@@ -10,20 +10,20 @@ tempIdent :: I.Ident -> String -> I.Ident
 tempIdent (I.Ident id) ctx = I.Ident $ id ++ "#" ++ ctx
 
 -- Translates AST into APT performing several simplifications and syntactic sugar removal.
-trans :: I.Prog -> O.Stmt
-trans = tProg
+trans :: I.Program -> O.Stmt
+trans = tProgram
   where
-    tProg :: I.Prog -> O.Stmt
-    tProg (I.Prog defglobals) = O.SGlobal $ map tDefGlobal defglobals
+    tProgram :: I.Program -> O.Stmt
+    tProgram (I.Program defs) = O.SGlobal $ map tDefinition defs
 
-    tDefGlobal :: I.DefGlobal -> O.Stmt
-    tDefGlobal x = case x of
-      I.GlobFunc deffunc -> tDefFunc deffunc
-      I.GlobClass defclass -> tDefClass defclass
+    tDefinition :: I.Definition -> O.Stmt
+    tDefinition x = case x of
+      I.DFunction deffunc -> tFunction deffunc
+      I.DClass defclass -> tClass defclass
 
-    tDefClass :: I.DefClass -> O.Stmt
-    tDefClass x = case x of
-      I.DefClass id extends members -> O.SDefClass (tTIdent id) (tExtends extends) $ O.SGlobal $ map tMember members
+    tClass :: I.Class -> O.Stmt
+    tClass x = case x of
+      I.Class id extends members -> O.SDefClass (tTIdent id) (tExtends extends) $ O.SGlobal $ map tMember members
 
     tExtends :: I.Extends -> O.Type
     tExtends x = case x of
@@ -32,17 +32,22 @@ trans = tProg
 
     tMember :: I.Member -> O.Stmt
     tMember x = case x of
-      I.Field typ id -> O.SDeclVar (tType typ) (tVIdent id)
-      I.Method decl -> tDefFunc decl
+      I.Field (I.DVariable typ id) -> O.SDeclVar (tType typ) (tVIdent id)
+      I.Method decl -> tFunction decl
 
-    tDefFunc :: I.DefFunc -> O.Stmt
-    tDefFunc (I.DefFunc typ id args (I.Excepts excepts) pblock) = O.SDefFunc (tType typ) (tFIdent id) (tArgs args) (map tType excepts) $ tBlock pblock
-    tDefFunc (I.DefFunc typ id args (I.NoExcept) pblock) = O.SDefFunc (tType typ) (tFIdent id) (tArgs args) [] $ tBlock pblock
+    tFunction :: I.Function -> O.Stmt
+    tFunction (I.Function typ id args (I.Exceptions excepts) stmts) = O.SDefFunc (tType typ) (tFIdent id) (tArguments args) (map tType excepts) $ tStmts stmts
+    tFunction (I.Function typ id args (I.NoExceptions) stmts) = O.SDefFunc (tType typ) (tFIdent id) (tArguments args) [] $ tStmts stmts
+
+    tStmts :: [I.Stmt] -> O.Stmt
+    tStmts stmts = O.SLocal [] $ do
+      stmt <- stmts
+      tStmt stmt
 
     tStmt :: I.Stmt -> [O.Stmt]
     tStmt x = case x of
       I.SDeclVar typ items -> concat $ map (tItem typ) items
-      I.SBlock block ->  return $ tBlock block
+      I.SBlock stmts ->  return $ tStmts stmts
       I.SAssignOp id opassign expr -> return $ O.SAssign (tVIdent id) $ tExpr $ tAssignOp opassign (I.EVar id) expr
       I.SAssignOpArr id expr1 opassign2 expr3 ->  return $ O.SAssignArr (tVIdent id) (tExpr expr1) $ tExpr $ tAssignOp opassign2 (I.EAccessArr (I.EVar id) expr1) expr3
       I.SAssignOpFld id1 id2 opassign3 expr4 ->  return $ O.SAssignFld (tVIdent id1) (tVIdent id2) $ tExpr $ tAssignOp opassign3 (I.EAccessVar (I.EVar id1) id2) expr4
@@ -61,10 +66,10 @@ trans = tProg
         let idarr = tempIdent id "arr"
             idlength = tempIdent id "length"
             iditer = tempIdent id "iter"
-        in return $ tBlock $ I.Block $ [
+        in tStmt $ I.SBlock $ [
           I.SDeclVar (I.TArray I.TInt) [I.Init idarr expr],
           I.SDeclVar I.TInt [I.Init idlength (I.EAccessVar (I.EVar idarr) (I.Ident "length")), I.Init iditer (I.ELitInt 0)],
-          I.SWhile (I.ERel (I.EVar iditer) I.LTH (I.EVar idlength)) $ I.SBlock $ I.Block [
+          I.SWhile (I.ERel (I.EVar iditer) I.LTH (I.EVar idlength)) $ I.SBlock [
             I.SDeclVar typ [I.Init id (I.EAccessArr (I.EVar idarr) (I.EVar iditer))],
             stmt,
             I.SPostInc iditer]]
@@ -85,8 +90,8 @@ trans = tProg
       [stmt] -> stmt
       stmts -> O.SLocal [] stmts
 
-    tArgs :: [I.Arg] -> [O.Stmt]
-    tArgs = map (\(I.Arg typ id) -> O.SDeclVar (tType typ) (tVIdent id))
+    tArguments :: [I.Argument] -> [O.Stmt]
+    tArguments = map (\(I.Argument typ id) -> O.SDeclVar (tType typ) (tVIdent id))
 
     tItem :: I.Type -> I.Item -> [O.Stmt]
     tItem typ x = case x of
@@ -96,11 +101,6 @@ trans = tProg
       I.Init id expr ->  -- SYNTACTIC SUGAR
         let idtmp = tempIdent id "decl"
         in [O.SDeclVar (tType typ) (tVIdent idtmp), O.SAssign (tVIdent idtmp) (tExpr expr), O.SDeclVar (tType typ) (tVIdent id), O.SAssign (tVIdent id) (O.EVar (tVIdent idtmp))]
-
-    tBlock :: I.Block -> O.Stmt
-    tBlock (I.Block stmts) = O.SLocal [] $ do
-      stmt <- stmts
-      tStmt stmt
 
     tExpr :: I.Expr -> O.Expr
     tExpr x = case x of
