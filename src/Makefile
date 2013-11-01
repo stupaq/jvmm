@@ -6,7 +6,7 @@ GHCMAKE := ghc -w -fwarn-incomplete-patterns --make -outputdir ghc-make #-rtsopt
 
 all: $(MAIN)
 
-$(MAIN): % : %.hs
+$(MAIN): % : %.hs Syntax
 	$(GHCMAKE) $< -o $@
 
 # This is an ugly hack, ghc --make sucks at parallel compilation

@@ -132,7 +132,7 @@ buildGlobal stmts = forM_ stmts $ \stmt -> case stmt of
     decFunc id
   SDeclVar typ id -> do
     decVar id
-  SDefClass id (SGlobal stmts) ->
+  SDefClass id super (SGlobal stmts) ->
     decType id
   _ -> throwError $ Err.globalForbidden
 
@@ -176,10 +176,11 @@ funND x = case x of
     typ' <- resType typ
     id' <- resVar id
     return $ SDeclVar typ' id'
-  SDefClass id stmt -> do
+  SDefClass id super stmt -> do
     TUser id' <- resType $ TUser id
+    super' <- resType super
     stmt' <- newLocal (funS stmt)
-    return $ SDefClass id' stmt'
+    return $ SDefClass id' super' stmt'
   _ -> throwError $ Err.globalForbidden
 
 funA :: Stmt -> ScopeM Stmt
@@ -202,7 +203,7 @@ funS x = case x of
   SDeclVar typ id -> do
     decVar id
     funND x
-  SDefClass id stmt -> do
+  SDefClass id super stmt -> do
     decType id
     funND x
   SLocal _ stmts -> do -- definitions part of SLocal is empty at this point

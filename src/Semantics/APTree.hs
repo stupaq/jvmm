@@ -34,7 +34,7 @@ idt +/ char = case idt of
 data Stmt =
    SLocal [Stmt] [Stmt]
  | SGlobal [Stmt]
- | SDefClass UIdent Stmt
+ | SDefClass UIdent Type Stmt
  | SDefFunc Type UIdent [Stmt] [Type] Stmt
  | SDeclVar Type UIdent
  | SEmpty

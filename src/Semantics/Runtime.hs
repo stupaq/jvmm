@@ -386,6 +386,7 @@ getfield id ref = do
       Nothing -> do
         --FIXME need type information, ps. findWithDefault
         throwError (RError $ "usage of uninitialized class field: " ++ (show id))
+    _ -> error $ Err.unusedBranch lval
 
 putfield :: UIdent -> PrimValue -> PrimValue -> RuntimeM ()
 -- Types are already checked, we can simply store value in a map
@@ -397,12 +398,14 @@ putfield id val ref = do
     VObject obj -> do
       update ref (VObject $ obj { fields = Map.insert id val (fields obj) })
       runGC --TODO move to some more sensible place
+    _ -> error $ Err.unusedBranch lval
 
 invokevirtual :: UIdent -> PrimValue -> [PrimValue] -> RuntimeM ()
 invokevirtual (FIdent "charAt$0") ref [VInt ind] = do
   VString str <- deref ref
   unless (0 <= ind && ind < length str) $ throwError (RError $ Err.indexOutOfBounds ind)
   return_ $ VChar (head $ drop ind str)
+invokevirtual id _ _ = error $ Err.unusedBranch id
 
 -- DENOTATIONAL SEMANTICS --
 ----------------------------
@@ -421,9 +424,10 @@ runUnit debug stmt = do
         println $ "| Main returned:\t" ++ (show res)
         println $ "| Heap stats:\n|\tallocated_count:\t" ++ (show $ Map.size (heap state Map.\\ heap runstate0))
         println $ "+----------------------------------"
-      -- Main function shoul have integere return value
+      -- Main function shoul have integer return value
       let VInt ret = res
       return ret
+    Right _ -> error $ Err.unusedBranch x
 
 -- Executes _int main()_ function in given translation unit
 runtime :: Stmt -> IO ((Either Result (), RunState))
@@ -456,7 +460,8 @@ funD (SDefFunc typ id args excepts stmt) =
         argId id = Scope.tempIdent id "arg"
 funD (SDeclVar typ id) = (>>) (defaultValue typ >>= store id)
 -- TODO declare all member functions when dealing with real classes
-funD (SDefClass id (SGlobal stmts)) = Prelude.id
+funD (SDefClass id super (SGlobal stmts)) = Prelude.id
+funD x = error $ Err.unusedBranch x
 
 -- Statements
 funS :: Stmt -> RuntimeM ()
@@ -502,6 +507,7 @@ funS x = case x of
     return_ val
   SReturnV -> return'_
   SEmpty -> nop
+  _ -> error $ Err.unusedBranch x
 
 -- Expressions
 funE :: Expr -> RuntimeM PrimValue
@@ -560,6 +566,7 @@ funE x = case x of
       ObTimes -> val1 * val2
       ObDiv -> val1 `div` val2
       ObMod -> val1 `rem` val2 -- I'mma hipst'a!
+      _ -> error $ Err.unusedBranch opbin
   EBinary TBool ObAnd expr1 expr2 -> do
     VBool val1 <- funE expr1
     case val1 of
@@ -582,4 +589,6 @@ funE x = case x of
       ObLEQ -> val1 <= val2
       ObGTH -> val1 > val2
       ObGEQ -> val1 >= val2
+      _ -> error $ Err.unusedBranch opbin
+  _ -> error $ Err.unusedBranch x
 

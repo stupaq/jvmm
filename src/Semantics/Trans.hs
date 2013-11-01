@@ -23,11 +23,17 @@ trans = tProg
 
     tDefClass :: I.DefClass -> O.Stmt
     tDefClass x = case x of
-      I.DefClass id members -> O.SDefClass (tTIdent id) $ O.SGlobal $ map tMember members
+      I.DefClass id extends members -> O.SDefClass (tTIdent id) (tExtends extends) $ O.SGlobal $ map tMember members
+
+    tExtends :: I.Extends -> O.Type
+    tExtends x = case x of
+      I.SuperClass typ -> tType typ
+      I.SuperObject -> tType I.TObject
 
     tMember :: I.Member -> O.Stmt
     tMember x = case x of
       I.Field typ id -> O.SDeclVar (tType typ) (tVIdent id)
+      I.Method decl -> tDefFunc decl
 
     tDefFunc :: I.DefFunc -> O.Stmt
     tDefFunc (I.DefFunc typ id args (I.Excepts excepts) pblock) = O.SDefFunc (tType typ) (tFIdent id) (tArgs args) (map tType excepts) $ tBlock pblock
@@ -105,6 +111,7 @@ trans = tProg
       I.ELitString str -> O.ELitString str
       I.ELitChar c -> O.ELitChar c
       I.ENull -> O.ENull
+      I.ENullT typ -> O.ENull
       I.EAccessArr expr1 expr2 -> O.EAccessArr (tExpr expr1) (tExpr expr2)
       I.EAccessFn expr id exprs -> O.EAccessFn (tExpr expr) (tFIdent id) (map tExpr exprs)
       I.EAccessVar expr id -> O.EAccessVar (tExpr expr) (tVIdent id)

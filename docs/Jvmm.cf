@@ -37,10 +37,14 @@ separator nonempty Item ",";
 NoInit.     Item ::= Ident;
 Init.       Item ::= Ident "=" Expr;
 
-DefClass.   DefClass ::= "class" Ident "{" [Member] "}";
-terminator nonempty Member ";";
+DefClass.   DefClass ::= "class" Ident Extends "{" [Member] "}";
+terminator nonempty Member "";
 
-Field.      Member ::= Type Ident;
+Field.      Member ::= Type Ident ";";
+Method.     Member ::= DefFunc;
+
+SuperClass.   Extends ::= "extends" Type;
+SuperObject.  Extends ::= ;
 
 -- statements --
 ----------------
@@ -107,6 +111,7 @@ ELitChar.   Expr6 ::= Char;
 ELitTrue.   Expr6 ::= "true";
 ELitFalse.  Expr6 ::= "false";
 ENull.      Expr6 ::= "null";
+ENullT.     Expr6 ::= "(" Type ")null";
 
 EAccessArrI.  Expr5 ::= Ident "[" Expr "]";
 EAccessFnI.   Expr5 ::= Ident "." Ident "(" [Expr] ")";

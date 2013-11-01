@@ -120,7 +120,7 @@ declare x m = case x of
   SDeclVar typ id@(VIdent _) -> do
     when (typ == TVoid) $ throwError Err.voidVarDecl
     decIdent id typ m
-  SDefClass id@(TIdent sid) (SGlobal stmts) -> do
+  SDefClass id@(TIdent sid) super (SGlobal stmts) -> do
     when (sid `elem` builtinTypeNames) $ throwError (Err.redeclaredType id)
     -- We want to obtain all identifiers in class together with their types
     cls <- local (const typeenv0) . applyAndCompose declare stmts $ do
@@ -202,11 +202,11 @@ funS x = case x of
   -- This is already delared when we see it in funS
   SDeclVar typ id -> return x
   -- This is already delared when we see it in funS
-  SDefClass id (SGlobal stmts) -> do
+  SDefClass id super (SGlobal stmts) -> do
     declare x $ do
       stmts' <- mapM funS stmts
-      return $ SDefClass id (SGlobal stmts')
-  SDefClass _ _ -> error $ Err.unusedBranch x
+      return $ SDefClass id super (SGlobal stmts')
+  SDefClass _ _ _ -> error $ Err.unusedBranch x
   SAssign id expr -> do
     (expr', etyp) <- funE expr
     vtyp <- typeof id
