@@ -1,4 +1,5 @@
 module Semantics.APTree where
+
 import Prelude hiding (id)
 import Data.List (partition, find)
 
@@ -29,13 +30,36 @@ idt +/ char = case idt of
     strip :: String -> String
     strip = takeWhile (/= char)
 
+-- PROGRAM --
+-------------
+data Program =
+  Program [Class]
+  deriving (Eq, Ord, Show)
+
+-- CLASS HIERARCHY --
+---------------------
+data Class = Class {
+  classType :: Type,
+  classSuper :: Type,
+  classFields :: [Field],
+  classMethods :: [Method]
+} deriving (Eq, Ord, Show)
+
+data Field =
+  Field Type UIdent
+  deriving (Eq, Ord, Show)
+
+data Method =
+  Method Type UIdent [UIdent] Stmt
+  deriving (Eq, Ord, Show)
+
 -- STATEMENTS --
 ----------------
 data Stmt =
    SLocal [Stmt] [Stmt]
- | SGlobal [Stmt]
- | SDefClass UIdent Type Stmt
- | SDefFunc Type UIdent [Stmt] [Type] Stmt
+ | SGlobal [Stmt] --FIXME remove
+ | SDefClass UIdent Type Stmt --FIXME remove
+ | SDefFunc Type UIdent [Stmt] [Type] Stmt --FIXME remove
  | SDeclVar Type UIdent
  | SEmpty
  | SAssign UIdent Expr

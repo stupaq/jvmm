@@ -1,5 +1,7 @@
 module Semantics.Trans (trans) where
+
 import Prelude hiding (id)
+
 import qualified Syntax.AbsJvmm as I
 import qualified Semantics.APTree as O
 
@@ -10,39 +12,41 @@ tempIdent :: I.Ident -> String -> I.Ident
 tempIdent (I.Ident id) ctx = I.Ident $ id ++ "#" ++ ctx
 
 -- Translates AST into APT performing several simplifications and syntactic sugar removal.
-trans :: I.Program -> O.Stmt
+trans :: I.Program -> O.Program
 trans = tProgram
   where
-    tProgram :: I.Program -> O.Stmt
-    tProgram (I.Program defs) = O.SGlobal $ map tDefinition defs
+    tProgram :: I.Program -> O.Program
+    tProgram (I.Program defs) =
+      let userClasses = [ x | I.DClass x <- defs ]
+          runtimeClass = I.Class (I.Ident "Runtime") I.SuperObject [ I.Method x | I.DFunction x <- defs ]
+      in O.Program (tClass runtimeClass : map tClass userClasses)
 
-    tDefinition :: I.Definition -> O.Stmt
-    tDefinition x = case x of
-      I.DFunction deffunc -> tFunction deffunc
-      I.DClass defclass -> tClass defclass
-
-    tClass :: I.Class -> O.Stmt
-    tClass x = case x of
-      I.Class id extends members -> O.SDefClass (tTIdent id) (tExtends extends) $ O.SGlobal $ map tMember members
+    tClass :: I.Class -> O.Class
+    tClass (I.Class id extends members) = O.Class {
+        O.classType = O.TUser (tTIdent id),
+        O.classSuper = tExtends extends,
+        O.classFields = [ tDeclaration x | I.Field x <- members ],
+        O.classMethods = [ tFunction x | I.Method x <- members ]
+      }
 
     tExtends :: I.Extends -> O.Type
     tExtends x = case x of
       I.SuperClass typ -> tType typ
       I.SuperObject -> tType I.TObject
 
-    tMember :: I.Member -> O.Stmt
-    tMember x = case x of
-      I.Field (I.DVariable typ id) -> O.SDeclVar (tType typ) (tVIdent id)
-      I.Method decl -> tFunction decl
+    tDeclaration :: I.Declaration -> O.Field
+    tDeclaration (I.DVariable typ id) = O.Field (tType typ) (tVIdent id)
 
-    tFunction :: I.Function -> O.Stmt
-    tFunction (I.Function typ id args (I.Exceptions excepts) stmts) = O.SDefFunc (tType typ) (tFIdent id) (tArguments args) (map tType excepts) $ tStmts stmts
-    tFunction (I.Function typ id args (I.NoExceptions) stmts) = O.SDefFunc (tType typ) (tFIdent id) (tArguments args) [] $ tStmts stmts
-
-    tStmts :: [I.Stmt] -> O.Stmt
-    tStmts stmts = O.SLocal [] $ do
-      stmt <- stmts
-      tStmt stmt
+    tFunction :: I.Function -> O.Method
+    tFunction (I.Function typ id args exceptions stmts) =
+      O.Method funType (tFIdent id) argUIdents (tStmts stmts)
+      where
+        argUIdents = map (\(I.Argument typ id) -> tVIdent id) args
+        argTypes = map (\(I.Argument typ id) -> tType typ) args
+        funType = O.TFunc (tType typ) argTypes exceptionTypes
+        exceptionTypes = case exceptions of
+          I.Exceptions elist -> map tType elist
+          _ -> []
 
     tStmt :: I.Stmt -> [O.Stmt]
     tStmt x = case x of
@@ -68,7 +72,8 @@ trans = tProgram
             iditer = tempIdent id "iter"
         in tStmt $ I.SBlock $ [
           I.SDeclVar (I.TArray I.TInt) [I.Init idarr expr],
-          I.SDeclVar I.TInt [I.Init idlength (I.EAccessVar (I.EVar idarr) (I.Ident "length")), I.Init iditer (I.ELitInt 0)],
+          I.SDeclVar I.TInt [I.Init idlength (I.EAccessVar (I.EVar idarr) (I.Ident "length")),
+          I.Init iditer (I.ELitInt 0)],
           I.SWhile (I.ERel (I.EVar iditer) I.LTH (I.EVar idlength)) $ I.SBlock [
             I.SDeclVar typ [I.Init id (I.EAccessArr (I.EVar idarr) (I.EVar iditer))],
             stmt,
@@ -90,8 +95,10 @@ trans = tProgram
       [stmt] -> stmt
       stmts -> O.SLocal [] stmts
 
-    tArguments :: [I.Argument] -> [O.Stmt]
-    tArguments = map (\(I.Argument typ id) -> O.SDeclVar (tType typ) (tVIdent id))
+    tStmts :: [I.Stmt] -> O.Stmt
+    tStmts stmts = O.SLocal [] $ do
+      stmt <- stmts
+      tStmt stmt
 
     tItem :: I.Type -> I.Item -> [O.Stmt]
     tItem typ x = case x of
@@ -100,7 +107,11 @@ trans = tProgram
       -- which cannot hide any user-defined variable
       I.Init id expr ->  -- SYNTACTIC SUGAR
         let idtmp = tempIdent id "decl"
-        in [O.SDeclVar (tType typ) (tVIdent idtmp), O.SAssign (tVIdent idtmp) (tExpr expr), O.SDeclVar (tType typ) (tVIdent id), O.SAssign (tVIdent id) (O.EVar (tVIdent idtmp))]
+        in [
+          O.SDeclVar (tType typ) (tVIdent idtmp),
+          O.SAssign (tVIdent idtmp) (tExpr expr),
+          O.SDeclVar (tType typ) (tVIdent id),
+          O.SAssign (tVIdent id) (O.EVar (tVIdent idtmp))]
 
     tExpr :: I.Expr -> O.Expr
     tExpr x = case x of
