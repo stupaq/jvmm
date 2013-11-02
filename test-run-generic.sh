@@ -5,7 +5,7 @@ PARSEEXT=".txt"
 
 # what to run
 EXEC="./latc"
-PARSE="./latc_syntax"
+PARSE="./latc -p"
 
 # memory limit (gc testing)
 MEMLIMIT=60000
@@ -88,7 +88,7 @@ function run_example() {
 
 function parse_example() {
   echo -ne "PARSE\t$1: "
-  $PARSE $1 | grep "Parse Successful!" &>/dev/null
+  $PARSE $1 2>&1 | grep "OK" &>/dev/null
   status=$?
   if [[ $1 == *$EXECEXT ]]; then
     check $status

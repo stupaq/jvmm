@@ -7,14 +7,12 @@ import Data.List as List
 
 import Semantics.Commons
 import qualified Semantics.Errors as Err
-import Semantics.Errors (rethrow, ErrorInfoM, ErrorInfoT, runErrorInfoT)
+import Semantics.Errors (rethrow, ErrorInfoM, ErrorInfoT)
 import Semantics.APTree hiding (HierarchyM)
 
 -- HIERACHY MONAD --
 --------------------
 type HierarchyM = ErrorInfoT Identity
-runHierarchyM :: HierarchyM a -> ErrorInfoM a
-runHierarchyM = runIdentity . runErrorInfoT
 
 -- CLASS CLOSURE --
 -------------------
@@ -58,8 +56,8 @@ objectSuperClass = Class {
 objectDiff :: ClassDiff
 objectDiff super = return $ super { classType = TObject }
 
-hierarchy :: CompilationUnit -> ErrorInfoM ClassHierarchy
-hierarchy (CompilationUnit classes) = runHierarchyM $ visit objectSuperClass classes objectDiff
+hierarchy :: CompilationUnit -> ErrorInfoT Identity ClassHierarchy
+hierarchy (CompilationUnit classes) = visit objectSuperClass classes objectDiff
 
 visit :: Class -> [(Type, ClassDiff)] -> ClassDiff -> HierarchyM ClassHierarchy
 visit super classes diff = do

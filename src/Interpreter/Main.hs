@@ -1,70 +1,81 @@
 module Main where
+
 import System.IO (stderr, hPutStrLn)
 import System.Exit (exitSuccess, exitFailure)
 import System.Environment (getArgs, getProgName)
-import Control.Monad.IO.Class
+
+import Control.Monad
+import Control.Monad.Error
+import Control.Monad.Identity
 import Control.Monad.Reader
-import Data.Either
-import Syntax.LexJvmm
-import Syntax.ParJvmm
-import Syntax.SkelJvmm
-import Syntax.PrintJvmm
-import Syntax.AbsJvmm
-import Syntax.ErrM
+import Control.Monad.IO.Class
+
+import Syntax.AbsJvmm (Program)
+import Syntax.ParJvmm (myLexer, pProgram)
+import Syntax.PrintJvmm (printTree)
+import Syntax.ErrM (Err(..))
+
+import Semantics.Errors
 import Semantics.Trans
+import Semantics.APTree
 import Semantics.Hierarchy
 import Semantics.Scope
-import Semantics.Types
-import Semantics.Runtime
+--import Semantics.Types
+--import Semantics.Runtime
 
+-- WORKFLOW --
+--------------
+parse :: String -> ErrorInfoT Identity Program
+parse str =
+  let ts = myLexer str
+  in case pProgram ts of
+    Bad err -> throwError err
+    Ok tree -> return tree
+
+compile :: CompilationUnit -> ErrorInfoT Identity ClassHierarchy
+compile cunit = hierarchy cunit
+
+-- OUTPUT HELPERS --
+--------------------
 data Verbosity = Debug | Info | Warn | Error deriving (Eq, Ord, Show)
 
 printl :: Verbosity -> String -> (ReaderT Verbosity IO) ()
 printl v s = do
   verb <- ask
-  if v >= verb then
-    liftIO $ hPutStrLn stderr s
-  else
-    return ()
+  if v >= verb then liftIO $ hPutStrLn stderr s
+  else return ()
 
-runFile :: FilePath -> (ReaderT Verbosity IO) ()
+-- MAIN --
+----------
+runFile, parseFile :: FilePath -> (ReaderT Verbosity IO) ()
+
 runFile f = do
   str <- lift $ readFile f
-  run str
-
-run :: String -> (ReaderT Verbosity IO) ()
-run s =
-  let ts = myLexer s
-  in case  pProgram ts of
-    Bad s -> do
+  case runIdentity $ runErrorInfoT $ parse str >>= trans >>= compile of
+    Left err -> do
       printl Error $ "ERROR\n"
-      printl Error $ s
-      printl Error $ "\n[Tokens]\n\n" ++ (show ts)
-      liftIO $ exitFailure
-    Ok tree -> case hierarchy $ trans tree of
-      Left err -> do
-        printl Error $ err
-        liftIO $ exitFailure
-      Right classes -> case scope classes of
-        Left err -> do
-          printl Error $ err
-          liftIO $ exitFailure
-        Right tree' -> case staticTypes tree' of
-          Left err -> do
-            printl Error $ err
-            liftIO $ exitFailure
-          Right tree'' -> do
-            printl Warn $ "OK\n"
-            verb <- ask
-            lift $ runUnit (Info > verb) tree''
-            printl Debug $ "\n[Linearized tree]\n\n" ++ show tree'
-            printl Debug $ "\n[Type check]\n\n" ++ show tree''
+      printl Error $ err
+    Right eunit -> do
+      printl Warn $ "OK\n"
+      -- FIXME
+      printl Info $ show eunit
+
+parseFile f = do
+  str <- lift $ readFile f
+  case runIdentity $ runErrorInfoT $ parse str of
+    Left err -> do
+      printl Error $ "ERROR\n"
+      printl Error $ err
+    Right program -> do
+      printl Warn $ "OK\n"
+      printl Debug $ show program
 
 main :: IO ()
 main = do
   args <- getArgs
   case take 2 args of
+    "-p":f:[] -> runReaderT (parseFile f) Info
     "-v":f:[] -> runReaderT (runFile f) Debug
     f:_ -> runReaderT (runFile f) Info
-    _ -> hPutStrLn stderr "ERROR\n\nbed options format"
+    _ -> hPutStrLn stderr "ERROR\n\nbad options format"
 

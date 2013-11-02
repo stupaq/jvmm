@@ -1,8 +1,12 @@
 module Semantics.Trans (trans) where
 
 import Prelude hiding (id)
+import Control.Monad
+import Control.Monad.Identity
 
 import qualified Syntax.AbsJvmm as I
+
+import Semantics.Errors (ErrorInfoT)
 import qualified Semantics.APTree as O
 import Semantics.Hierarchy (prepareClassDiff)
 
@@ -13,8 +17,8 @@ tempIdent :: I.Ident -> String -> I.Ident
 tempIdent (I.Ident id) ctx = I.Ident $ id ++ "#" ++ ctx
 
 -- Translates AST into APT performing several simplifications and syntactic sugar removal.
-trans :: I.Program -> O.CompilationUnit
-trans program = tProgram program
+trans :: I.Program -> ErrorInfoT Identity O.CompilationUnit
+trans program = return $ tProgram program
   where
     tProgram :: I.Program -> O.CompilationUnit
     tProgram (I.Program defs) = O.CompilationUnit $
@@ -25,9 +29,10 @@ trans program = tProgram program
     tClass :: I.Class -> (O.Type, O.ClassDiff)
     tClass (I.Class id extends members) =
       let typ = O.TUser (tTIdent id)
-      in (typ, prepareClassDiff $ O.Class {
+          super = tExtends extends
+      in (super, prepareClassDiff $ O.Class {
           O.classType = typ,
-          O.classSuper = tExtends extends,
+          O.classSuper = super,
           O.classFields = [ tDeclaration x | I.Field x <- members ],
           O.classMethods = [ tFunction x | I.Method x <- members ]
         })

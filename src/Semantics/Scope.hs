@@ -11,7 +11,7 @@ import qualified Data.List as List
 
 import Semantics.Commons
 import qualified Semantics.Errors as Err
-import Semantics.Errors (rethrow)
+import Semantics.Errors (rethrow, ErrorInfoT)
 import Semantics.APTree
 
 -- TODO for scope resolution with classes we need to rewrite all EVar that
@@ -65,7 +65,7 @@ scopeNull = Scope {
 newOccurence :: Symbols -> UIdent -> Symbols
 newOccurence m id = Map.insertWith (\_ -> (+1)) id tag0 m
 
-resolve :: (Scope -> Symbols) -> UIdent -> Scope -> (ErrorT String Identity) UIdent
+resolve :: (Scope -> Symbols) -> UIdent -> Scope -> (ErrorInfoT Identity) UIdent
 resolve acc id sc = case Map.lookup id (acc sc) of
   Just tag -> return $ tagWith tag id
   Nothing -> throwError $ Err.unboundSymbol id
@@ -75,9 +75,9 @@ resolve acc id sc = case Map.lookup id (acc sc) of
 -- The first scope in reader monad is the global one, second is the one from
 -- beginning of a block, scope in state is the current one, we need all of them
 -- for tracking redeclarations in single block and resolving member symbols.
-type ScopeM = StateT Scope (ReaderT (Scope, Scope) (ErrorT String Identity))
-runScopeM :: ScopeM a -> Either String (a, Scope)
-runScopeM m = runIdentity $ runErrorT $ runReaderT (runStateT m scope0) (scope0, scopeNull)
+type ScopeM = StateT Scope (ReaderT (Scope, Scope) (ErrorInfoT Identity))
+runScopeM :: ScopeM a -> ErrorInfoT Identity (a, Scope)
+runScopeM m = runReaderT (runStateT m scope0) (scope0, scopeNull)
 
 resolveLocal, resolveGlobal, resolveParent :: (Scope -> Symbols) -> UIdent -> ScopeM UIdent
 resolveLocal acc id = (get) >>= (lift . lift . (resolve acc id))
@@ -159,8 +159,8 @@ decType id = do
   modify $ (\sc -> sc { types = newOccurence (types sc) id })
 
 -- Creates scoped tree from translated AST
-scope :: ClassHierarchy -> Either String Stmt
-scope stmt = -- FIXME : fmap fst $ runScopeM (funS stmt)
+scope :: ClassHierarchy -> ErrorInfoT Identity ClassHierarchy
+scope classes = -- FIXME : fmap fst $ runScopeM (funS stmt)
   undefined
 
 funND :: Stmt -> ScopeM Stmt

@@ -6,7 +6,6 @@ PDFLATEX := pdflatex -interaction=batchmode
 all:
 	$(MAKE) -C src/ all
 	ln -sf src/Interpreter/Main ./latc
-	ln -sf src/Syntax/TestJvmm ./latc_syntax
 
 $(DOCS): %.pdf : %.md
 	pandoc $< -o $@

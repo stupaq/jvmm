@@ -1,3 +1,5 @@
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
 module Semantics.APTree where
 
 import Prelude hiding (id)
@@ -5,7 +7,7 @@ import Control.Monad
 import Control.Monad.Identity
 import Data.List (partition, find)
 
-import Semantics.Errors (ErrorInfoT)
+import Semantics.Errors (ErrorInfoT, runErrorInfoT)
 
 -- This module provides internal representation of abstract syntax tree that
 -- carries error reporting metadata, type information and many more.
@@ -36,16 +38,11 @@ idt +/ char = case idt of
 
 -- PROGRAM --
 -------------
-type ClassDiff = Class -> ErrorInfoT Identity Class
-
 data CompilationUnit =
   -- Type is a superclass,
   -- ClassDiff maps superclass into class
   CompilationUnit [(Type, ClassDiff)]
-
-data ExecutionUnit =
-  ExecutionUnit ClassHierarchy UIdent
-  deriving (Eq, Ord, Show)
+  deriving (Show)
 
 -- CLASS HIERARCHY --
 ---------------------
@@ -59,6 +56,17 @@ data Class = Class {
   classFields :: [Field],
   classMethods :: [Method]
 } deriving (Eq, Ord, Show)
+
+type ClassDiff = Class -> ErrorInfoT Identity Class
+
+-- TODO this is only for debug
+instance Show ClassDiff where
+  show diff = show $ runIdentity $ runErrorInfoT $ diff Class {
+      classType = TObject,
+      classSuper = TUnknown,
+      classFields = [],
+      classMethods = []
+    }
 
 data Field =
   Field Type UIdent

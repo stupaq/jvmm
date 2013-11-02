@@ -2,15 +2,12 @@ BNFC := $(wildcard ../docs/*.cf)
 MAIN := Interpreter/Main Syntax/TestJvmm
 
 PDFLATEX := pdflatex -interaction=batchmode
-GHCMAKE := ghc -w -fwarn-incomplete-patterns --make -outputdir ghc-make #-rtsopts -prof
+GHCMAKE := ghc --make -outputdir ghc-make #-rtsopts -prof
 
 all: $(MAIN)
 
 $(MAIN): % : %.hs Syntax
 	$(GHCMAKE) $< -o $@
-
-# This is an ugly hack, ghc --make sucks at parallel compilation
-Interpreter/Main: Syntax/TestJvmm
 
 Syntax/TestJvmm.hs: Syntax
 Syntax: $(BNFC) Syntax.diff
@@ -21,9 +18,6 @@ Syntax: $(BNFC) Syntax.diff
 	alex -g $@/LexJvmm.x
 	(cd $@/; $(PDFLATEX) DocJvmm.tex; )
 
-test-examples: all
-	@./run_examples.sh
-
 clean:
 	-rm -f Syntax/*.{log,aux,hi,o}
 	-rm -rf ghc-make
@@ -32,4 +26,4 @@ distclean: clean
 	-rm -f $(MAIN)
 	-rm -rf Syntax
 
-.PHONY: clean distclean test-examples $(MAIN)
+.PHONY: clean distclean $(MAIN)

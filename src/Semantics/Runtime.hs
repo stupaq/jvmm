@@ -1,5 +1,7 @@
 module Semantics.Runtime (runUnit) where
+
 import qualified System.IO as IO
+
 import Control.Monad.Identity
 import Control.Monad.Error
 import Control.Monad.Reader
@@ -9,8 +11,9 @@ import Control.Monad.Cont
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
+
 import Semantics.Commons
-import Semantics.Errors (rethrow)
+import Semantics.Errors (rethrow, ErrorInfoT)
 import qualified Semantics.Errors as Err
 import Semantics.APTree
 import qualified Semantics.Scope as Scope
