@@ -7,7 +7,7 @@ import Control.Monad
 import Control.Monad.Identity
 import Data.List (partition, find)
 
-import Semantics.Errors (ErrorInfoT, runErrorInfoT)
+import Semantics.Errors (ErrorInfoT, runErrorInfoM)
 
 -- This module provides internal representation of abstract syntax tree that
 -- carries error reporting metadata, type information and many more.
@@ -61,8 +61,8 @@ type ClassDiff = Class -> ErrorInfoT Identity Class
 
 -- TODO this is only for debug
 instance Show ClassDiff where
-  show diff = show $ runIdentity $ runErrorInfoT $ diff Class {
-      classType = TObject,
+  show diff = show $ runErrorInfoM $ diff Class {
+      classType = TUnknown,
       classSuper = TUnknown,
       classFields = [],
       classMethods = []
@@ -96,6 +96,7 @@ data Stmt =
  | SExpr Expr
  | SThrow Expr
  | STryCatch Stmt Type UIdent Stmt
+ | SBuiltin
   deriving (Eq,Ord,Show)
 
 -- TYPES --

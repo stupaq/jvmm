@@ -53,11 +53,11 @@ objectSuperClass = Class {
   classFields = [],
   classMethods = []
 }
-objectDiff :: ClassDiff
-objectDiff super = return $ super { classType = TObject }
 
 hierarchy :: CompilationUnit -> ErrorInfoT Identity ClassHierarchy
-hierarchy (CompilationUnit classes) = visit objectSuperClass classes objectDiff
+hierarchy (CompilationUnit allClasses) = case allClasses of
+  (TUnknown, objectDiff):classes -> visit objectSuperClass classes objectDiff
+  _ -> error $ Err.unusedBranch "no TObject diff"
 
 visit :: Class -> [(Type, ClassDiff)] -> ClassDiff -> HierarchyM ClassHierarchy
 visit super classes diff = do

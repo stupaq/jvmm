@@ -32,9 +32,6 @@ parse str =
     Bad err -> throwError err
     Ok tree -> return tree
 
-compile :: CompilationUnit -> ErrorInfoT Identity ClassHierarchy
-compile cunit = hierarchy cunit
-
 -- OUTPUT HELPERS --
 --------------------
 data Verbosity = Debug | Info | Warn | Error deriving (Eq, Ord, Show)
@@ -51,7 +48,7 @@ runFile, parseFile :: FilePath -> (ReaderT Verbosity IO) ()
 
 runFile f = do
   str <- lift $ readFile f
-  case runIdentity $ runErrorInfoT $ parse str >>= trans >>= compile of
+  case runErrorInfoM $ parse str >>= trans >>= hierarchy of
     Left err -> do
       printl Error $ "ERROR\n"
       printl Error $ err
@@ -62,7 +59,7 @@ runFile f = do
 
 parseFile f = do
   str <- lift $ readFile f
-  case runIdentity $ runErrorInfoT $ parse str of
+  case runErrorInfoM $ parse str of
     Left err -> do
       printl Error $ "ERROR\n"
       printl Error $ err

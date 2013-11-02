@@ -8,6 +8,7 @@ import qualified Syntax.AbsJvmm as I
 
 import Semantics.Errors (ErrorInfoT)
 import qualified Semantics.APTree as O
+import Semantics.Builtins (buildObjectClass)
 import Semantics.Hierarchy (prepareClassDiff)
 
 -- Creates variable-associated identifier from given one (for temporary and iteration variables).
@@ -23,8 +24,8 @@ trans program = return $ tProgram program
     tProgram :: I.Program -> O.CompilationUnit
     tProgram (I.Program defs) = O.CompilationUnit $
       let userClasses = [ x | I.DClass x <- defs ]
-          runtimeClass = I.Class (I.Ident "Runtime") I.SuperObject [ I.Method x | I.DFunction x <- defs ]
-      in tClass runtimeClass : map tClass userClasses
+          objectClass = buildObjectClass [ tFunction x | I.DFunction x <- defs ]
+      in (O.TUnknown, prepareClassDiff objectClass) : map tClass userClasses
 
     tClass :: I.Class -> (O.Type, O.ClassDiff)
     tClass (I.Class id extends members) =

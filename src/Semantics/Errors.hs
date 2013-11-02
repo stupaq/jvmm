@@ -1,15 +1,16 @@
 module Semantics.Errors where
 
 import Prelude hiding (id)
+import Control.Monad.Identity
 import Control.Monad.Error
 import qualified Data.List as List
 
 -- We might want to carry more structure in errors
 -- TODO switch all code to these classes
 type ErrorInfo = String
-type ErrorInfoM = Either ErrorInfo
 type ErrorInfoT = ErrorT ErrorInfo
-runErrorInfoT = runErrorT
+type ErrorInfoM = Either ErrorInfo
+runErrorInfoM = runIdentity . runErrorT
 
 -- Discards error and throws provided one
 action `rethrow` except = action `catchError` (\_ -> throwError except)
