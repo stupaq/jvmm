@@ -1,4 +1,5 @@
 module Semantics.Scope (scope, tagGlobal, tempIdent) where
+
 import Control.Monad.Identity
 import Control.Monad.Error
 import Control.Monad.Reader
@@ -7,15 +8,14 @@ import Control.Monad.Writer
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.List as List
+
 import Semantics.Commons
-import Semantics.Errors (rethrow)
 import qualified Semantics.Errors as Err
+import Semantics.Errors (rethrow)
 import Semantics.APTree
 
 -- TODO for scope resolution with classes we need to rewrite all EVar that
 -- refer to object's scope to EAccessVar this (same with methods)
--- TODO can unify functions, variables and types since they have different
--- identifiers
 
 -- BUILTINS --
 --------------
@@ -159,8 +159,9 @@ decType id = do
   modify $ (\sc -> sc { types = newOccurence (types sc) id })
 
 -- Creates scoped tree from translated AST
-scope :: Stmt -> Either String Stmt
-scope stmt = fmap fst $ runScopeM (funS stmt)
+scope :: ClassHierarchy -> Either String Stmt
+scope stmt = -- FIXME : fmap fst $ runScopeM (funS stmt)
+  undefined
 
 funND :: Stmt -> ScopeM Stmt
 funND x = case x of

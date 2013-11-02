@@ -12,6 +12,7 @@ import Syntax.PrintJvmm
 import Syntax.AbsJvmm
 import Syntax.ErrM
 import Semantics.Trans
+import Semantics.Hierarchy
 import Semantics.Scope
 import Semantics.Types
 import Semantics.Runtime
@@ -26,7 +27,6 @@ printl v s = do
   else
     return ()
 
--- Interpret given file
 runFile :: FilePath -> (ReaderT Verbosity IO) ()
 runFile f = do
   str <- lift $ readFile f
@@ -41,20 +41,24 @@ run s =
       printl Error $ s
       printl Error $ "\n[Tokens]\n\n" ++ (show ts)
       liftIO $ exitFailure
-    Ok tree ->  case scope $ trans tree of
+    Ok tree -> case hierarchy $ trans tree of
       Left err -> do
         printl Error $ err
         liftIO $ exitFailure
-      Right tree' -> case staticTypes tree' of
+      Right classes -> case scope classes of
         Left err -> do
           printl Error $ err
           liftIO $ exitFailure
-        Right tree'' -> do
-          printl Warn $ "OK\n"
-          verb <- ask
-          lift $ runUnit (Info > verb) tree''
-          printl Debug $ "\n[Linearized tree]\n\n" ++ show tree'
-          printl Debug $ "\n[Type check]\n\n" ++ show tree''
+        Right tree' -> case staticTypes tree' of
+          Left err -> do
+            printl Error $ err
+            liftIO $ exitFailure
+          Right tree'' -> do
+            printl Warn $ "OK\n"
+            verb <- ask
+            lift $ runUnit (Info > verb) tree''
+            printl Debug $ "\n[Linearized tree]\n\n" ++ show tree'
+            printl Debug $ "\n[Type check]\n\n" ++ show tree''
 
 main :: IO ()
 main = do

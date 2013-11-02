@@ -1,10 +1,22 @@
 module Semantics.Errors where
+
 import Prelude hiding (id)
 import Control.Monad.Error
 import qualified Data.List as List
 
+-- We might want to carry more structure in errors
+-- TODO switch all code to these classes
+type ErrorInfo = String
+type ErrorInfoM = Either ErrorInfo
+type ErrorInfoT = ErrorT ErrorInfo
+runErrorInfoT = runErrorT
+
 -- Discards error and throws provided one
 action `rethrow` except = action `catchError` (\_ -> throwError except)
+
+-- Class hierarchy computation errors
+redeclaredInSuper ids = "fields redeclared in super classes: " ++ (unwords $ map show ids)
+redeclaredWithDifferentType ids = "method redeclared in super classes with not mathing type: " ++ (unwords $ map show ids)
 
 -- Scope resolution errors
 duplicateArg typ id = concat ["duplicate argument: ", show typ, " ", show id]

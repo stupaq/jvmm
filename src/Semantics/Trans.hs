@@ -4,6 +4,7 @@ import Prelude hiding (id)
 
 import qualified Syntax.AbsJvmm as I
 import qualified Semantics.APTree as O
+import Semantics.Hierarchy (prepareClassDiff)
 
 -- Creates variable-associated identifier from given one (for temporary and iteration variables).
 -- Only variable-associated identifiers derived from the same variable and with the same context
@@ -12,22 +13,24 @@ tempIdent :: I.Ident -> String -> I.Ident
 tempIdent (I.Ident id) ctx = I.Ident $ id ++ "#" ++ ctx
 
 -- Translates AST into APT performing several simplifications and syntactic sugar removal.
-trans :: I.Program -> O.Program
-trans = tProgram
+trans :: I.Program -> O.CompilationUnit
+trans program = tProgram program
   where
-    tProgram :: I.Program -> O.Program
-    tProgram (I.Program defs) =
+    tProgram :: I.Program -> O.CompilationUnit
+    tProgram (I.Program defs) = O.CompilationUnit $
       let userClasses = [ x | I.DClass x <- defs ]
           runtimeClass = I.Class (I.Ident "Runtime") I.SuperObject [ I.Method x | I.DFunction x <- defs ]
-      in O.Program (tClass runtimeClass : map tClass userClasses)
+      in tClass runtimeClass : map tClass userClasses
 
-    tClass :: I.Class -> O.Class
-    tClass (I.Class id extends members) = O.Class {
-        O.classType = O.TUser (tTIdent id),
-        O.classSuper = tExtends extends,
-        O.classFields = [ tDeclaration x | I.Field x <- members ],
-        O.classMethods = [ tFunction x | I.Method x <- members ]
-      }
+    tClass :: I.Class -> (O.Type, O.ClassDiff)
+    tClass (I.Class id extends members) =
+      let typ = O.TUser (tTIdent id)
+      in (typ, prepareClassDiff $ O.Class {
+          O.classType = typ,
+          O.classSuper = tExtends extends,
+          O.classFields = [ tDeclaration x | I.Field x <- members ],
+          O.classMethods = [ tFunction x | I.Method x <- members ]
+        })
 
     tExtends :: I.Extends -> O.Type
     tExtends x = case x of
