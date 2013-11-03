@@ -9,6 +9,7 @@ import Control.Monad.Error
 import Control.Monad.Identity
 import Control.Monad.Reader
 import Control.Monad.IO.Class
+import qualified Text.Show.Pretty as Pretty
 
 import Syntax.AbsJvmm (Program)
 import Syntax.ParJvmm (myLexer, pProgram)
@@ -55,7 +56,7 @@ runFile f = do
     Right eunit -> do
       printl Warn $ "OK\n"
       -- FIXME
-      printl Info $ show eunit
+      printl Info $ Pretty.ppShow eunit
 
 parseFile f = do
   str <- lift $ readFile f
