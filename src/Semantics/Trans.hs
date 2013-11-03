@@ -63,13 +63,13 @@ trans program = return $ tProgram program
       I.SBlock stmts ->  return $ tStmts stmts
       I.SAssignOp id opassign expr -> return $ O.SAssign (tVIdent id) $ tExpr $ tAssignOp opassign (I.EVar id) expr
       I.SAssignOpArr id expr1 opassign2 expr3 ->  return $ O.SAssignArr (tVIdent id) (tExpr expr1) $ tExpr $ tAssignOp opassign2 (I.EAccessArr (I.EVar id) expr1) expr3
-      I.SAssignOpFld id1 id2 opassign3 expr4 ->  return $ O.SAssignFld (tVIdent id1) (tVIdent id2) $ tExpr $ tAssignOp opassign3 (I.EAccessVar (I.EVar id1) id2) expr4
+      I.SAssignOpFld id1 id2 opassign3 expr4 ->  return $ O.SAssignFld (O.EVar $ tVIdent id1) (tVIdent id2) $ tExpr $ tAssignOp opassign3 (I.EAccessVar (I.EVar id1) id2) expr4
       I.SPostInc id -> tStmt $ I.SAssignOp id I.APlus (I.ELitInt 1)
       I.SPostDec id -> tStmt $ I.SAssignOp id I.AMinus (I.ELitInt 1)
       I.SEmpty -> return O.SEmpty
       I.SAssign id expr -> return $ O.SAssign (tVIdent id) $ tExpr expr
       I.SAssignArr id expr1 expr2 ->  return $ O.SAssignArr (tVIdent id) (tExpr expr1) (tExpr expr2)
-      I.SAssignFld id1 id2 expr3 -> return $ O.SAssignFld (tVIdent id1) (tVIdent id2) (tExpr expr3)
+      I.SAssignFld id1 id2 expr3 -> return $ O.SAssignFld (O.EVar $ tVIdent id1) (tVIdent id2) (tExpr expr3)
       I.SReturn expr -> return $ O.SReturn $ tExpr expr
       I.SReturnV -> return O.SReturnV
       I.SIf expr stmt -> return $ O.SIf (tExpr expr) (tStmt' stmt)
@@ -148,6 +148,7 @@ trans program = return $ tProgram program
       I.ERel expr1 opbin2 expr3 -> bin opbin2 expr1 expr3
       I.EAnd expr1 opbin2 expr3 -> bin opbin2 expr1 expr3
       I.EOr expr1 opbin2 expr3 -> bin opbin2 expr1 expr3
+      I.EThis -> O.EThis
       where
         bin :: I.OpBin -> I.Expr -> I.Expr -> O.Expr
         bin op expr1 expr2 = O.EBinary O.TUnknown (tOpBin op) (tExpr expr1) (tExpr expr2)

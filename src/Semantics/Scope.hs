@@ -12,11 +12,8 @@ import qualified Data.Traversable as Traversable
 
 import Semantics.Commons
 import qualified Semantics.Errors as Err
-import Semantics.Errors (rethrow, ErrorInfoT)
+import Semantics.Errors (rethrow, ErrorInfoT, runErrorInfoM)
 import Semantics.APTree
-
--- TODO for scope resolution with classes we need to rewrite all EVar that
--- refer to object's scope to EAccessVar this (same with methods)
 
 -- SCOPE REPRESENTATION --
 --------------------------
@@ -119,6 +116,14 @@ resType typ = case typ of
   TFunc ret args excs -> liftM3 TFunc (resType ret) (mapM resType args) (mapM resType excs)
   _ -> return typ
 
+isField :: UIdent -> ScopeM Bool
+isField id = do
+  -- resolve in global scope
+  idout <- resolveGlobal vars id `catchError` (\_ -> return id)
+  -- resolve in current scope
+  idin <- resolveLocal vars id `catchError` (\_ -> return id)
+  return (idout == idin)
+
 -- SCOPE UPDATING --
 --------------------
 decVar, decFunc :: UIdent -> ScopeM ()
@@ -194,19 +199,21 @@ funS x = case x of
   SLocal _ stmts -> do -- definitions part of SLocal is empty at this point
     stmts' <- newLocal (mapM funS stmts)
     let (decls, instrs) = List.partition (\x -> case x of { SDeclVar _ _ -> True; _ -> False }) stmts'
-    return $ SLocal decls instrs
+    return $ SLocal (map (\(SDeclVar typ id) -> Variable typ id) decls) instrs
   SAssign id expr -> do
     expr' <- funE expr
     id' <- resVar id
-    return $ SAssign id' expr'
+    -- Decide if this is actually a field access
+    field <- isField id
+    return $ if field then SAssignFld EThis id' expr' else SAssign id' expr'
   SAssignArr id expr1 expr2 -> do
     expr1' <- funE expr1
     expr2' <- funE expr2
     id' <- resVar id
     return $ SAssignArr id' expr1' expr2'
-  SAssignFld id1 id2 expr -> do
-    expr' <- funE expr
-    id1' <- resVar id1
+  SAssignFld expr1 id2 expr2 -> do
+    expr2' <- funE expr2
+    expr1' <- funE expr1
     globalAsCurrent $ do
       -- We are in global scope now, member (depending on type, which we
       -- can't determine right now) may exist or not. We still can resolve
@@ -214,7 +221,7 @@ funS x = case x of
       -- global scope.
       decVar id2
       id2' <- resVar id2
-      return $ SAssignFld id1' id2' expr'
+      return $ SAssignFld expr1' id2' expr2'
   SReturn expr -> do
     expr' <- funE expr
     return $ SReturn expr'
@@ -253,7 +260,9 @@ funE :: Expr -> ScopeM Expr
 funE x = case x of
   EVar id -> do
     id' <- resVar id
-    return $ EVar id'
+    -- Decide if this is actually a field access
+    field <- isField id
+    return $ if field then EAccessVar EThis id' else EVar id'
   EAccessArr expr1 expr2 -> do
     expr1' <- funE expr1
     expr2' <- funE expr2

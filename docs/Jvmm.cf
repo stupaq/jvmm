@@ -107,6 +107,7 @@ ELitInt.    Expr6 ::= Integer;
 ELitString. Expr6 ::= String;
 ELitChar.   Expr6 ::= Char;
 
+EThis.      Expr6 ::= "this";
 ELitTrue.   Expr6 ::= "true";
 ELitFalse.  Expr6 ::= "false";
 ENull.      Expr6 ::= "null";

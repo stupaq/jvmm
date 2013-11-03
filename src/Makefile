@@ -1,5 +1,5 @@
 BNFC := $(wildcard ../docs/*.cf)
-MAIN := Interpreter/Main Syntax/TestJvmm
+MAIN := Interpreter/Main
 
 PDFLATEX := pdflatex -interaction=batchmode
 GHCMAKE := ghc --make -outputdir ghc-make #-rtsopts -prof

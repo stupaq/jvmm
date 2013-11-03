@@ -78,12 +78,12 @@ data Method =
 -- STATEMENTS --
 ----------------
 data Stmt =
-   SLocal [Stmt] [Stmt]
+   SLocal [Variable] [Stmt]
  | SDeclVar Type UIdent
  | SEmpty
  | SAssign UIdent Expr
  | SAssignArr UIdent Expr Expr
- | SAssignFld UIdent UIdent Expr
+ | SAssignFld Expr UIdent Expr
  | SReturn Expr
  | SReturnV
  | SIf Expr Stmt
@@ -93,7 +93,11 @@ data Stmt =
  | SThrow Expr
  | STryCatch Stmt Type UIdent Stmt
  | SBuiltin
-  deriving (Eq,Ord,Show)
+  deriving (Eq, Ord, Show)
+
+data Variable =
+  Variable Type UIdent
+  deriving (Eq, Ord, Show)
 
 -- TYPES --
 -----------
@@ -129,6 +133,7 @@ data Expr =
  | EApp UIdent [Expr]
  | ENewObj Type
  | ENewArr Type Expr
+ | EThis
   deriving (Eq,Ord,Show)
 
 -- BINARY OPERATIONS --
