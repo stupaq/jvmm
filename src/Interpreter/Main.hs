@@ -48,7 +48,7 @@ runFile, parseFile :: FilePath -> (ReaderT Verbosity IO) ()
 
 runFile f = do
   str <- lift $ readFile f
-  case runErrorInfoM $ parse str >>= trans >>= hierarchy of
+  case runErrorInfoM $ parse str >>= trans >>= hierarchy >>= scope of
     Left err -> do
       printl Error $ "ERROR\n"
       printl Error $ err

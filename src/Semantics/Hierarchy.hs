@@ -63,5 +63,5 @@ visit :: Class -> [(Type, ClassDiff)] -> ClassDiff -> HierarchyM ClassHierarchy
 visit super classes diff = do
   current <- diff super
   children <- mapM (visit current classes) [ diff | (typ, diff) <- classes, typ == classType current ]
-  return $ ClassNode current children
+  return $ Node current children
 

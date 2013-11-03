@@ -8,6 +8,7 @@ import Control.Monad.Writer
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.List as List
+import qualified Data.Traversable as Traversable
 
 import Semantics.Commons
 import qualified Semantics.Errors as Err
@@ -16,15 +17,6 @@ import Semantics.APTree
 
 -- TODO for scope resolution with classes we need to rewrite all EVar that
 -- refer to object's scope to EAccessVar this (same with methods)
-
--- BUILTINS --
---------------
-builtinGlobal = Map.fromList $ map (\name -> (FIdent name, tag0)) [
-    "printInt",
-    "readInt",
-    "printString",
-    "readString",
-    "error"]
 
 -- SCOPE REPRESENTATION --
 --------------------------
@@ -50,16 +42,11 @@ data Scope = Scope {
   funcs :: Symbols,
   types :: Symbols
 } deriving (Eq, Show)
+-- Default global scope
 scope0 = Scope {
   vars = symbols0,
-  funcs = builtinGlobal,
+  funcs = symbols0,
   types = symbols0
-}
--- This is needed to track redeclarations of builtins
-scopeNull = Scope {
-  vars = Map.empty,
-  funcs = Map.empty,
-  types = Map.empty
 }
 
 newOccurence :: Symbols -> UIdent -> Symbols
@@ -77,7 +64,7 @@ resolve acc id sc = case Map.lookup id (acc sc) of
 -- for tracking redeclarations in single block and resolving member symbols.
 type ScopeM = StateT Scope (ReaderT (Scope, Scope) (ErrorInfoT Identity))
 runScopeM :: ScopeM a -> ErrorInfoT Identity (a, Scope)
-runScopeM m = runReaderT (runStateT m scope0) (scope0, scopeNull)
+runScopeM m = runReaderT (runStateT m scope0) (scope0, scope0)
 
 resolveLocal, resolveGlobal, resolveParent :: (Scope -> Symbols) -> UIdent -> ScopeM UIdent
 resolveLocal acc id = (get) >>= (lift . lift . (resolve acc id))
@@ -92,8 +79,8 @@ checkRedeclaration acc id = do
   idin <- resolveLocal acc id `catchError` (\_ -> return id)
   unless (idin == idout) $ throwError $ Err.redeclaredSymbol id
 
--- SCOPE CHANGING --
---------------------
+-- SCOPE SWITCHING --
+---------------------
 -- Pushes scope 'stack frame', runs action in it, restores 'stack frame'
 newLocal action = do
   sc <- get
@@ -120,22 +107,8 @@ currentAsGlobal action = do
   put sc
   return res
 
--- Fills current scope (the one in state) with mutually recursive declarations
--- Note that each class (user defined type) must reside within global
--- scope, since it forms a global scope itself, when resolving field
--- access, all we need to do is declare variable/function with given name
--- using global scope as a base, resolve this symbol and dispose modified
--- scope.
-buildGlobal :: [Stmt] -> ScopeM ()
-buildGlobal stmts = forM_ stmts $ \stmt -> case stmt of
-  SDefFunc typ id args excepts stmt -> do
-    decFunc id
-  SDeclVar typ id -> do
-    decVar id
-  SDefClass id super (SGlobal stmts) ->
-    decType id
-  _ -> throwError $ Err.globalForbidden
-
+-- SCOPE READING --
+-------------------
 resVar, resFunc :: UIdent -> ScopeM UIdent
 resVar = resolveLocal vars
 resFunc = resolveLocal funcs
@@ -143,70 +116,81 @@ resFunc = resolveLocal funcs
 resType :: Type -> ScopeM Type
 resType typ = case typ of
   TUser id -> (resolveLocal types id) >> (return typ)
+  TFunc ret args excs -> liftM3 TFunc (resType ret) (mapM resType args) (mapM resType excs)
   _ -> return typ
 
--- SCOPE RESOLUTION --
-----------------------
-decVar, decFunc, decType :: UIdent -> ScopeM ()
+-- SCOPE UPDATING --
+--------------------
+decVar, decFunc :: UIdent -> ScopeM ()
 decVar id = do
   checkRedeclaration vars id
   modify $ (\sc -> sc { vars = newOccurence (vars sc) id })
 decFunc id = do
   checkRedeclaration funcs id
   modify $ (\sc -> sc { funcs = newOccurence (funcs sc) id })
-decType id = do
+decType :: Type -> ScopeM ()
+decType (TUser id) = do
   checkRedeclaration types id
   modify $ (\sc -> sc { types = newOccurence (types sc) id })
+decType _ = return ()
 
+-- SCOPE COMPUTATION --
+-----------------------
 -- Creates scoped tree from translated AST
 scope :: ClassHierarchy -> ErrorInfoT Identity ClassHierarchy
-scope classes = -- FIXME : fmap fst $ runScopeM (funS stmt)
-  undefined
+scope classes = fmap fst $ runScopeM $ do
+  collectClasses classes
+  currentAsGlobal (funH classes)
 
-funND :: Stmt -> ScopeM Stmt
-funND x = case x of
-  -- We are in mutually recursive scope, these symbols are already defined
-  SDefFunc typ id args excepts stmt -> do
-    typ' <- resType typ
-    id' <- resFunc id
+-- Fills current scope (the one in state) with mutually recursive declarations
+-- Note that each class (user defined type) must reside within global
+-- scope, since it forms a global scope itself, when resolving field
+-- access, all we need to do is declare variable/function with given name
+-- using global scope as a base, resolve this symbol and dispose modified
+-- scope.
+collectClasses :: ClassHierarchy -> ScopeM ()
+collectClasses classes =
+  Traversable.mapM (decType . classType) classes >> return ()
+
+collectMembers :: Class -> ScopeM ()
+collectMembers clazz = do
+  mapM_ (\(Field _ id) -> decVar id) $ classFields clazz
+  mapM_ (\(Method _ id _ _) -> decFunc id) $ classMethods clazz
+
+funH :: ClassHierarchy -> ScopeM ClassHierarchy
+funH = Traversable.mapM $ \clazz -> do
+    typ' <- resType $ classType clazz
+    super' <- resType $ classSuper clazz
     newLocal $ do
-      args' <- mapM funA args `rethrow` (show x)
-      stmt' <- newLocal (funS stmt)
-      return $ SDefFunc typ' id' args' excepts stmt'
-  SDeclVar typ id -> do
-    typ' <- resType typ
-    id' <- resVar id
-    return $ SDeclVar typ' id'
-  SDefClass id super stmt -> do
-    TUser id' <- resType $ TUser id
-    super' <- resType super
-    stmt' <- newLocal (funS stmt)
-    return $ SDefClass id' super' stmt'
-  _ -> throwError $ Err.globalForbidden
+      collectMembers clazz
+      currentAsGlobal $ do
+        fields' <- mapM funF $ classFields clazz
+        methods' <- mapM funM $ classMethods clazz
+        return $ clazz {
+            classType = typ',
+            classSuper = super',
+            classFields = fields',
+            classMethods = methods'
+          }
 
-funA :: Stmt -> ScopeM Stmt
-funA (SDeclVar typ id) = do
-  decVar id `rethrow` Err.duplicateArg typ id
-  id' <- resVar id
+funF :: Field -> ScopeM Field
+funF (Field typ id) = liftM2 Field (resType typ) (resVar id)
+
+funM :: Method -> ScopeM Method
+funM (Method typ id ids stmt) = do
   typ' <- resType typ
-  return $ SDeclVar typ' id'
-funA x = error $ show x
+  id' <- resFunc id
+  newLocal $ do
+    mapM_ decVar ids
+    ids' <- mapM resVar ids `rethrow` Err.duplicateArg typ id
+    stmt' <- newLocal (funS stmt)
+    return $ Method typ' id' ids' stmt'
 
 funS :: Stmt -> ScopeM Stmt
 funS x = case x of
-  SGlobal stmts -> do
-    buildGlobal stmts
-    stmts' <- currentAsGlobal $ mapM funND stmts
-    return $ SGlobal stmts'
-  SDefFunc typ id args excepts stmt -> do
-    decFunc id
-    funND x
   SDeclVar typ id -> do
     decVar id
-    funND x
-  SDefClass id super stmt -> do
-    decType id
-    funND x
+    liftM2 SDeclVar (resType typ) (resVar id)
   SLocal _ stmts -> do -- definitions part of SLocal is empty at this point
     stmts' <- newLocal (mapM funS stmts)
     let (decls, instrs) = List.partition (\x -> case x of { SDeclVar _ _ -> True; _ -> False }) stmts'
@@ -263,6 +247,7 @@ funS x = case x of
       return $ STryCatch stmt1' typ2 id3' stmt4'
   SReturnV -> return SReturnV
   SEmpty -> return SEmpty
+  SBuiltin -> return SBuiltin
 
 funE :: Expr -> ScopeM Expr
 funE x = case x of

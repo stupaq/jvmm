@@ -7,6 +7,7 @@ import Control.Monad
 import Control.Monad.Identity
 import Data.List (partition, find)
 
+import Semantics.Commons
 import Semantics.Errors (ErrorInfoT, runErrorInfoM)
 
 -- This module provides internal representation of abstract syntax tree that
@@ -46,9 +47,7 @@ data CompilationUnit =
 
 -- CLASS HIERARCHY --
 ---------------------
-data ClassHierarchy =
-  ClassNode Class [ClassHierarchy]
-  deriving (Eq, Ord, Show)
+type ClassHierarchy = Hierarchy Class
 
 data Class = Class {
   classType :: Type,
@@ -80,9 +79,6 @@ data Method =
 ----------------
 data Stmt =
    SLocal [Stmt] [Stmt]
- | SGlobal [Stmt] --FIXME remove
- | SDefClass UIdent Type Stmt --FIXME remove
- | SDefFunc Type UIdent [Stmt] [Type] Stmt --FIXME remove
  | SDeclVar Type UIdent
  | SEmpty
  | SAssign UIdent Expr
