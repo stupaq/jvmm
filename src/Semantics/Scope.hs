@@ -206,15 +206,15 @@ funS x = case x of
     id' <- resVar id
     -- Decide if this is actually a field access
     field <- isField id
-    return $ if field then SAssignFld EThis id' expr' else SAssign id' expr'
+    return $ if field then SAssignFld IThis id' expr' else SAssign id' expr'
   SAssignArr id expr1 expr2 -> do
     expr1' <- funE expr1
     expr2' <- funE expr2
     id' <- resVar id
     return $ SAssignArr id' expr1' expr2'
-  SAssignFld expr1 id2 expr2 -> do
+  SAssignFld id1 id2 expr2 -> do
     expr2' <- funE expr2
-    expr1' <- funE expr1
+    id1' <- resVar id1
     globalAsCurrent $ do
       -- We are in global scope now, member (depending on type, which we
       -- can't determine right now) may exist or not. We still can resolve
@@ -222,7 +222,7 @@ funS x = case x of
       -- global scope.
       decVar id2
       id2' <- resVar id2
-      return $ SAssignFld expr1' id2' expr2'
+      return $ SAssignFld id1' id2' expr2'
   SReturn expr -> do
     expr' <- funE expr
     return $ SReturn expr'

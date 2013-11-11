@@ -1,45 +1,23 @@
-module Semantics.Types (staticTypes) where
+module Semantics.Types (typing) where
 
 import Prelude hiding (id)
+
 import Control.Monad.Identity
 import Control.Monad.Error
 import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Writer
-import qualified Data.Set as Set
 import qualified Data.Map as Map
+import qualified Data.Set as Set
 import qualified Data.List as List
+import qualified Data.Traversable as Traversable
 
 import Semantics.Commons
-import Semantics.Errors (rethrow, ErrorInfoT)
 import qualified Semantics.Errors as Err
+import Semantics.Builtins
+import Semantics.Errors (rethrow, ErrorInfoT, runErrorInfoM)
 import Semantics.APTree
 import qualified Semantics.Scope as Scope
-
--- BUILTINS --
---------------
-entrypoint = (Scope.tagGlobal $ FIdent "main", TFunc TInt [] [])
-
-builtinGlobal = Map.fromList $ map (\(name, typ) -> (Scope.tagGlobal $ FIdent name, typ)) [
-    ("printInt", TFunc TVoid [TInt] []),
-    ("readInt", TFunc TInt [] []),
-    ("printString", TFunc TVoid [TString] []),
-    ("readString", TFunc TString [] []),
-    ("error", TFunc TVoid [] [])]
-
-builtinMember typ uid = case (typ, uid) of
-  (TArray _, VIdent "length$0") -> TInt
-  (TString, VIdent "length$0") -> TInt
-  (TString, FIdent "charAt$0") -> TFunc TChar [TInt] []
-  _ -> TUnknown
-
-builtinTypeNames = ["int", "char", "boolean", "String", "string"]
-
-primitiveTypes = [TVoid, TInt, TChar, TBool]
-
--- Typing is fully static. Object type is a superclass of every non-primitive.
--- Note that after scope resolution we can't throw undeclared errors (also for
--- user defined types)
 
 -- TYPE REPRESENTATION --
 -------------------------
@@ -51,34 +29,51 @@ membertypes0 = Map.empty
 
 data TypeEnv = TypeEnv {
   -- Type of a function currently executed
-  function :: Maybe Type,
+  typeenvFunction :: Maybe Type,
   -- Set of exceptions that are caught when throw in current context
-  exceptions :: Set.Set Type,
+  typeenvExceptions :: Set.Set Type,
   -- Types of identifiers
-  idents :: Types,
+  typeenvIdents :: Types,
   -- Definitions of types
-  types :: MemberTypes
+  typeenvTypes :: MemberTypes
 }
 typeenv0 = TypeEnv {
-  function = Nothing,
-  exceptions = Set.empty,
-  idents = builtinGlobal,
-  types = membertypes0
+  typeenvFunction = Nothing,
+  typeenvExceptions = Set.empty,
+  typeenvIdents = types0,
+  typeenvTypes = membertypes0
 }
 
-setFunction x env = env { function = x }
-mapExceptions fun env = env { exceptions = fun (exceptions env) }
+setFunction :: Maybe Type -> TypeM a -> TypeM a
+setFunction x = local $ \env -> env { typeenvFunction = x }
 
-typeof'' :: Stmt -> Type
-typeof'' x = case x of
-  SDefFunc typ _ args excepts _ -> TFunc typ (map (\(SDeclVar typ _) -> typ) args) excepts
-  _ -> error $ Err.unusedBranch x
+mapExceptions fun env = env { typeenvExceptions = fun (typeenvExceptions env) }
+
+-- BUILDING TYPE ENVIRONMENT --
+-------------------------------
+-- Returns TypeEnv filled with type information about all classes in the hierarchy.
+collectTypes :: ClassHierarchy -> ErrorInfoT Identity TypeEnv
+collectTypes classes = fmap snd $ runStateT (Traversable.mapM decClass classes) typeenv0
+  where
+    decClass :: Class -> StateT TypeEnv (ErrorInfoT Identity) ()
+    decClass clazz = do
+      let typ = classType clazz
+      when (isBuiltinType typ) $ throwError (Err.redeclaredType typ)
+      modify $ \env -> env { typeenvTypes = Map.insert (classType clazz) types (typeenvTypes env) }
+      where
+        fields = List.map (\x -> (fieldIdent x, fieldType x)) $ classFields clazz
+        methods = List.map (\x -> (methodIdent x, methodType x)) $ classMethods clazz
+        types = Map.fromList $ fields ++ methods
+
+-- Typing is fully static. TObject type is a superclass of every non-primitive.
+-- Note that after scope resolution we can't throw undeclared errors (also for
+-- user defined types)
 
 -- TYPE MONAD --
 ----------------
-type TypeM = ReaderT TypeEnv (ErrorT String Identity)
-runTypeM :: TypeEnv -> TypeM a -> Either String a
-runTypeM r m = runIdentity $ runErrorT $ runReaderT m r
+type TypeM = ReaderT TypeEnv (ErrorInfoT Identity)
+runTypeM :: TypeEnv -> TypeM a -> ErrorInfoT Identity a
+runTypeM env m = runReaderT m env
 
 lookupM :: (Ord a) => a -> Map.Map a b -> TypeM b
 lookupM key map = lift $ case Map.lookup key map of
@@ -86,16 +81,16 @@ lookupM key map = lift $ case Map.lookup key map of
   Nothing -> throwError noMsg
 
 typeof :: UIdent -> TypeM Type
-typeof uid = (asks idents >>= lookupM uid) `rethrow` Err.unknownSymbolType uid
+typeof uid = (asks typeenvIdents >>= lookupM uid) `rethrow` Err.unknownSymbolType uid
 
 typeof' :: Type -> UIdent -> TypeM Type
 typeof' typ uid = case builtinMember typ uid of
-  TUnknown -> (asks types >>= lookupM typ >>= lookupM uid) `rethrow` Err.unknownMemberType typ uid
+  TUnknown -> (asks typeenvTypes >>= lookupM typ >>= lookupM uid) `rethrow` Err.unknownMemberType typ uid
   typ -> return typ
 
 throws :: Type -> TypeM ()
 throws typ = do
-  excepts <- asks exceptions
+  excepts <- asks typeenvExceptions
   unless (Set.member typ excepts) $ throwError $ Err.uncaughtException typ
 
 catches :: Type -> TypeM a -> TypeM a
@@ -103,34 +98,14 @@ catches typ = local (mapExceptions $ Set.insert typ)
 
 returns :: Type -> TypeM ()
 returns typ = do
-  ftyp <- asks function 
+  ftyp <- asks typeenvFunction 
   case ftyp of
     Just (TFunc rett _ _) -> rett =| typ >> return ()
     Nothing -> throwError Err.danglingReturn
     _ -> error $ Err.unusedBranch ftyp
 
-decIdent :: UIdent -> Type -> TypeM a -> TypeM a
-decIdent uid typ = local (\env -> env { idents = Map.insert uid typ (idents env) })
-
-decType :: Type -> Types -> TypeM a -> TypeM a
-decType typ tenv = local (\env -> env { types = Map.insert typ tenv (types env) })
-
--- Declares symbol to be of a given type or defines type
-declare :: Stmt -> TypeM a -> TypeM a
-declare x m = case x of
-  SDefFunc typ id@(FIdent _) args excepts stmt ->
-    decIdent id (typeof'' x) m
-  SDeclVar typ id@(VIdent _) -> do
-    when (typ == TVoid) $ throwError Err.voidVarDecl
-    decIdent id typ m
-  SDefClass id@(TIdent sid) super (SGlobal stmts) -> do
-    when (sid `elem` builtinTypeNames) $ throwError (Err.redeclaredType id)
-    -- We want to obtain all identifiers in class together with their types
-    cls <- local (const typeenv0) . applyAndCompose declare stmts $ do
-      env <- asks idents
-      return env
-    decType (TUser id) cls m
-  _ -> error $ Err.unusedBranch x
+declare :: UIdent -> Type -> TypeM a -> TypeM a
+declare uid typ = local (\env -> env { typeenvIdents = Map.insert uid typ (typeenvIdents env) })
 
 -- TYPE ARITHMETIC --
 ---------------------
@@ -182,35 +157,37 @@ declare x m = case x of
 
 -- MAIN --
 ----------
-staticTypes :: ClassHierarchy -> ErrorInfoT Identity Stmt
-staticTypes = -- FIXME : runTypeM typeenv0 . funS
-  undefined
+typing :: ClassHierarchy -> ErrorInfoT Identity ClassHierarchy
+typing classes = do
+  env <- collectTypes classes
+  runTypeM env $ funH classes
+
+funH :: ClassHierarchy -> TypeM ClassHierarchy
+funH = Traversable.mapM $ \clazz -> do
+  methods <- mapM funM (classMethods clazz)
+  return $ clazz { classMethods = methods }
+
+funM :: Method -> TypeM Method
+funM method = do
+  checkEntrypoint method
+  let TFunc _ argumentTypes exceptionTypes = methodType method
+  let exceptionsEnv = applyAndCompose catches exceptionTypes
+  let argumentIdents = methodArgs method
+  let arguments = List.zipWith (\typ id -> Variable typ id) argumentTypes argumentIdents
+  exceptionsEnv . setFunction (Just $ methodType method) $ do
+    stmt' <- funS $ SLocal arguments [methodBody method]
+    return $ method { methodBody = stmt' }
+  where
+    checkEntrypoint :: Method -> TypeM ()
+    checkEntrypoint method =
+      when (entrypointIdent == methodIdent method) $
+        (entrypointType =| methodType method >> return ()) `rethrow` Err.incompatibleMain
 
 funS :: Stmt -> TypeM Stmt
 funS x = case x of
-  SGlobal stmts -> applyAndCompose declare stmts $ do
+  SLocal vars stmts -> applyAndCompose (\(Variable typ id) -> declare id typ) vars $ do
     stmts' <- mapM funS stmts
-    return $ SGlobal stmts'
-  SLocal decls stmts -> applyAndCompose declare decls $ do
-    stmts' <- mapM funS stmts
-    return $ SLocal decls stmts'
-  -- This is already delared when we see it in funS
-  SDefFunc typ id args excepts stmt -> do
-    let ftyp@(TFunc _ _ _) = typeof'' x
-    when (id == fst entrypoint) $
-      (snd entrypoint =| ftyp >> return ()) `rethrow` Err.incompatibleMain
-    declare x . applyAndCompose declare args . applyAndCompose catches excepts $
-      local (setFunction (Just ftyp)) $ do
-        stmt' <- funS stmt
-        return $ SDefFunc typ id args excepts stmt'
-  -- This is already delared when we see it in funS
-  SDeclVar typ id -> return x
-  -- This is already delared when we see it in funS
-  SDefClass id super (SGlobal stmts) -> do
-    declare x $ do
-      stmts' <- mapM funS stmts
-      return $ SDefClass id super (SGlobal stmts')
-  SDefClass _ _ _ -> error $ Err.unusedBranch x
+    return $ SLocal vars stmts'
   SAssign id expr -> do
     (expr', etyp) <- funE expr
     vtyp <- typeof id
@@ -260,7 +237,7 @@ funS x = case x of
     return $ SThrow expr'
   STryCatch stmt1 typ id stmt2 -> do
     when (typ `elem` primitiveTypes) $ throwError (Err.referencedPrimitive typ)
-    stmt2' <- decIdent id typ (funS stmt2)
+    stmt2' <- declare id typ (funS stmt2)
     catches typ $ do
       stmt1' <- funS stmt1
       return $ STryCatch stmt1' typ id stmt2'
@@ -268,6 +245,9 @@ funS x = case x of
     returns TVoid
     return x
   SEmpty -> return x
+  SBuiltin -> return x
+  SInherited -> return x
+  SDeclVar _ _ -> throwError $ Err.unusedBranch x
 
 funE :: Expr -> TypeM (Expr, Type)
 funE x = case x of

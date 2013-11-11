@@ -18,7 +18,8 @@ import Semantics.Errors (ErrorInfoT, runErrorInfoM)
 -- UNIFIED IDENTIFIER --
 ------------------------
 data UIdent =
-    VIdent String
+    IThis
+  | VIdent String
   | FIdent String
   | TIdent String
   deriving (Ord, Eq, Show)
@@ -89,7 +90,7 @@ data Stmt =
  | SEmpty
  | SAssign UIdent Expr
  | SAssignArr UIdent Expr Expr
- | SAssignFld Expr UIdent Expr
+ | SAssignFld UIdent UIdent Expr
  | SReturn Expr
  | SReturnV
  | SIf Expr Stmt

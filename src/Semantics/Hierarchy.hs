@@ -43,8 +43,7 @@ prepareClassDiff clazz super = do
       return $ List.nubBy eqMethodName $ clazz ++ super
       where
         eqMethodName :: Method -> Method -> Bool
-        eqMethodName (Method { methodIdent = x }) (Method { methodIdent = y }) = x == y
-        eqMethodName _ _ = False
+        eqMethodName x y = methodIdent x == methodIdent y
 
 -- CLASS HIERARCHY --
 ---------------------
