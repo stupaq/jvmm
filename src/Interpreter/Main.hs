@@ -21,6 +21,7 @@ import Semantics.Trans
 import Semantics.APTree
 import Semantics.Hierarchy
 import Semantics.Scope
+import Semantics.Imperative
 --import Semantics.Types
 --import Semantics.Runtime
 
@@ -49,7 +50,7 @@ runFile, parseFile :: FilePath -> (ReaderT Verbosity IO) ()
 
 runFile f = do
   str <- lift $ readFile f
-  case runErrorInfoM $ parse str >>= trans >>= hierarchy >>= scope of
+  case runErrorInfoM $ parse str >>= trans >>= hierarchy >>= scope >>= imperative of
     Left err -> do
       printl Error $ "ERROR\n"
       printl Error $ err

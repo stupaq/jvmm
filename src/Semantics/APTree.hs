@@ -50,10 +50,10 @@ data CompilationUnit =
 type ClassHierarchy = Hierarchy Class
 
 data Class = Class {
-  classType :: Type,
-  classSuper :: Type,
-  classFields :: [Field],
-  classMethods :: [Method]
+    classType :: Type
+  , classSuper :: Type
+  , classFields :: [Field]
+  , classMethods :: [Method]
 } deriving (Eq, Ord, Show)
 
 type ClassDiff = Class -> ErrorInfoT Identity Class
@@ -61,19 +61,25 @@ type ClassDiff = Class -> ErrorInfoT Identity Class
 -- TODO this is only for debug
 instance Show ClassDiff where
   show diff = show $ runErrorInfoM $ diff Class {
-      classType = TUnknown,
-      classSuper = TUnknown,
-      classFields = [],
-      classMethods = []
+        classType = TUnknown
+      , classSuper = TUnknown
+      , classFields = []
+      , classMethods = []
     }
 
-data Field =
-  Field Type UIdent
-  deriving (Eq, Ord, Show)
+data Field = Field {
+    fieldType :: Type
+  , fieldIdent :: UIdent
+  , fieldOrigin :: Type
+} deriving (Eq, Ord, Show)
 
-data Method =
-  Method Type UIdent [UIdent] Stmt
-  deriving (Eq, Ord, Show)
+data Method = Method {
+    methodType :: Type
+  , methodIdent :: UIdent
+  , methodArgs :: [UIdent]
+  , methodBody :: Stmt
+  , methodOrigin :: Type
+} deriving (Eq, Ord, Show)
 
 -- STATEMENTS --
 ----------------
@@ -93,6 +99,7 @@ data Stmt =
  | SThrow Expr
  | STryCatch Stmt Type UIdent Stmt
  | SBuiltin
+ | SInherited
   deriving (Eq, Ord, Show)
 
 data Variable =

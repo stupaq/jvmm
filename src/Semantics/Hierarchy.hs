@@ -30,18 +30,20 @@ prepareClassDiff clazz super = do
   where
     fieldsClosure :: [Field] -> [Field] -> HierarchyM [Field]
     fieldsClosure clazz super = do
-      let repeated = List.nub [ x | Field _ x <- clazz, Field _ y <- super, x == y ]
+      let repeated = List.nub [ x | Field { fieldIdent = x } <- clazz, Field { fieldIdent = y } <- super, x == y ]
       guard (repeated == []) `rethrow` Err.redeclaredInSuper repeated
       return $ super ++ clazz
     methodsClosure :: [Method] -> [Method] -> HierarchyM [Method]
-    methodsClosure clazz super = do
-      let repeated = List.nub [ x | Method tx x _ _ <- clazz, Method ty y _ _ <- super, x == y, tx /= ty ]
+    methodsClosure clazz superOrig = do
+      -- Strip down super class' methods implementation
+      let super = List.map (\method -> method { methodBody = SInherited }) superOrig
+      let repeated = List.nub [ x | Method { methodType = tx, methodIdent = x } <- clazz, Method { methodType = ty, methodIdent = y } <- super, x == y, tx /= ty ]
       guard (repeated == []) `rethrow` Err.redeclaredWithDifferentType repeated
       -- This will leave the last occurence of a function with given name
       return $ List.nubBy eqMethodName $ clazz ++ super
       where
         eqMethodName :: Method -> Method -> Bool
-        eqMethodName (Method _ x _ _) (Method _ y _ _) = x == y
+        eqMethodName (Method { methodIdent = x }) (Method { methodIdent = y }) = x == y
         eqMethodName _ _ = False
 
 -- CLASS HIERARCHY --

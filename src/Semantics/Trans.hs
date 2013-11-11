@@ -34,8 +34,8 @@ trans program = return $ tProgram program
       in (super, prepareClassDiff $ O.Class {
           O.classType = typ,
           O.classSuper = super,
-          O.classFields = [ tDeclaration x | I.Field x <- members ],
-          O.classMethods = [ tFunction x | I.Method x <- members ]
+          O.classFields = [ (tDeclaration x) { O.fieldOrigin = typ } | I.Field x <- members ],
+          O.classMethods = [ (tFunction x) { O.methodOrigin = typ } | I.Method x <- members ]
         })
 
     tExtends :: I.Extends -> O.Type
@@ -44,11 +44,21 @@ trans program = return $ tProgram program
       I.SuperObject -> tType I.TObject
 
     tDeclaration :: I.Declaration -> O.Field
-    tDeclaration (I.DVariable typ id) = O.Field (tType typ) (tVIdent id)
+    tDeclaration (I.DVariable typ id) = O.Field {
+      O.fieldType = tType typ,
+      O.fieldIdent = tVIdent id,
+      O.fieldOrigin = O.TUnknown
+    }
 
     tFunction :: I.Function -> O.Method
     tFunction (I.Function typ id args exceptions stmts) =
-      O.Method funType (tFIdent id) argUIdents (tStmts stmts)
+      O.Method {
+        O.methodType = funType,
+        O.methodIdent = tFIdent id,
+        O.methodArgs = argUIdents,
+        O.methodBody = tStmts stmts,
+        O.methodOrigin = O.TUnknown
+      }
       where
         argUIdents = map (\(I.Argument typ id) -> tVIdent id) args
         argTypes = map (\(I.Argument typ id) -> tType typ) args

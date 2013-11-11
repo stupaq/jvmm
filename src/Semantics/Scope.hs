@@ -159,8 +159,8 @@ collectClasses classes =
 
 collectMembers :: Class -> ScopeM ()
 collectMembers clazz = do
-  mapM_ (\(Field _ id) -> decVar id) $ classFields clazz
-  mapM_ (\(Method _ id _ _) -> decFunc id) $ classMethods clazz
+  mapM_ (\Field { fieldIdent = id } -> decVar id) $ classFields clazz
+  mapM_ (\Method { methodIdent = id } -> decFunc id) $ classMethods clazz
 
 funH :: ClassHierarchy -> ScopeM ClassHierarchy
 funH = Traversable.mapM $ \clazz -> do
@@ -179,17 +179,18 @@ funH = Traversable.mapM $ \clazz -> do
           }
 
 funF :: Field -> ScopeM Field
-funF (Field typ id) = liftM2 Field (resType typ) (resVar id)
+funF (Field typ id origin) = liftM3 Field (resType typ) (resVar id) (resType origin)
 
 funM :: Method -> ScopeM Method
-funM (Method typ id ids stmt) = do
+funM (Method typ id ids stmt origin) = do
   typ' <- resType typ
   id' <- resFunc id
+  origin' <- resType origin
   newLocal $ do
     mapM_ decVar ids
     ids' <- mapM resVar ids `rethrow` Err.duplicateArg typ id
     stmt' <- newLocal (funS stmt)
-    return $ Method typ' id' ids' stmt'
+    return $ Method typ' id' ids' stmt' origin'
 
 funS :: Stmt -> ScopeM Stmt
 funS x = case x of
@@ -255,6 +256,7 @@ funS x = case x of
   SReturnV -> return SReturnV
   SEmpty -> return SEmpty
   SBuiltin -> return SBuiltin
+  SInherited -> return SInherited
 
 funE :: Expr -> ScopeM Expr
 funE x = case x of
