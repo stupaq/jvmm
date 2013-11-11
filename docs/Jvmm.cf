@@ -57,43 +57,45 @@ TArray.     Type ::= Type "[]";
 
 -- STATEMENTS --
 ----------------
-SBlock.       Stmt ::= "{" [Stmt] "}";
+SBlock.         Stmt ::= "{" [Stmt] "}";
 separator Stmt "";
 
-SAssignOp.    Stmt ::= Ident OpAssign Expr  ";";
-SAssignOpArr. Stmt ::= Ident "[" Expr "]" OpAssign Expr  ";";
-SAssignOpFld. Stmt ::= Ident "." Ident OpAssign Expr  ";";
+SAssignOp.      Stmt ::= Ident OpAssign Expr  ";";
+SAssignOpArr.   Stmt ::= Ident "[" Expr "]" OpAssign Expr  ";";
+SAssignOpFld.   Stmt ::= Ident "." Ident OpAssign Expr  ";";
+SAssignOpThis.  Stmt ::= "this" "." Ident OpAssign Expr  ";";
 
-SPostInc.   Stmt ::= Ident "++" ";";
-SPostDec.   Stmt ::= Ident "--" ";";
+SPostInc.       Stmt ::= Ident "++" ";";
+SPostDec.       Stmt ::= Ident "--" ";";
 
-SEmpty.     Stmt ::= ";";
+SEmpty.         Stmt ::= ";";
 
-SAssign.    Stmt ::= Ident "=" Expr  ";";
-SAssignArr. Stmt ::= Ident "[" Expr "]" "=" Expr  ";";
-SAssignFld. Stmt ::= Ident "." Ident "=" Expr  ";";
+SAssign.        Stmt ::= Ident "=" Expr  ";";
+SAssignArr.     Stmt ::= Ident "[" Expr "]" "=" Expr  ";";
+SAssignFld.     Stmt ::= Ident "." Ident "=" Expr  ";";
+SAssignThis.    Stmt ::= "this" "." Ident "=" Expr  ";";
 
-SReturn.    Stmt ::= "return" Expr ";";
-SReturnV.   Stmt ::= "return" ";";
+SReturn.        Stmt ::= "return" Expr ";";
+SReturnV.       Stmt ::= "return" ";";
 
 -- The following two rules are responsible for the only shift/reduce conflict,
 -- tested in examples_good/conflict001.jv.
-SIf.        Stmt ::= "if" "(" Expr ")" Stmt;
-SIfElse.    Stmt ::= "if" "(" Expr ")" Stmt "else" Stmt;
+SIf.            Stmt ::= "if" "(" Expr ")" Stmt;
+SIfElse.        Stmt ::= "if" "(" Expr ")" Stmt "else" Stmt;
 
-SWhile.     Stmt ::= "while" "(" Expr ")" Stmt;
-SForeach. Stmt ::= "for" "(" Type Ident ":" Expr ")" Stmt;
+SWhile.         Stmt ::= "while" "(" Expr ")" Stmt;
+SForeach.       Stmt ::= "for" "(" Type Ident ":" Expr ")" Stmt;
 
-SExpr.      Stmt ::= Expr ";";
+SExpr.          Stmt ::= Expr ";";
 
-SThrow.     Stmt ::= "throw" Expr ";";
-STryCatch.  Stmt ::= "try" Stmt "catch" "(" Type Ident ")" Stmt;
+SThrow.         Stmt ::= "throw" Expr ";";
+STryCatch.      Stmt ::= "try" Stmt "catch" "(" Type Ident ")" Stmt;
 
-SDeclVar.   Stmt ::= Type [Item] ";";
+SDeclVar.       Stmt ::= Type [Item] ";";
 separator nonempty Item ",";
 
-NoInit.     Item ::= Ident;
-Init.       Item ::= Ident "=" Expr;
+NoInit.         Item ::= Ident;
+Init.           Item ::= Ident "=" Expr;
 
 -- expressions --
 -----------------
