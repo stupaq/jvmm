@@ -96,6 +96,14 @@ globalAsCurrent action = do
   put sc
   return res
 
+-- Runs given action in empty scope
+emptyAsCurrent action = do
+  sc <- get
+  put scope0
+  res <- local (const (scope0, scope0)) action
+  put sc
+  return res
+
 -- Runs action with current scope as global one, restores scope after action is
 -- executed
 currentAsGlobal action = do
@@ -107,7 +115,9 @@ currentAsGlobal action = do
 -- SCOPE READING --
 -------------------
 resVar, resFunc :: UIdent -> ScopeM UIdent
-resVar = resolveLocal vars
+resVar id = case id of
+  IThis -> return id
+  _ -> resolveLocal vars id
 resFunc = resolveLocal funcs
 -- We do not support types hiding (but we want to check for redeclarations and usage of undeclared types)
 resType :: Type -> ScopeM Type
@@ -215,11 +225,7 @@ funS x = case x of
   SAssignFld id1 id2 expr2 -> do
     expr2' <- funE expr2
     id1' <- resVar id1
-    globalAsCurrent $ do
-      -- We are in global scope now, member (depending on type, which we
-      -- can't determine right now) may exist or not. We still can resolve
-      -- member's name, since it will be declared immediately on top of
-      -- global scope.
+    emptyAsCurrent $ do
       decVar id2
       id2' <- resVar id2
       return $ SAssignFld id1' id2' expr2'
@@ -272,28 +278,16 @@ funE x = case x of
   EAccessFn expr id exprs -> do
     expr' <- funE expr
     exprs' <- mapM funE exprs
-    globalAsCurrent $ do
-      -- We are in global scope now, member (depending on type, which we
-      -- can't determine right now) may exist or not. We still can resolve
-      -- member's name, since it will be declared immediately on top of
-      -- global scope.
+    emptyAsCurrent $ do
       decFunc id
       id' <- resFunc id
       return $ EAccessFn expr' id' exprs'
   EAccessVar expr id -> do
     expr' <- funE expr
-    globalAsCurrent $ do
-      -- We are in global scope now, member (depending on type, which we
-      -- can't determine right now) may exist or not. We still can resolve
-      -- member's name, since it will be declared immediately on top of
-      -- global scope.
+    emptyAsCurrent $ do
       decVar id
       id' <- resVar id
       return $ EAccessVar expr' id'
-  EApp id exprs -> do
-    id' <- resFunc id
-    exprs' <- mapM funE exprs
-    return $ EApp id' exprs'
   ENewArr typ expr -> do
     typ' <- resType typ
     expr' <- funE expr

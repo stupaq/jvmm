@@ -39,6 +39,7 @@ voidNotIgnored = "void value not ignored as it should be"
 incompatibleMain = "incompatible main() type"
 redeclaredType id = "redeclared type name: " ++ (show id)
 referencedPrimitive typ = "primitive type cannot be referenced: " ++ (show typ)
+danglingThis = "dangling this"
 
 -- Static exception checking
 uncaughtException typ = "uncaught, undeclared exception " ++ (show typ)

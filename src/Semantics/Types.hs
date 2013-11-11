@@ -1,5 +1,7 @@
 module Semantics.Types (typing) where
 
+import qualified Text.Show.Pretty as Pretty
+
 import Prelude hiding (id)
 
 import Control.Monad.Identity
@@ -35,17 +37,17 @@ data TypeEnv = TypeEnv {
   -- Types of identifiers
   typeenvIdents :: Types,
   -- Definitions of types
-  typeenvTypes :: MemberTypes
-}
+  typeenvTypes :: MemberTypes,
+  -- This type
+  typeenvThis :: Maybe Type
+} deriving (Show)
 typeenv0 = TypeEnv {
   typeenvFunction = Nothing,
   typeenvExceptions = Set.empty,
   typeenvIdents = types0,
-  typeenvTypes = membertypes0
+  typeenvTypes = membertypes0,
+  typeenvThis = Nothing
 }
-
-setFunction :: Maybe Type -> TypeM a -> TypeM a
-setFunction x = local $ \env -> env { typeenvFunction = x }
 
 mapExceptions fun env = env { typeenvExceptions = fun (typeenvExceptions env) }
 
@@ -107,6 +109,15 @@ returns typ = do
 declare :: UIdent -> Type -> TypeM a -> TypeM a
 declare uid typ = local (\env -> env { typeenvIdents = Map.insert uid typ (typeenvIdents env) })
 
+this :: TypeM Type
+this = asks typeenvThis >>= \x -> case x of
+  Just typ -> return typ
+  Nothing -> throwError Err.danglingThis
+
+calls, setThis :: Maybe Type -> TypeM a -> TypeM a
+calls x = local $ \env -> env { typeenvFunction = x }
+setThis x = local $ \env -> env { typeenvThis = x }
+
 -- TYPE ARITHMETIC --
 ---------------------
 -- We say that t <- t1 =||= t2 when t2 and t1 are subtypes of t, and no other
@@ -164,8 +175,9 @@ typing classes = do
 
 funH :: ClassHierarchy -> TypeM ClassHierarchy
 funH = Traversable.mapM $ \clazz -> do
-  methods <- mapM funM (classMethods clazz)
-  return $ clazz { classMethods = methods }
+  setThis (Just $ classType clazz) $ do
+    methods <- mapM funM (classMethods clazz)
+    return $ clazz { classMethods = methods }
 
 funM :: Method -> TypeM Method
 funM method = do
@@ -174,7 +186,7 @@ funM method = do
   let exceptionsEnv = applyAndCompose catches exceptionTypes
   let argumentIdents = methodArgs method
   let arguments = List.zipWith (\typ id -> Variable typ id) argumentTypes argumentIdents
-  exceptionsEnv . setFunction (Just $ methodType method) $ do
+  exceptionsEnv . calls (Just $ methodType method) $ do
     stmt' <- funS $ SLocal arguments [methodBody method]
     return $ method { methodBody = stmt' }
   where
@@ -278,12 +290,6 @@ funE x = case x of
     (expr', etyp) <- funE expr
     typ <- typeof' etyp id
     return (EAccessVar expr' id, typ)
-  EApp id exprs -> do
-    (exprs', etypes) <- mapAndUnzipM funE exprs
-    ftyp1@(TFunc ret args excepts) <- typeof id
-    forM excepts throws
-    (ftyp1 =| TFunc ret etypes []) `rethrow` Err.argumentsNotMatch args etypes
-    return (EApp id exprs', ret)
   ENewArr typ expr -> do
     when (typ == TVoid) $ throwError Err.voidNotIgnored
     (expr', etyp) <- funE expr
@@ -320,4 +326,5 @@ funE x = case x of
           ObGEQ -> return TBool
           _ -> return TInt
     return (EBinary rett opbin expr1' expr2', rett)
+  EThis -> this >>= \typ -> return (EThis, typ)
 

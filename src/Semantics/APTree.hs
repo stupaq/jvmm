@@ -138,7 +138,6 @@ data Expr =
  | EAccessArr Expr Expr
  | EAccessFn Expr UIdent [Expr]
  | EAccessVar Expr UIdent
- | EApp UIdent [Expr]
  | ENewObj Type
  | ENewArr Type Expr
  | EThis

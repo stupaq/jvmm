@@ -150,7 +150,7 @@ trans program = return $ tProgram program
       I.EAccessArrI ide expr2 -> O.EAccessArr (tExpr $ I.EVar ide) (tExpr expr2)  -- GRAMMAR IRREGULARITY
       I.EAccessFnI ide id exprs -> O.EAccessFn (tExpr $ I.EVar ide) (tFIdent id) (map tExpr exprs)  -- GRAMMAR IRREGULARITY
       I.EAccessVarI ide id -> O.EAccessVar (tExpr $ I.EVar ide) (tVIdent id)  -- GRAMMAR IRREGULARITY
-      I.EApp id exprs -> O.EApp (tFIdent id) (map tExpr exprs)
+      I.EApp id exprs -> O.EAccessFn O.EThis (tFIdent id) (map tExpr exprs)
       I.ENewArr typ expr -> O.ENewArr (tType typ) (tExpr expr)
       I.ENewObj typ -> O.ENewObj $ tType typ
       I.ENeg expr -> O.EUnary O.TUnknown O.OuNeg (tExpr expr)
