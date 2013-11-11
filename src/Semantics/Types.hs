@@ -124,9 +124,9 @@ this = asks typeenvThis >>= \x -> case x of
 super :: Type -> TypeM Type
 super typ = (asks typeenvSuper >>= lookupM typ) `rethrow` Err.noSuperType typ
 
-calls, enterClass :: Maybe Type -> TypeM a -> TypeM a
-calls x = local $ \env -> env { typeenvFunction = x }
-enterClass x = local $ \env -> env { typeenvThis = x }
+enterFunction, enterClass :: Type -> TypeM a -> TypeM a
+enterFunction x = local $ \env -> env { typeenvFunction = Just x }
+enterClass x = local $ \env -> env { typeenvThis = Just x }
 
 -- TYPE ARITHMETIC --
 ---------------------
@@ -184,20 +184,19 @@ typing classes = do
   runTypeM env $ funH classes
 
 funH :: ClassHierarchy -> TypeM ClassHierarchy
-funH = Traversable.mapM $ \clazz -> do
-  enterClass (Just $ classType clazz) $ do
+funH = Traversable.mapM $ \clazz@Class { classMethods = methods, classType = typ} ->
+  enterClass typ $ do
     methods <- mapM funM (classMethods clazz)
     return $ clazz { classMethods = methods }
 
 funM :: Method -> TypeM Method
-funM method = do
+funM method@Method { methodType = typ, methodBody = stmt, methodArgs = argumentIdents } = do
   checkEntrypoint method
-  let TFunc _ argumentTypes exceptionTypes = methodType method
+  let TFunc _ argumentTypes exceptionTypes = typ
   let exceptionsEnv = applyAndCompose catches exceptionTypes
-  let argumentIdents = methodArgs method
-  let arguments = List.zipWith (\typ id -> Variable typ id) argumentTypes argumentIdents
-  exceptionsEnv . calls (Just $ methodType method) $ do
-    stmt' <- funS $ SLocal arguments [methodBody method]
+  let argumentsEnv = applyAndCompose (\(typ, id) -> declare id typ) $ List.zip argumentTypes argumentIdents
+  exceptionsEnv . argumentsEnv . enterFunction typ $ do
+    stmt' <- funS stmt
     return $ method { methodBody = stmt' }
   where
     checkEntrypoint :: Method -> TypeM ()
