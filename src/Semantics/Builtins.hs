@@ -5,8 +5,8 @@ import Prelude hiding (id)
 import Semantics.APTree
 import qualified Semantics.Scope as Scope
 
--- BUILTINS --
---------------
+-- HIERARCHY --
+---------------
 buildObjectClass :: [Method] -> Class
 buildObjectClass methods = Class {
     classType = TObject,
@@ -15,6 +15,8 @@ buildObjectClass methods = Class {
     classMethods = builtins ++ methods
   }
 
+-- FUNCTIONS --
+---------------
 builtins :: [Method]
 builtins = map fun [
     ("printInt", TFunc TVoid [TInt] []),
@@ -25,9 +27,13 @@ builtins = map fun [
   where
     fun (name, typ) = Method typ (FIdent name) [] SBuiltin TUnknown
 
+-- ENTRYPOINT --
+----------------
 entrypointIdent = Scope.tagGlobal $ FIdent "main"
 entrypointType = TFunc TInt [] []
 
+-- TYPES --
+-----------
 isBuiltinType typ = case typ of
   TUser (TIdent str) -> str `elem` ["int", "char", "boolean", "String", "string"]
   _ -> False

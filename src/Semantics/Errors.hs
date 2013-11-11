@@ -26,8 +26,8 @@ redeclaredSymbol id = "redeclared symbol in the same scope: " ++ (show id)
 globalForbidden = "statement not allowed in global scope"
 
 -- Type resolution errors
-unknownMemberType typ id = concat ["unknown type: ", show typ, " . ", show id]
-unknownSymbolType id = "unknown type: " ++ (show id)
+unknownMemberType typ id = concat ["unknown member type: ", show typ, " . ", show id]
+unknownSymbolType id = "unknown symbol type: " ++ (show id)
 subscriptNonArray = "not an array subscripted"
 indexType = "invalid array index type"
 unexpectedType expected actual = concat ["not matching type, expected: ", show expected, " actual ", show actual]
@@ -40,6 +40,7 @@ incompatibleMain = "incompatible main() type"
 redeclaredType id = "redeclared type name: " ++ (show id)
 referencedPrimitive typ = "primitive type cannot be referenced: " ++ (show typ)
 danglingThis = "dangling this"
+noSuperType typ = "cannot determine super type for: " ++ (show typ)
 
 -- Static exception checking
 uncaughtException typ = "uncaught, undeclared exception " ++ (show typ)

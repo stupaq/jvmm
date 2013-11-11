@@ -39,14 +39,18 @@ data TypeEnv = TypeEnv {
   -- Definitions of types
   typeenvTypes :: MemberTypes,
   -- This type
-  typeenvThis :: Maybe Type
+  typeenvThis :: Maybe Type,
+  -- Mapping from type to super
+  typeenvSuper :: Map.Map Type Type
 } deriving (Show)
+
 typeenv0 = TypeEnv {
   typeenvFunction = Nothing,
   typeenvExceptions = Set.empty,
   typeenvIdents = types0,
   typeenvTypes = membertypes0,
-  typeenvThis = Nothing
+  typeenvThis = Nothing,
+  typeenvSuper = Map.empty
 }
 
 mapExceptions fun env = env { typeenvExceptions = fun (typeenvExceptions env) }
@@ -58,10 +62,12 @@ collectTypes :: ClassHierarchy -> ErrorInfoT Identity TypeEnv
 collectTypes classes = fmap snd $ runStateT (Traversable.mapM decClass classes) typeenv0
   where
     decClass :: Class -> StateT TypeEnv (ErrorInfoT Identity) ()
-    decClass clazz = do
-      let typ = classType clazz
+    decClass clazz@Class { classType = typ, classSuper = super } = do
       when (isBuiltinType typ) $ throwError (Err.redeclaredType typ)
-      modify $ \env -> env { typeenvTypes = Map.insert (classType clazz) types (typeenvTypes env) }
+      modify $ \env -> env {
+        typeenvTypes = Map.insert typ types (typeenvTypes env),
+        typeenvSuper = Map.insert typ super (typeenvSuper env)
+      }
       where
         fields = List.map (\x -> (fieldIdent x, fieldType x)) $ classFields clazz
         methods = List.map (\x -> (methodIdent x, methodType x)) $ classMethods clazz
@@ -83,6 +89,7 @@ lookupM key map = lift $ case Map.lookup key map of
   Nothing -> throwError noMsg
 
 typeof :: UIdent -> TypeM Type
+typeof IThis = this
 typeof uid = (asks typeenvIdents >>= lookupM uid) `rethrow` Err.unknownSymbolType uid
 
 typeof' :: Type -> UIdent -> TypeM Type
@@ -114,21 +121,23 @@ this = asks typeenvThis >>= \x -> case x of
   Just typ -> return typ
   Nothing -> throwError Err.danglingThis
 
-calls, setThis :: Maybe Type -> TypeM a -> TypeM a
+super :: Type -> TypeM Type
+super typ = (asks typeenvSuper >>= lookupM typ) `rethrow` Err.noSuperType typ
+
+calls, enterClass :: Maybe Type -> TypeM a -> TypeM a
 calls x = local $ \env -> env { typeenvFunction = x }
-setThis x = local $ \env -> env { typeenvThis = x }
+enterClass x = local $ \env -> env { typeenvThis = x }
 
 -- TYPE ARITHMETIC --
 ---------------------
 -- We say that t <- t1 =||= t2 when t2 and t1 are subtypes of t, and no other
 -- type t' such that t =| t' has this property
 (=||=) :: Type -> Type -> TypeM Type
-(=||=) typ1 typ2 = do
-  let bad = throwError (Err.unexpectedType typ1 typ2)
-  (typ1 =| typ2) `mplus` (typ1 |= typ2) `mplus`
-    case (typ1, typ2) of
-      -- TODO hierarchy
-      _ -> bad
+(=||=) typ1 typ2 = 
+  (typ1 =| typ2) `mplus`
+  (typ1 |= typ2) `mplus`
+  (super typ1 >>= (=||= typ2)) `mplus`
+  (super typ2 >>= (typ1 =||=)) `rethrow` Err.unexpectedType typ1 typ2
 
 -- We say that t1 =| t2 when t2 is a subtype of t1 (t2 can be safely casted to t1)
 (=|), (|=) :: Type -> Type -> TypeM Type
@@ -158,10 +167,11 @@ setThis x = local $ \env -> env { typeenvThis = x }
     (TObject, TArray _) -> ok
     (TObject, TUser _) -> ok
     (TUser _, TNull) -> ok
-    -- TODO hierarchy
-    (TUser id1, TUser id2)
-      | id1 == id2 -> ok
-      | otherwise -> bad
+    (TUser _, TUser _)
+      | typ1 == typ2 -> ok
+      | otherwise -> do
+        typ2' <- super typ2
+        typ1 =| typ2'
     _ -> bad
 
 (|=) = flip (=|)
@@ -175,7 +185,7 @@ typing classes = do
 
 funH :: ClassHierarchy -> TypeM ClassHierarchy
 funH = Traversable.mapM $ \clazz -> do
-  setThis (Just $ classType clazz) $ do
+  enterClass (Just $ classType clazz) $ do
     methods <- mapM funM (classMethods clazz)
     return $ clazz { classMethods = methods }
 
