@@ -59,7 +59,6 @@ data Class = Class {
 
 type ClassDiff = Class -> ErrorInfoT Identity Class
 
--- TODO this is only for debug
 instance Show ClassDiff where
   show diff = show $ runErrorInfoM $ diff Class {
         classType = TUnknown

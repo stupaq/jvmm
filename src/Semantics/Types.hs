@@ -1,7 +1,5 @@
 module Semantics.Types (typing) where
 
-import qualified Text.Show.Pretty as Pretty
-
 import Prelude hiding (id)
 
 import Control.Monad.Identity

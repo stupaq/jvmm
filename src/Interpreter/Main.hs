@@ -22,7 +22,7 @@ import Semantics.APTree
 import Semantics.Hierarchy
 import Jvmm.Scope
 import Semantics.Types
-import Semantics.Imperative
+import Jvmm.Virtuals
 --import Semantics.Runtime
 
 -- WORKFLOW --
@@ -50,7 +50,7 @@ runFile, parseFile :: FilePath -> (ReaderT Verbosity IO) ()
 
 runFile f = do
   str <- lift $ readFile f
-  case runErrorInfoM $ parse str >>= trans >>= hierarchy >>= scope >>= typing >>= imperative of
+  case runErrorInfoM $ parse str >>= trans >>= hierarchy >>= scope >>= typing >>= virtuals of
     Left err -> do
       printl Error $ "ERROR\n"
       printl Error $ err
