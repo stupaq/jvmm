@@ -20,7 +20,7 @@ import Semantics.Errors
 import Semantics.Trans
 import Semantics.APTree
 import Semantics.Hierarchy
-import Semantics.Scope
+import Jvmm.Scope
 import Semantics.Types
 import Semantics.Imperative
 --import Semantics.Runtime

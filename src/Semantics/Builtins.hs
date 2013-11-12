@@ -3,7 +3,7 @@ module Semantics.Builtins where
 import Prelude hiding (id)
 
 import Semantics.APTree
-import qualified Semantics.Scope as Scope
+import qualified Jvmm.Scope as Scope
 
 -- HIERARCHY --
 ---------------

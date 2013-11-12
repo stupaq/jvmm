@@ -16,7 +16,7 @@ import Semantics.Commons
 import Semantics.Errors (rethrow, ErrorInfoT)
 import qualified Semantics.Errors as Err
 import Semantics.APTree
-import qualified Semantics.Scope as Scope
+import qualified Jvmm.Scope as Scope
 
 -- Implements runtime semantics and memory model, note that all type magic
 -- should be moved to type cheking phase. Runtime polimorphism (virtual

@@ -19,7 +19,7 @@ import qualified Semantics.Errors as Err
 import Semantics.Builtins
 import Semantics.Errors (rethrow, ErrorInfoT, runErrorInfoM)
 import Semantics.APTree
-import qualified Semantics.Scope as Scope
+import qualified Jvmm.Scope as Scope
 
 -- TYPE REPRESENTATION --
 -------------------------

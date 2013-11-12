@@ -1,4 +1,4 @@
-module Semantics.Scope (scope, tagGlobal, tempIdent) where
+module Jvmm.Scope.Internal where
 
 import Control.Monad.Identity
 import Control.Monad.Error
@@ -22,12 +22,6 @@ tag0 = 0 :: Tag
 
 tagWith :: Tag -> UIdent -> UIdent
 tagWith tag = (+/+ concat ["$", show tag])
-
-tagGlobal :: UIdent -> UIdent
-tagGlobal = tagWith tag0
-
-tempIdent :: UIdent -> String -> UIdent
-tempIdent id ctx = id +/+ "#" +/+ ctx
 
 -- Each symbol in scoped tree has an identifier which is unique in its scope,
 -- in other words, there is no identifier hiding in scoped tree.
@@ -152,12 +146,6 @@ decType _ = return ()
 
 -- SCOPE COMPUTATION --
 -----------------------
--- Creates scoped tree from translated AST
-scope :: ClassHierarchy -> ErrorInfoT Identity ClassHierarchy
-scope classes = fmap fst $ runScopeM $ do
-  collectClasses classes
-  currentAsGlobal (funH classes)
-
 -- Fills current scope (the one in state) with mutually recursive declarations
 -- Note that each class (user defined type) must reside within global
 -- scope, since it forms a global scope itself, when resolving field
