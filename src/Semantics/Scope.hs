@@ -35,15 +35,16 @@ type Symbols = Map.Map UIdent Tag
 symbols0 = Map.empty
 
 data Scope = Scope {
-  vars :: Symbols,
-  funcs :: Symbols,
-  types :: Symbols
+  scopeVars :: Symbols,
+  scopeFuncs :: Symbols,
+  scopeTypes :: Symbols
 } deriving (Eq, Show)
--- Default global scope
+
+-- Empty scope
 scope0 = Scope {
-  vars = symbols0,
-  funcs = symbols0,
-  types = symbols0
+  scopeVars = symbols0,
+  scopeFuncs = symbols0,
+  scopeTypes = symbols0
 }
 
 newOccurence :: Symbols -> UIdent -> Symbols
@@ -117,36 +118,36 @@ currentAsGlobal action = do
 resVar, resFunc :: UIdent -> ScopeM UIdent
 resVar id = case id of
   IThis -> return id
-  _ -> resolveLocal vars id
-resFunc = resolveLocal funcs
+  _ -> resolveLocal scopeVars id
+resFunc = resolveLocal scopeFuncs
 -- We do not support types hiding (but we want to check for redeclarations and usage of undeclared types)
 resType :: Type -> ScopeM Type
 resType typ = case typ of
-  TUser id -> (resolveLocal types id) >> (return typ)
+  TUser id -> (resolveLocal scopeTypes id) >> (return typ)
   TFunc ret args excs -> liftM3 TFunc (resType ret) (mapM resType args) (mapM resType excs)
   _ -> return typ
 
 isField :: UIdent -> ScopeM Bool
 isField id = do
   -- resolve in global scope
-  idout <- resolveGlobal vars id `catchError` (\_ -> return id)
+  idout <- resolveGlobal scopeVars id `catchError` (\_ -> return id)
   -- resolve in current scope
-  idin <- resolveLocal vars id `catchError` (\_ -> return id)
+  idin <- resolveLocal scopeVars id `catchError` (\_ -> return id)
   return (idout == idin)
 
 -- SCOPE UPDATING --
 --------------------
 decVar, decFunc :: UIdent -> ScopeM ()
 decVar id = do
-  checkRedeclaration vars id
-  modify $ (\sc -> sc { vars = newOccurence (vars sc) id })
+  checkRedeclaration scopeVars id
+  modify $ (\sc -> sc { scopeVars = newOccurence (scopeVars sc) id })
 decFunc id = do
-  checkRedeclaration funcs id
-  modify $ (\sc -> sc { funcs = newOccurence (funcs sc) id })
+  checkRedeclaration scopeFuncs id
+  modify $ (\sc -> sc { scopeFuncs = newOccurence (scopeFuncs sc) id })
 decType :: Type -> ScopeM ()
 decType (TUser id) = do
-  checkRedeclaration types id
-  modify $ (\sc -> sc { types = newOccurence (types sc) id })
+  checkRedeclaration scopeTypes id
+  modify $ (\sc -> sc { scopeTypes = newOccurence (scopeTypes sc) id })
 decType _ = return ()
 
 -- SCOPE COMPUTATION --
@@ -197,8 +198,8 @@ funM (Method typ id ids stmt origin) = do
   id' <- resFunc id
   origin' <- resType origin
   newLocal $ do
-    mapM_ decVar ids
-    ids' <- mapM resVar ids `rethrow` Err.duplicateArg typ id
+    mapM_ decVar ids `rethrow` Err.duplicateArg typ id
+    ids' <- mapM resVar ids
     stmt' <- newLocal (funS stmt)
     return $ Method typ' id' ids' stmt' origin'
 
