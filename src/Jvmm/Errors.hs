@@ -41,6 +41,7 @@ redeclaredType id = "redeclared type name: " ++ (show id)
 referencedPrimitive typ = "primitive type cannot be referenced: " ++ (show typ)
 danglingThis = "dangling this"
 noSuperType typ = "cannot determine super type for: " ++ (show typ)
+intValueOutOfBounds n = "int constant out of bounds: " ++ (show n)
 
 -- Static exception checking
 uncaughtException typ = "uncaught, undeclared exception " ++ (show typ)

@@ -137,6 +137,10 @@ enterClass x = local $ \env -> env { typeenvThis = Just x }
 notAVoid :: Type -> TypeM ()
 notAVoid typ = when (typ == TVoid) $ throwError noMsg
 
+intWithinBounds :: Integer -> TypeM ()
+intWithinBounds n =
+  when (n /= (fromIntegral (fromIntegral n :: Int) :: Integer)) $ throwError noMsg
+
 -- TYPE ARITHMETIC --
 ---------------------
 -- We say that t <- t1 =||= t2 when t2 and t1 are subtypes of t, and no other
@@ -291,7 +295,9 @@ funE x = case x of
   EVar id -> do
     typ <- typeof id
     return (x, typ)
-  ELitInt n -> return (x, TInt)
+  ELitInt n -> do
+    intWithinBounds n `rethrow` Err.intValueOutOfBounds n
+    return (x, TInt)
   ELitTrue -> return (x, TBool)
   ELitFalse -> return (x, TBool)
   ELitString str -> return (x, TString)
