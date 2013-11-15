@@ -60,11 +60,12 @@ funH classes = do
   return ()
 
 funM :: Method -> VerifierM ()
-funM method@Method { methodBody = stmt } = funS stmt
+funM method@Method { methodBody = stmt, methodType = typ } = do
+  let TFunc rett _ _ = typ
+  checkReturned rett $ funS stmt
 
 funS :: Stmt -> VerifierM ()
 funS x = case x of
-  SDeclVar _ _ -> throwError $ Err.unusedBranch x
   SLocal _ stmts -> mapM_ funS stmts
   SReturn _ -> setReturned True
   SIf ELitTrue stmt ->
@@ -85,14 +86,16 @@ funS x = case x of
     clearReturned $ funS stmt
   -- We consider throw statement to be equivalent to return for the sake of checking whether the
   -- function returns (we do allow function to throw and not return in the dead code after throw)
-  SThrow expr -> orReturned True
+  SThrow _ -> orReturned True
   -- Since we cannot statically exclude possibility of exception being thrown, we require try {}
   -- block to return or throw AND catch () {} block to return
-  STryCatch stmt1 typ id stmt2 -> do
+  STryCatch stmt1 _ _ stmt2 -> do
     (_, retd1) <- probeReturned $ funS stmt1
     (_, retd2) <- probeReturned $ funS stmt2
     orReturned (retd1 && retd2)
   SReturnV -> setReturned True
   SBuiltin -> setReturned True
   SInherited -> setReturned True
+  SDeclVar _ _ -> throwError $ Err.unusedBranch x
+  _ -> return ()
 
