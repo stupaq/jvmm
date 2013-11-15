@@ -161,17 +161,17 @@ instance Print Type where
 instance Print Stmt where
   prt i e = case e of
    SBlock stmts -> prPrec i 0 (concatD [doc (showString "{") , prt 0 stmts , doc (showString "}")])
-   SAssignOp id opassign expr -> prPrec i 0 (concatD [prt 0 id , prt 0 opassign , prt 0 expr , doc (showString ";")])
-   SAssignOpArr id expr0 opassign expr -> prPrec i 0 (concatD [prt 0 id , doc (showString "[") , prt 0 expr0 , doc (showString "]") , prt 0 opassign , prt 0 expr , doc (showString ";")])
-   SAssignOpFld id0 id opassign expr -> prPrec i 0 (concatD [prt 0 id0 , doc (showString ".") , prt 0 id , prt 0 opassign , prt 0 expr , doc (showString ";")])
-   SAssignOpThis id opassign expr -> prPrec i 0 (concatD [doc (showString "this") , doc (showString ".") , prt 0 id , prt 0 opassign , prt 0 expr , doc (showString ";")])
+   SAssignOp id assignop expr -> prPrec i 0 (concatD [prt 0 id , prt 0 assignop , prt 0 expr , doc (showString ";")])
+   SAssignOpArr id expr0 assignop expr -> prPrec i 0 (concatD [prt 0 id , doc (showString "[") , prt 0 expr0 , doc (showString "]") , prt 0 assignop , prt 0 expr , doc (showString ";")])
+   SAssignOpFld id0 id assignop expr -> prPrec i 0 (concatD [prt 0 id0 , doc (showString ".") , prt 0 id , prt 0 assignop , prt 0 expr , doc (showString ";")])
+   SAssignOpThis id assignop expr -> prPrec i 0 (concatD [doc (showString "self") , doc (showString ".") , prt 0 id , prt 0 assignop , prt 0 expr , doc (showString ";")])
    SPostInc id -> prPrec i 0 (concatD [prt 0 id , doc (showString "++") , doc (showString ";")])
    SPostDec id -> prPrec i 0 (concatD [prt 0 id , doc (showString "--") , doc (showString ";")])
    SEmpty  -> prPrec i 0 (concatD [doc (showString ";")])
    SAssign id expr -> prPrec i 0 (concatD [prt 0 id , doc (showString "=") , prt 0 expr , doc (showString ";")])
    SAssignArr id expr0 expr -> prPrec i 0 (concatD [prt 0 id , doc (showString "[") , prt 0 expr0 , doc (showString "]") , doc (showString "=") , prt 0 expr , doc (showString ";")])
    SAssignFld id0 id expr -> prPrec i 0 (concatD [prt 0 id0 , doc (showString ".") , prt 0 id , doc (showString "=") , prt 0 expr , doc (showString ";")])
-   SAssignThis id expr -> prPrec i 0 (concatD [doc (showString "this") , doc (showString ".") , prt 0 id , doc (showString "=") , prt 0 expr , doc (showString ";")])
+   SAssignThis id expr -> prPrec i 0 (concatD [doc (showString "self") , doc (showString ".") , prt 0 id , doc (showString "=") , prt 0 expr , doc (showString ";")])
    SReturn expr -> prPrec i 0 (concatD [doc (showString "return") , prt 0 expr , doc (showString ";")])
    SReturnV  -> prPrec i 0 (concatD [doc (showString "return") , doc (showString ";")])
    SIf expr stmt -> prPrec i 0 (concatD [doc (showString "if") , doc (showString "(") , prt 0 expr , doc (showString ")") , prt 0 stmt])
@@ -205,7 +205,7 @@ instance Print Expr where
    ELitInt n -> prPrec i 6 (concatD [prt 0 n])
    ELitString str -> prPrec i 6 (concatD [prt 0 str])
    ELitChar c -> prPrec i 6 (concatD [prt 0 c])
-   EThis  -> prPrec i 6 (concatD [doc (showString "this")])
+   EThis  -> prPrec i 6 (concatD [doc (showString "self")])
    ELitTrue  -> prPrec i 6 (concatD [doc (showString "true")])
    ELitFalse  -> prPrec i 6 (concatD [doc (showString "false")])
    ENull  -> prPrec i 6 (concatD [doc (showString "null")])
@@ -218,41 +218,47 @@ instance Print Expr where
    ENewArr type' expr -> prPrec i 5 (concatD [doc (showString "new") , prt 0 type' , doc (showString "[") , prt 0 expr , doc (showString "]")])
    ENeg expr -> prPrec i 5 (concatD [doc (showString "-") , prt 5 expr])
    ENot expr -> prPrec i 5 (concatD [doc (showString "!") , prt 5 expr])
-   EMul expr0 opbin expr -> prPrec i 4 (concatD [prt 4 expr0 , prt 4 opbin , prt 5 expr])
-   EAdd expr0 opbin expr -> prPrec i 3 (concatD [prt 3 expr0 , prt 3 opbin , prt 4 expr])
-   ERel expr0 opbin expr -> prPrec i 2 (concatD [prt 2 expr0 , prt 2 opbin , prt 3 expr])
-   EAnd expr0 opbin expr -> prPrec i 1 (concatD [prt 1 expr0 , prt 1 opbin , prt 2 expr])
-   EOr expr0 opbin expr -> prPrec i 0 (concatD [prt 0 expr0 , prt 0 opbin , prt 1 expr])
+   EMul expr0 mulop expr -> prPrec i 4 (concatD [prt 4 expr0 , prt 0 mulop , prt 5 expr])
+   EAdd expr0 addop expr -> prPrec i 3 (concatD [prt 3 expr0 , prt 0 addop , prt 4 expr])
+   ERel expr0 relop expr -> prPrec i 2 (concatD [prt 2 expr0 , prt 0 relop , prt 3 expr])
+   EAnd expr0 expr -> prPrec i 1 (concatD [prt 1 expr0 , doc (showString "&&") , prt 2 expr])
+   EOr expr0 expr -> prPrec i 0 (concatD [prt 0 expr0 , doc (showString "||") , prt 1 expr])
 
   prtList es = case es of
    [] -> (concatD [])
    [x] -> (concatD [prt 0 x])
    x:xs -> (concatD [prt 0 x , doc (showString ",") , prt 0 xs])
 
-instance Print OpAssign where
+instance Print AssignOp where
   prt i e = case e of
+   APlus  -> prPrec i 0 (concatD [doc (showString "+=")])
+   AMinus  -> prPrec i 0 (concatD [doc (showString "-=")])
    ATimes  -> prPrec i 0 (concatD [doc (showString "*=")])
    ADiv  -> prPrec i 0 (concatD [doc (showString "/=")])
    AMod  -> prPrec i 0 (concatD [doc (showString "%=")])
-   APlus  -> prPrec i 0 (concatD [doc (showString "+=")])
-   AMinus  -> prPrec i 0 (concatD [doc (showString "-=")])
 
 
-instance Print OpBin where
+instance Print AddOp where
   prt i e = case e of
-   Times  -> prPrec i 4 (concatD [doc (showString "*")])
-   Div  -> prPrec i 4 (concatD [doc (showString "/")])
-   Mod  -> prPrec i 4 (concatD [doc (showString "%")])
-   Plus  -> prPrec i 3 (concatD [doc (showString "+")])
-   Minus  -> prPrec i 3 (concatD [doc (showString "-")])
-   LTH  -> prPrec i 2 (concatD [doc (showString "<")])
-   LEQ  -> prPrec i 2 (concatD [doc (showString "<=")])
-   GTH  -> prPrec i 2 (concatD [doc (showString ">")])
-   GEQ  -> prPrec i 2 (concatD [doc (showString ">=")])
-   EQU  -> prPrec i 2 (concatD [doc (showString "==")])
-   NEQ  -> prPrec i 2 (concatD [doc (showString "!=")])
-   And  -> prPrec i 1 (concatD [doc (showString "&&")])
-   Or  -> prPrec i 0 (concatD [doc (showString "||")])
+   Plus  -> prPrec i 0 (concatD [doc (showString "+")])
+   Minus  -> prPrec i 0 (concatD [doc (showString "-")])
+
+
+instance Print MulOp where
+  prt i e = case e of
+   Times  -> prPrec i 0 (concatD [doc (showString "*")])
+   Div  -> prPrec i 0 (concatD [doc (showString "/")])
+   Mod  -> prPrec i 0 (concatD [doc (showString "%")])
+
+
+instance Print RelOp where
+  prt i e = case e of
+   LTH  -> prPrec i 0 (concatD [doc (showString "<")])
+   LEQ  -> prPrec i 0 (concatD [doc (showString "<=")])
+   GTH  -> prPrec i 0 (concatD [doc (showString ">")])
+   GEQ  -> prPrec i 0 (concatD [doc (showString ">=")])
+   EQU  -> prPrec i 0 (concatD [doc (showString "==")])
+   NEQ  -> prPrec i 0 (concatD [doc (showString "!=")])
 
 
 

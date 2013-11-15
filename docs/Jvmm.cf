@@ -60,10 +60,10 @@ TArray.     Type ::= Type "[]";
 SBlock.         Stmt ::= "{" [Stmt] "}";
 separator Stmt "";
 
-SAssignOp.      Stmt ::= Ident OpAssign Expr  ";";
-SAssignOpArr.   Stmt ::= Ident "[" Expr "]" OpAssign Expr  ";";
-SAssignOpFld.   Stmt ::= Ident "." Ident OpAssign Expr  ";";
-SAssignOpThis.  Stmt ::= "this" "." Ident OpAssign Expr  ";";
+SAssignOp.      Stmt ::= Ident AssignOp Expr  ";";
+SAssignOpArr.   Stmt ::= Ident "[" Expr "]" AssignOp Expr  ";";
+SAssignOpFld.   Stmt ::= Ident "." Ident AssignOp Expr  ";";
+SAssignOpThis.  Stmt ::= "self" "." Ident AssignOp Expr  ";";
 
 SPostInc.       Stmt ::= Ident "++" ";";
 SPostDec.       Stmt ::= Ident "--" ";";
@@ -73,7 +73,7 @@ SEmpty.         Stmt ::= ";";
 SAssign.        Stmt ::= Ident "=" Expr  ";";
 SAssignArr.     Stmt ::= Ident "[" Expr "]" "=" Expr  ";";
 SAssignFld.     Stmt ::= Ident "." Ident "=" Expr  ";";
-SAssignThis.    Stmt ::= "this" "." Ident "=" Expr  ";";
+SAssignThis.    Stmt ::= "self" "." Ident "=" Expr  ";";
 
 SReturn.        Stmt ::= "return" Expr ";";
 SReturnV.       Stmt ::= "return" ";";
@@ -109,7 +109,7 @@ ELitInt.    Expr6 ::= Integer;
 ELitString. Expr6 ::= String;
 ELitChar.   Expr6 ::= Char;
 
-EThis.      Expr6 ::= "this";
+EThis.      Expr6 ::= "self";
 ELitTrue.   Expr6 ::= "true";
 ELitFalse.  Expr6 ::= "false";
 ENull.      Expr6 ::= "null";
@@ -127,54 +127,50 @@ ENewArr.    Expr5 ::= "new" Type "[" Expr "]";
 ENeg.       Expr5 ::= "-" Expr5;
 ENot.       Expr5 ::= "!" Expr5;
 
-EMul.       Expr4 ::= Expr4 OpBin4 Expr5;
+EMul.       Expr4 ::= Expr4 MulOp Expr5;
 
-EAdd.       Expr3 ::= Expr3 OpBin3 Expr4;
+EAdd.       Expr3 ::= Expr3 AddOp Expr4;
 
-ERel.       Expr2 ::= Expr2 OpBin2 Expr3;
+ERel.       Expr2 ::= Expr2 RelOp Expr3;
 
-EAnd.       Expr1 ::= Expr1 OpBin1 Expr2;
+EAnd.       Expr1 ::= Expr1 "&&" Expr2;
 
-EOr.        Expr ::= Expr OpBin Expr1;
+EOr.        Expr ::= Expr "||" Expr1;
 
 coercions Expr 9;
 
 separator Expr ",";
 
--- operators --
+-- OPERATORS --
 ---------------
 
-ATimes.     OpAssign ::= "*=";
-ADiv.       OpAssign ::= "/=";
-AMod.       OpAssign ::= "%=";
+-- FIXME remove these
+APlus.      AssignOp ::= "+=";
+AMinus.     AssignOp ::= "-=";
+ATimes.     AssignOp ::= "*=";
+ADiv.       AssignOp ::= "/=";
+AMod.       AssignOp ::= "%=";
 
-APlus.      OpAssign ::= "+=";
-AMinus.     OpAssign ::= "-=";
+Plus.       AddOp ::= "+";
+Minus.      AddOp ::= "-";
 
-Times.      OpBin4 ::= "*";
-Div.        OpBin4 ::= "/";
-Mod.        OpBin4 ::= "%";
+Times.      MulOp ::= "*";
+Div.        MulOp ::= "/";
+Mod.        MulOp ::= "%";
 
-Plus.       OpBin3 ::= "+";
-Minus.      OpBin3 ::= "-";
+LTH.        RelOp ::= "<";
+LEQ.        RelOp ::= "<=";
+GTH.        RelOp ::= ">";
+GEQ.        RelOp ::= ">=";
+EQU.        RelOp ::= "==";
+NEQ.        RelOp ::= "!=";
 
-LTH.        OpBin2 ::= "<";
-LEQ.        OpBin2 ::= "<=";
-GTH.        OpBin2 ::= ">";
-GEQ.        OpBin2 ::= ">=";
-EQU.        OpBin2 ::= "==";
-NEQ.        OpBin2 ::= "!=";
-
-And.        OpBin1 ::= "&&";
-
-Or.         OpBin ::= "||";
-
--- tokens --
+-- TOKENS --
 ------------
 
--- comments --
+-- COMMENTS --
 --------------
 
-comment  "//";
-comment  "/*" "*/";
-
+comment    "#" ;
+comment    "//" ;
+comment    "/*" "*/" ;

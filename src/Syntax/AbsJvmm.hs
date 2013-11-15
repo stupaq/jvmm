@@ -57,10 +57,10 @@ data Type =
 
 data Stmt =
    SBlock [Stmt]
- | SAssignOp Ident OpAssign Expr
- | SAssignOpArr Ident Expr OpAssign Expr
- | SAssignOpFld Ident Ident OpAssign Expr
- | SAssignOpThis Ident OpAssign Expr
+ | SAssignOp Ident AssignOp Expr
+ | SAssignOpArr Ident Expr AssignOp Expr
+ | SAssignOpFld Ident Ident AssignOp Expr
+ | SAssignOpThis Ident AssignOp Expr
  | SPostInc Ident
  | SPostDec Ident
  | SEmpty
@@ -106,34 +106,38 @@ data Expr =
  | ENewArr Type Expr
  | ENeg Expr
  | ENot Expr
- | EMul Expr OpBin Expr
- | EAdd Expr OpBin Expr
- | ERel Expr OpBin Expr
- | EAnd Expr OpBin Expr
- | EOr Expr OpBin Expr
+ | EMul Expr MulOp Expr
+ | EAdd Expr AddOp Expr
+ | ERel Expr RelOp Expr
+ | EAnd Expr Expr
+ | EOr Expr Expr
   deriving (Eq,Ord,Show)
 
-data OpAssign =
-   ATimes
+data AssignOp =
+   APlus
+ | AMinus
+ | ATimes
  | ADiv
  | AMod
- | APlus
- | AMinus
   deriving (Eq,Ord,Show)
 
-data OpBin =
+data AddOp =
+   Plus
+ | Minus
+  deriving (Eq,Ord,Show)
+
+data MulOp =
    Times
  | Div
  | Mod
- | Plus
- | Minus
- | LTH
+  deriving (Eq,Ord,Show)
+
+data RelOp =
+   LTH
  | LEQ
  | GTH
  | GEQ
  | EQU
  | NEQ
- | And
- | Or
   deriving (Eq,Ord,Show)
 

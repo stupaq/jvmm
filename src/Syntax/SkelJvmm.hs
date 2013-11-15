@@ -78,10 +78,10 @@ transType x = case x of
 transStmt :: Stmt -> Result
 transStmt x = case x of
   SBlock stmts  -> failure x
-  SAssignOp id opassign expr  -> failure x
-  SAssignOpArr id expr1 opassign2 expr3  -> failure x
-  SAssignOpFld id1 id2 opassign3 expr4  -> failure x
-  SAssignOpThis id opassign expr  -> failure x
+  SAssignOp id assignop expr  -> failure x
+  SAssignOpArr id expr1 assignop2 expr3  -> failure x
+  SAssignOpFld id1 id2 assignop3 expr4  -> failure x
+  SAssignOpThis id assignop expr  -> failure x
   SPostInc id  -> failure x
   SPostDec id  -> failure x
   SEmpty  -> failure x
@@ -129,37 +129,43 @@ transExpr x = case x of
   ENewArr type' expr  -> failure x
   ENeg expr  -> failure x
   ENot expr  -> failure x
-  EMul expr1 opbin2 expr3  -> failure x
-  EAdd expr1 opbin2 expr3  -> failure x
-  ERel expr1 opbin2 expr3  -> failure x
-  EAnd expr1 opbin2 expr3  -> failure x
-  EOr expr1 opbin2 expr3  -> failure x
+  EMul expr1 mulop2 expr3  -> failure x
+  EAdd expr1 addop2 expr3  -> failure x
+  ERel expr1 relop2 expr3  -> failure x
+  EAnd expr1 expr2  -> failure x
+  EOr expr1 expr2  -> failure x
 
 
-transOpAssign :: OpAssign -> Result
-transOpAssign x = case x of
+transAssignOp :: AssignOp -> Result
+transAssignOp x = case x of
+  APlus  -> failure x
+  AMinus  -> failure x
   ATimes  -> failure x
   ADiv  -> failure x
   AMod  -> failure x
-  APlus  -> failure x
-  AMinus  -> failure x
 
 
-transOpBin :: OpBin -> Result
-transOpBin x = case x of
+transAddOp :: AddOp -> Result
+transAddOp x = case x of
+  Plus  -> failure x
+  Minus  -> failure x
+
+
+transMulOp :: MulOp -> Result
+transMulOp x = case x of
   Times  -> failure x
   Div  -> failure x
   Mod  -> failure x
-  Plus  -> failure x
-  Minus  -> failure x
+
+
+transRelOp :: RelOp -> Result
+transRelOp x = case x of
   LTH  -> failure x
   LEQ  -> failure x
   GTH  -> failure x
   GEQ  -> failure x
   EQU  -> failure x
   NEQ  -> failure x
-  And  -> failure x
-  Or  -> failure x
 
 
 

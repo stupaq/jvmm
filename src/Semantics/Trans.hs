@@ -103,7 +103,7 @@ trans program = return $ tProgram program
       I.SThrow expr -> return $ O.SThrow $ tExpr expr
       I.STryCatch stmt1 typ2 id3 stmt4 -> return $ O.STryCatch (tStmt' stmt1) (tType typ2) (tVIdent id3) (tStmt' stmt4)
       where
-      tAssignOp :: I.OpAssign -> I.Expr -> I.Expr -> I.Expr
+      tAssignOp :: I.AssignOp -> I.Expr -> I.Expr -> I.Expr
       tAssignOp opassign expr1 expr2 = case opassign of
         I.APlus -> I.EAdd expr1 I.Plus expr2
         I.AMinus -> I.EAdd expr1 I.Minus expr2
@@ -155,31 +155,32 @@ trans program = return $ tProgram program
       I.ENewObj typ -> O.ENewObj $ tType typ
       I.ENeg expr -> O.EUnary O.TUnknown O.OuNeg (tExpr expr)
       I.ENot expr -> O.EUnary O.TUnknown O.OuNot (tExpr expr)
-      I.EMul expr1 opbin2 expr3 -> bin opbin2 expr1 expr3
-      I.EAdd expr1 opbin2 expr3 -> bin opbin2 expr1 expr3
-      I.ERel expr1 opbin2 expr3 -> bin opbin2 expr1 expr3
-      I.EAnd expr1 opbin2 expr3 -> bin opbin2 expr1 expr3
-      I.EOr expr1 opbin2 expr3 -> bin opbin2 expr1 expr3
+      I.EMul expr1 opbin2 expr3 -> O.EBinary O.TUnknown (tMulOp opbin2) (tExpr expr1) (tExpr expr3)
+      I.EAdd expr1 opbin2 expr3 -> O.EBinary O.TUnknown (tAddOp opbin2) (tExpr expr1) (tExpr expr3)
+      I.ERel expr1 opbin2 expr3 -> O.EBinary O.TUnknown (tRelOp opbin2) (tExpr expr1) (tExpr expr3)
+      I.EAnd expr1 expr3 -> O.EBinary O.TUnknown O.ObAnd (tExpr expr1) (tExpr expr3)
+      I.EOr expr1 expr3 -> O.EBinary O.TUnknown O.ObOr (tExpr expr1) (tExpr expr3)
       I.EThis -> O.EThis
-      where
-        bin :: I.OpBin -> I.Expr -> I.Expr -> O.Expr
-        bin op expr1 expr2 = O.EBinary O.TUnknown (tOpBin op) (tExpr expr1) (tExpr expr2)
 
-    tOpBin :: I.OpBin -> O.OpBin
-    tOpBin x = case x of
+    tMulOp :: I.MulOp -> O.OpBin
+    tMulOp x = case x of
       I.Times -> O.ObTimes
       I.Div -> O.ObDiv
       I.Mod -> O.ObMod
+
+    tAddOp :: I.AddOp -> O.OpBin
+    tAddOp x = case x of
       I.Plus -> O.ObPlus
       I.Minus -> O.ObMinus
+
+    tRelOp :: I.RelOp -> O.OpBin
+    tRelOp x = case x of
       I.LTH -> O.ObLTH
       I.LEQ -> O.ObLEQ
       I.GTH -> O.ObGTH
       I.GEQ -> O.ObGEQ
       I.EQU -> O.ObEQU
       I.NEQ -> O.ObNEQ
-      I.And -> O.ObAnd
-      I.Or -> O.ObOr
 
     tType :: I.Type -> O.Type
     tType x = case x of
