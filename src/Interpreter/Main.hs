@@ -1,6 +1,6 @@
 module Main where
 
-import System.IO (stderr, hPutStrLn)
+import System.IO (stderr, stdout, hPutStrLn)
 import System.Exit (exitSuccess, exitFailure)
 import System.Environment (getArgs, getProgName)
 
@@ -25,14 +25,24 @@ import Semantics.Types
 import Jvmm.Virtuals
 --import Semantics.Runtime
 
--- WORKFLOW --
---------------
-parse :: String -> ErrorInfoT Identity Program
+-- WORKFLOWS --
+---------------
+type Workflow a = String -> ErrorInfoT Identity a
+
+-- Performs parsing of input program
+parse :: Workflow Program
 parse str =
   let ts = myLexer str
   in case pProgram ts of
     Bad err -> throwError err
     Ok tree -> return tree
+
+-- Performs all static checking and semantics analysis
+check :: Workflow ClassHierarchy
+check str = parse str >>= trans >>= hierarchy >>= scope >>= typing
+
+-- Defaault workflow
+deflt = check
 
 -- OUTPUT HELPERS --
 --------------------
@@ -46,8 +56,32 @@ printl v s = do
 
 -- MAIN --
 ----------
-runFile, parseFile :: FilePath -> (ReaderT Verbosity IO) ()
+processFile :: Workflow a -> FilePath -> (ReaderT Verbosity IO) ()
+processFile workflow f = do
+  str <- lift $ readFile f
+  case runErrorInfoM $ workflow str of
+    Left err -> do
+      printl Error $ "ERROR\n"
+      printl Error $ err
+      lift exitFailure
+    Right _ -> do
+      printl Warn $ "OK\n"
+      lift exitSuccess
 
+main :: IO ()
+main = do
+  args <- getArgs
+  case take 2 args of
+    "-pv":f:[] -> runReaderT (processFile parse f) Debug
+    "-p":f:[] -> runReaderT (processFile parse f) Info
+    "-cv":f:[] -> runReaderT (processFile check f) Debug
+    "-c":f:[] -> runReaderT (processFile check f) Info
+    "-v":f:[] -> runReaderT (processFile deflt f) Debug
+    f:[] -> runReaderT (processFile deflt f) Info
+    _ -> hPutStrLn stderr "ERROR\n\nbad options format"
+
+-- FIXME remove this
+runFile :: FilePath -> (ReaderT Verbosity IO) ()
 runFile f = do
   str <- lift $ readFile f
   case runErrorInfoM $ parse str >>= trans >>= hierarchy >>= scope >>= typing >>= virtuals of
@@ -58,23 +92,3 @@ runFile f = do
       printl Warn $ "OK\n"
       -- FIXME
       printl Info $ Pretty.ppShow eunit
-
-parseFile f = do
-  str <- lift $ readFile f
-  case runErrorInfoM $ parse str of
-    Left err -> do
-      printl Error $ "ERROR\n"
-      printl Error $ err
-    Right program -> do
-      printl Warn $ "OK\n"
-      printl Debug $ show program
-
-main :: IO ()
-main = do
-  args <- getArgs
-  case take 2 args of
-    "-p":f:[] -> runReaderT (parseFile f) Info
-    "-v":f:[] -> runReaderT (runFile f) Debug
-    f:_ -> runReaderT (runFile f) Info
-    _ -> hPutStrLn stderr "ERROR\n\nbad options format"
-
