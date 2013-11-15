@@ -2,7 +2,6 @@ module Jvmm.Hierarchy where
 import Jvmm.Hierarchy.Internal
 import Jvmm.Hierarchy.Output
 
-import Control.Monad
 import Control.Monad.Identity
 
 import qualified Jvmm.Errors as Err

@@ -1,7 +1,6 @@
-module Jvmm.Scope (scope, tagGlobal, tempIdent) where
+module Jvmm.Scope where
 import Jvmm.Scope.Internal
 
-import Control.Monad
 import Control.Monad.Identity
 
 import Jvmm.Errors (ErrorInfoT)
