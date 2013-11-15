@@ -198,14 +198,16 @@ instance Print Item where
 
 instance Print Expr where
   prt i e = case e of
-   EArray expr0 expr -> prPrec i 6 (concatD [prt 7 expr0 , doc (showString "[") , prt 0 expr , doc (showString "]")])
-   EMethod expr id exprs -> prPrec i 6 (concatD [prt 7 expr , doc (showString ".") , prt 0 id , doc (showString "(") , prt 0 exprs , doc (showString ")")])
-   EField expr id -> prPrec i 6 (concatD [prt 7 expr , doc (showString ".") , prt 0 id])
+   EArrayE expr0 expr -> prPrec i 6 (concatD [prt 7 expr0 , doc (showString "[") , prt 0 expr , doc (showString "]")])
+   EMethodE expr id exprs -> prPrec i 6 (concatD [prt 7 expr , doc (showString ".") , prt 0 id , doc (showString "(") , prt 0 exprs , doc (showString ")")])
+   EFieldE expr id -> prPrec i 6 (concatD [prt 7 expr , doc (showString ".") , prt 0 id])
    EArrayI id expr -> prPrec i 6 (concatD [prt 0 id , doc (showString "[") , prt 0 expr , doc (showString "]")])
    EMethodI id0 id exprs -> prPrec i 6 (concatD [prt 0 id0 , doc (showString ".") , prt 0 id , doc (showString "(") , prt 0 exprs , doc (showString ")")])
    EFieldI id0 id -> prPrec i 6 (concatD [prt 0 id0 , doc (showString ".") , prt 0 id])
    ENewObject type' -> prPrec i 6 (concatD [doc (showString "new") , prt 0 type'])
    ENewArray type' expr -> prPrec i 6 (concatD [doc (showString "new") , prt 0 type' , doc (showString "[") , prt 0 expr , doc (showString "]")])
+   EMethodIT id exprs -> prPrec i 6 (concatD [doc (showString "self") , doc (showString ".") , prt 0 id , doc (showString "(") , prt 0 exprs , doc (showString ")")])
+   EFieldIT id -> prPrec i 6 (concatD [doc (showString "self") , doc (showString ".") , prt 0 id])
    EThis  -> prPrec i 6 (concatD [doc (showString "self")])
    ENullT type' -> prPrec i 6 (concatD [doc (showString "(") , prt 0 type' , doc (showString ")null")])
    ENull  -> prPrec i 6 (concatD [doc (showString "null")])

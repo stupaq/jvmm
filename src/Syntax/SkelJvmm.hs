@@ -109,14 +109,16 @@ transItem x = case x of
 
 transExpr :: Expr -> Result
 transExpr x = case x of
-  EArray expr1 expr2  -> failure x
-  EMethod expr id exprs  -> failure x
-  EField expr id  -> failure x
+  EArrayE expr1 expr2  -> failure x
+  EMethodE expr id exprs  -> failure x
+  EFieldE expr id  -> failure x
   EArrayI id expr  -> failure x
   EMethodI id1 id2 exprs3  -> failure x
   EFieldI id1 id2  -> failure x
   ENewObject type'  -> failure x
   ENewArray type' expr  -> failure x
+  EMethodIT id exprs  -> failure x
+  EFieldIT id  -> failure x
   EThis  -> failure x
   ENullT type'  -> failure x
   ENull  -> failure x

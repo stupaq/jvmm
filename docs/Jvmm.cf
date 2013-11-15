@@ -101,11 +101,11 @@ Init.           Item ::= Ident "=" Expr;
 -----------------
 
 -- EXTENTIONS/
-EArray.     Expr6 ::= Expr7 "[" Expr "]";
+EArrayE.    Expr6 ::= Expr7 "[" Expr "]";
 
-EMethod.    Expr6 ::= Expr7 "." Ident "(" [Expr] ")";
+EMethodE.   Expr6 ::= Expr7 "." Ident "(" [Expr] ")";
 
-EField.     Expr6 ::= Expr7 "." Ident;
+EFieldE.    Expr6 ::= Expr7 "." Ident;
 
 EArrayI.    Expr6 ::= Ident "[" Expr "]";
 
@@ -116,6 +116,10 @@ EFieldI.    Expr6 ::= Ident "." Ident;
 ENewObject. Expr6 ::= "new" Type;
 
 ENewArray.  Expr6 ::= "new" Type "[" Expr "]";
+
+EMethodIT.  Expr6 ::= "self" "." Ident "(" [Expr] ")";
+
+EFieldIT.   Expr6 ::= "self" "." Ident;
 
 EThis.      Expr6 ::= "self";
 

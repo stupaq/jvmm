@@ -72,9 +72,9 @@ trans program = return $ tProgram program
       I.SDeclVar typ items -> concat $ map (tItem typ) items
       I.SBlock stmts ->  return $ tStmts stmts
       I.SAssignOp id opassign expr -> return $ O.SAssign (tVIdent id) $ tExpr $ tAssignOp opassign (I.EVar id) expr
-      I.SAssignOpArr id expr1 opassign2 expr3 ->  return $ O.SAssignArr (tVIdent id) (tExpr expr1) $ tExpr $ tAssignOp opassign2 (I.EArray (I.EVar id) expr1) expr3
-      I.SAssignOpFld id1 id2 opassign3 expr4 ->  return $ O.SAssignFld (tVIdent id1) (tVIdent id2) $ tExpr $ tAssignOp opassign3 (I.EField (I.EVar id1) id2) expr4
-      I.SAssignOpThis id2 opassign3 expr4 -> return $ O.SAssignFld O.IThis (tVIdent id2) $ tExpr $ tAssignOp opassign3 (I.EField I.EThis id2) expr4
+      I.SAssignOpArr id expr1 opassign2 expr3 ->  return $ O.SAssignArr (tVIdent id) (tExpr expr1) $ tExpr $ tAssignOp opassign2 (I.EArrayE (I.EVar id) expr1) expr3
+      I.SAssignOpFld id1 id2 opassign3 expr4 ->  return $ O.SAssignFld (tVIdent id1) (tVIdent id2) $ tExpr $ tAssignOp opassign3 (I.EFieldE (I.EVar id1) id2) expr4
+      I.SAssignOpThis id2 opassign3 expr4 -> return $ O.SAssignFld O.IThis (tVIdent id2) $ tExpr $ tAssignOp opassign3 (I.EFieldE I.EThis id2) expr4
       I.SPostInc id -> tStmt $ I.SAssignOp id I.APlus (I.ELitInt 1)
       I.SPostDec id -> tStmt $ I.SAssignOp id I.AMinus (I.ELitInt 1)
       I.SEmpty -> return O.SEmpty
@@ -93,10 +93,10 @@ trans program = return $ tProgram program
             iditer = tempIdent id "iter"
         in tStmt $ I.SBlock $ [
           I.SDeclVar (I.TArray I.TInt) [I.Init idarr expr],
-          I.SDeclVar I.TInt [I.Init idlength (I.EField (I.EVar idarr) (I.Ident "length")),
+          I.SDeclVar I.TInt [I.Init idlength (I.EFieldE (I.EVar idarr) (I.Ident "length")),
           I.Init iditer (I.ELitInt 0)],
           I.SWhile (I.ERel (I.EVar iditer) I.LTH (I.EVar idlength)) $ I.SBlock [
-            I.SDeclVar typ [I.Init id (I.EArray (I.EVar idarr) (I.EVar iditer))],
+            I.SDeclVar typ [I.Init id (I.EArrayE (I.EVar idarr) (I.EVar iditer))],
             stmt,
             I.SPostInc iditer]]
       I.SExpr expr -> return $ O.SExpr $ tExpr expr
@@ -144,12 +144,14 @@ trans program = return $ tProgram program
       I.ELitChar c -> O.ELitChar c
       I.ENull -> O.ENull
       I.ENullT typ -> O.ENull
-      I.EArray expr1 expr2 -> O.EAccessArr (tExpr expr1) (tExpr expr2)
-      I.EMethod expr id exprs -> O.EAccessFn (tExpr expr) (tFIdent id) (map tExpr exprs)
-      I.EField expr id -> O.EAccessVar (tExpr expr) (tVIdent id)
+      I.EArrayE expr1 expr2 -> O.EAccessArr (tExpr expr1) (tExpr expr2)
+      I.EMethodE expr id exprs -> O.EAccessFn (tExpr expr) (tFIdent id) (map tExpr exprs)
+      I.EFieldE expr id -> O.EAccessVar (tExpr expr) (tVIdent id)
       I.EArrayI ide expr2 -> O.EAccessArr (tExpr $ I.EVar ide) (tExpr expr2)  -- GRAMMAR IRREGULARITY
       I.EMethodI ide id exprs -> O.EAccessFn (tExpr $ I.EVar ide) (tFIdent id) (map tExpr exprs)  -- GRAMMAR IRREGULARITY
       I.EFieldI ide id -> O.EAccessVar (tExpr $ I.EVar ide) (tVIdent id)  -- GRAMMAR IRREGULARITY
+      I.EFieldIT id -> O.EAccessVar O.EThis (tVIdent id)
+      I.EMethodIT id exprs -> O.EAccessFn O.EThis (tFIdent id) (map tExpr exprs)
       I.EApp id exprs -> O.EAccessFn O.EThis (tFIdent id) (map tExpr exprs)
       I.ENewArray typ expr -> O.ENewArr (tType typ) (tExpr expr)
       I.ENewObject typ -> O.ENewObj $ tType typ

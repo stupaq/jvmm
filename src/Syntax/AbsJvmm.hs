@@ -86,14 +86,16 @@ data Item =
   deriving (Eq,Ord,Show)
 
 data Expr =
-   EArray Expr Expr
- | EMethod Expr Ident [Expr]
- | EField Expr Ident
+   EArrayE Expr Expr
+ | EMethodE Expr Ident [Expr]
+ | EFieldE Expr Ident
  | EArrayI Ident Expr
  | EMethodI Ident Ident [Expr]
  | EFieldI Ident Ident
  | ENewObject Type
  | ENewArray Type Expr
+ | EMethodIT Ident [Expr]
+ | EFieldIT Ident
  | EThis
  | ENullT Type
  | ENull
