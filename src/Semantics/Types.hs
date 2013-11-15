@@ -112,7 +112,9 @@ returns typ = do
     _ -> error $ Err.unusedBranch ftyp
 
 declare :: UIdent -> Type -> TypeM a -> TypeM a
-declare uid typ = local (\env -> env { typeenvIdents = Map.insert uid typ (typeenvIdents env) })
+declare uid typ action = do
+  notAVoid typ `rethrow` Err.voidVar uid
+  local (\env -> env { typeenvIdents = Map.insert uid typ (typeenvIdents env) }) action
 
 this :: TypeM Type
 this = asks typeenvThis >>= \x -> case x of
@@ -125,6 +127,11 @@ super typ = (asks typeenvSuper >>= lookupM typ) `rethrow` Err.noSuperType typ
 enterFunction, enterClass :: Type -> TypeM a -> TypeM a
 enterFunction x = local $ \env -> env { typeenvFunction = Just x }
 enterClass x = local $ \env -> env { typeenvThis = Just x }
+
+-- COMMON ASSERTIONS --
+-----------------------
+notAVoid :: Type -> TypeM ()
+notAVoid typ = when (typ == TVoid) $ throwError noMsg
 
 -- TYPE ARITHMETIC --
 ---------------------
@@ -184,13 +191,20 @@ typing classes = do
 funH :: ClassHierarchy -> TypeM ClassHierarchy
 funH = Traversable.mapM $ \clazz@Class { classMethods = methods, classType = typ} ->
   enterClass typ $ do
+    fields <- mapM funF (classFields clazz)
     methods <- mapM funM (classMethods clazz)
-    return $ clazz { classMethods = methods }
+    return $ clazz { classMethods = methods, classFields = fields }
+
+funF :: Field -> TypeM Field
+funF field@Field { fieldType = typ, fieldIdent = id } = do
+  notAVoid typ `rethrow` Err.voidField id
+  return field
 
 funM :: Method -> TypeM Method
 funM method@Method { methodType = typ, methodBody = stmt, methodArgs = argumentIdents } = do
   checkEntrypoint method
   let TFunc _ argumentTypes exceptionTypes = typ
+  forM_ argumentTypes $ \argt -> notAVoid argt `rethrow` Err.voidArg
   let exceptionsEnv = applyAndCompose catches exceptionTypes
   let argumentsEnv = applyAndCompose (\(typ, id) -> declare id typ) $ List.zip argumentTypes argumentIdents
   exceptionsEnv . argumentsEnv . enterFunction typ $ do
@@ -227,7 +241,7 @@ funS x = case x of
     return $ SAssignFld ido idf expr'
   SReturn expr -> do
     (expr', etyp) <- funE expr
-    when (etyp == TVoid) $ throwError Err.voidNotIgnored
+    notAVoid etyp `rethrow` Err.voidNotIgnored
     returns etyp
     return $ SReturn expr'
   SIf expr stmt -> do
@@ -298,7 +312,7 @@ funE x = case x of
     typ <- typeof' etyp id
     return (EAccessVar expr' id, typ)
   ENewArr typ expr -> do
-    when (typ == TVoid) $ throwError Err.voidNotIgnored
+    notAVoid typ `rethrow` Err.voidNotIgnored
     (expr', etyp) <- funE expr
     TInt =| etyp
     return (ENewArr typ expr', TArray typ)

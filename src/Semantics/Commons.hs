@@ -6,6 +6,8 @@ import Data.Monoid
 import Data.Foldable
 import Data.Traversable
 
+import qualified Text.Show.Pretty as Pretty
+
 -- GENERAL --
 -------------
 applyAndCompose :: (b -> a -> a) -> [b] -> a -> a
@@ -24,4 +26,7 @@ instance Foldable Hierarchy where
 instance Traversable Hierarchy where
   mapM f (Node v children) =
     liftM2 Node (f v) (Prelude.mapM (Data.Traversable.mapM f) children)
+
+errorDebug :: (Show a) => a -> b
+errorDebug = error . Pretty.ppShow
 
