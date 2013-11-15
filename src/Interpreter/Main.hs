@@ -16,13 +16,13 @@ import Syntax.ParJvmm (myLexer, pProgram)
 import Syntax.PrintJvmm (printTree)
 import Syntax.ErrM (Err(..))
 
-import Semantics.Errors
-import Semantics.Trans
-import Semantics.APTree
-import Semantics.Hierarchy
+import Jvmm.Errors
+import Jvmm.Trans
+import Jvmm.Trans.Output
+import Jvmm.Hierarchy
 import Jvmm.Scope
-import Semantics.Types
-import Jvmm.Virtuals
+import Jvmm.Types
+--import Semantics.Virtuals
 --import Semantics.Runtime
 
 -- WORKFLOWS --
@@ -80,15 +80,3 @@ main = do
     f:[] -> runReaderT (processFile deflt f) Info
     _ -> hPutStrLn stderr "ERROR\n\nbad options format"
 
--- FIXME remove this
-runFile :: FilePath -> (ReaderT Verbosity IO) ()
-runFile f = do
-  str <- lift $ readFile f
-  case runErrorInfoM $ parse str >>= trans >>= hierarchy >>= scope >>= typing >>= virtuals of
-    Left err -> do
-      printl Error $ "ERROR\n"
-      printl Error $ err
-    Right eunit -> do
-      printl Warn $ "OK\n"
-      -- FIXME
-      printl Info $ Pretty.ppShow eunit

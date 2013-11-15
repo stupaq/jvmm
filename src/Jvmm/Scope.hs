@@ -1,12 +1,11 @@
 module Jvmm.Scope (scope, tagGlobal, tempIdent) where
-
 import Jvmm.Scope.Internal
 
 import Control.Monad
 import Control.Monad.Identity
 
-import Semantics.APTree
-import Semantics.Errors (ErrorInfoT)
+import Jvmm.Errors (ErrorInfoT)
+import Jvmm.Trans.Output
 
 -- EXPORTED HELPERS --
 ----------------------

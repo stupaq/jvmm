@@ -11,9 +11,9 @@ import qualified Data.List as List
 import qualified Data.Traversable as Traversable
 
 import Semantics.Commons
-import qualified Semantics.Errors as Err
-import Semantics.Errors (rethrow, ErrorInfoT, runErrorInfoM)
-import Semantics.APTree
+import qualified Jvmm.Errors as Err
+import Jvmm.Errors (rethrow, ErrorInfoT, runErrorInfoM)
+import Jvmm.Trans.Output
 
 -- SCOPE REPRESENTATION --
 --------------------------

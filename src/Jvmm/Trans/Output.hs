@@ -1,14 +1,12 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
-module Semantics.APTree where
+module Jvmm.Trans.Output where
 
-import Prelude hiding (id)
 import Control.Monad
 import Control.Monad.Identity
-import Data.List (partition, find)
 
 import Semantics.Commons
-import Semantics.Errors (ErrorInfoT, runErrorInfoM)
+import Jvmm.Errors (ErrorInfoT, runErrorInfoM)
 
 -- This module provides internal representation of abstract syntax tree that
 -- carries error reporting metadata, type information and many more.

@@ -1,15 +1,14 @@
-module Semantics.Trans (trans) where
+module Jvmm.Trans (trans) where
+import qualified Jvmm.Trans.Output as O
 
-import Prelude hiding (id)
 import Control.Monad
 import Control.Monad.Identity
 
 import qualified Syntax.AbsJvmm as I
 
-import Semantics.Errors (ErrorInfoT)
-import qualified Semantics.APTree as O
-import Semantics.Builtins (buildObjectClass)
-import Semantics.Hierarchy (prepareClassDiff)
+import Jvmm.Errors (ErrorInfoT)
+import Jvmm.Builtins (buildObjectClass)
+import Jvmm.Hierarchy (prepareClassDiff)
 
 -- Creates variable-associated identifier from given one (for temporary and iteration variables).
 -- Only variable-associated identifiers derived from the same variable and with the same context

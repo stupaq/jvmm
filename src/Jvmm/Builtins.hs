@@ -1,8 +1,6 @@
-module Semantics.Builtins where
+module Jvmm.Builtins where
 
-import Prelude hiding (id)
-
-import Semantics.APTree
+import Jvmm.Trans.Output
 import qualified Jvmm.Scope as Scope
 
 -- HIERARCHY --

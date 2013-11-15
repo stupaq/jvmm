@@ -1,6 +1,4 @@
-module Semantics.Types (typing) where
-
-import Prelude hiding (id)
+module Jvmm.Types (typing) where
 
 import Control.Monad.Identity
 import Control.Monad.Error
@@ -13,10 +11,10 @@ import qualified Data.List as List
 import qualified Data.Traversable as Traversable
 
 import Semantics.Commons
-import qualified Semantics.Errors as Err
-import Semantics.Builtins
-import Semantics.Errors (rethrow, ErrorInfoT, runErrorInfoM)
-import Semantics.APTree
+import qualified Jvmm.Errors as Err
+import Jvmm.Errors (rethrow, ErrorInfoT, runErrorInfoM)
+import Jvmm.Builtins
+import Jvmm.Trans.Output
 import qualified Jvmm.Scope as Scope
 
 -- TYPE REPRESENTATION --

@@ -1,4 +1,4 @@
-module Jvmm.Virtuals (virtuals) where
+module Semantics.Virtuals (virtuals) where
 
 import Control.Monad
 import Control.Monad.Identity

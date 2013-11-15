@@ -1,9 +1,7 @@
-module Semantics.Errors where
+module Jvmm.Errors where
 
-import Prelude hiding (id)
 import Control.Monad.Identity
 import Control.Monad.Error
-import qualified Data.List as List
 
 -- We might want to carry more structure in errors
 -- TODO switch all code to these classes
