@@ -142,9 +142,12 @@ EApp.       Expr6 ::= Ident "(" [Expr] ")";
 
 EString.    Expr6 ::= String;
 
-ENeg.       Expr5 ::= "-" Expr6;
+-- Original grammary says that `Expr5 ::= "-" Expr6`, this rule prohibits many not-so-useful
+-- expressions like `- -1`. Being a total fan of weird stuff, I have changed that.
+ENeg.       Expr5 ::= "-" Expr5;
 
-ENot.       Expr5 ::= "!" Expr6;
+-- See comment on previous rule.
+ENot.       Expr5 ::= "!" Expr5;
 
 EMul.       Expr4 ::= Expr4 MulOp Expr5;
 
@@ -171,17 +174,25 @@ ADiv.       AssignOp ::= "/=";
 AMod.       AssignOp ::= "%=";
 
 Plus.       AddOp ::= "+";
+
 Minus.      AddOp ::= "-";
 
 Times.      MulOp ::= "*";
+
 Div.        MulOp ::= "/";
+
 Mod.        MulOp ::= "%";
 
 LTH.        RelOp ::= "<";
+
 LEQ.        RelOp ::= "<=";
+
 GTH.        RelOp ::= ">";
+
 GEQ.        RelOp ::= ">=";
+
 EQU.        RelOp ::= "==";
+
 NEQ.        RelOp ::= "!=";
 
 -- TOKENS --
@@ -191,5 +202,8 @@ NEQ.        RelOp ::= "!=";
 --------------
 
 comment    "#" ;
+
 comment    "//" ;
+
 comment    "/*" "*/" ;
+
