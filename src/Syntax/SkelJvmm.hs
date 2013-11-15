@@ -35,15 +35,15 @@ transFunction x = case x of
   Function type' id arguments exceptions stmts  -> failure x
 
 
+transArgument :: Argument -> Result
+transArgument x = case x of
+  Argument type' id  -> failure x
+
+
 transExceptions :: Exceptions -> Result
 transExceptions x = case x of
   NoExceptions  -> failure x
   Exceptions types  -> failure x
-
-
-transArgument :: Argument -> Result
-transArgument x = case x of
-  Argument type' id  -> failure x
 
 
 transClass :: Class -> Result
@@ -65,30 +65,33 @@ transExtends x = case x of
 
 transType :: Type -> Result
 transType x = case x of
-  TVoid  -> failure x
-  TInt  -> failure x
-  TChar  -> failure x
-  TBool  -> failure x
-  TString  -> failure x
   TObject  -> failure x
   TUser id  -> failure x
   TArray type'  -> failure x
+  TChar  -> failure x
+  TInt  -> failure x
+  TString  -> failure x
+  TBool  -> failure x
+  TVoid  -> failure x
 
 
 transStmt :: Stmt -> Result
 transStmt x = case x of
+  SThrow expr  -> failure x
+  STryCatch stmt1 type'2 id3 stmt4  -> failure x
   SBlock stmts  -> failure x
-  SAssignOp id assignop expr  -> failure x
-  SAssignOpArr id expr1 assignop2 expr3  -> failure x
-  SAssignOpFld id1 id2 assignop3 expr4  -> failure x
-  SAssignOpThis id assignop expr  -> failure x
-  SPostInc id  -> failure x
-  SPostDec id  -> failure x
   SEmpty  -> failure x
+  SDeclVar type' items  -> failure x
   SAssign id expr  -> failure x
   SAssignArr id expr1 expr2  -> failure x
   SAssignFld id1 id2 expr3  -> failure x
   SAssignThis id expr  -> failure x
+  SPostInc id  -> failure x
+  SPostDec id  -> failure x
+  SAssignOp id assignop expr  -> failure x
+  SAssignOpArr id expr1 assignop2 expr3  -> failure x
+  SAssignOpFld id1 id2 assignop3 expr4  -> failure x
+  SAssignOpThis id assignop expr  -> failure x
   SReturn expr  -> failure x
   SReturnV  -> failure x
   SIf expr stmt  -> failure x
@@ -96,9 +99,6 @@ transStmt x = case x of
   SWhile expr stmt  -> failure x
   SForeach type' id expr stmt  -> failure x
   SExpr expr  -> failure x
-  SThrow expr  -> failure x
-  STryCatch stmt1 type'2 id3 stmt4  -> failure x
-  SDeclVar type' items  -> failure x
 
 
 transItem :: Item -> Result

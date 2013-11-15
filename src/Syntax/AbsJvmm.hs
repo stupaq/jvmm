@@ -21,13 +21,13 @@ data Function =
    Function Type Ident [Argument] Exceptions [Stmt]
   deriving (Eq,Ord,Show)
 
+data Argument =
+   Argument Type Ident
+  deriving (Eq,Ord,Show)
+
 data Exceptions =
    NoExceptions
  | Exceptions [Type]
-  deriving (Eq,Ord,Show)
-
-data Argument =
-   Argument Type Ident
   deriving (Eq,Ord,Show)
 
 data Class =
@@ -45,29 +45,32 @@ data Extends =
   deriving (Eq,Ord,Show)
 
 data Type =
-   TVoid
- | TInt
- | TChar
- | TBool
- | TString
- | TObject
+   TObject
  | TUser Ident
  | TArray Type
+ | TChar
+ | TInt
+ | TString
+ | TBool
+ | TVoid
   deriving (Eq,Ord,Show)
 
 data Stmt =
-   SBlock [Stmt]
- | SAssignOp Ident AssignOp Expr
- | SAssignOpArr Ident Expr AssignOp Expr
- | SAssignOpFld Ident Ident AssignOp Expr
- | SAssignOpThis Ident AssignOp Expr
- | SPostInc Ident
- | SPostDec Ident
+   SThrow Expr
+ | STryCatch Stmt Type Ident Stmt
+ | SBlock [Stmt]
  | SEmpty
+ | SDeclVar Type [Item]
  | SAssign Ident Expr
  | SAssignArr Ident Expr Expr
  | SAssignFld Ident Ident Expr
  | SAssignThis Ident Expr
+ | SPostInc Ident
+ | SPostDec Ident
+ | SAssignOp Ident AssignOp Expr
+ | SAssignOpArr Ident Expr AssignOp Expr
+ | SAssignOpFld Ident Ident AssignOp Expr
+ | SAssignOpThis Ident AssignOp Expr
  | SReturn Expr
  | SReturnV
  | SIf Expr Stmt
@@ -75,9 +78,6 @@ data Stmt =
  | SWhile Expr Stmt
  | SForeach Type Ident Expr Stmt
  | SExpr Expr
- | SThrow Expr
- | STryCatch Stmt Type Ident Stmt
- | SDeclVar Type [Item]
   deriving (Eq,Ord,Show)
 
 data Item =

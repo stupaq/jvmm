@@ -107,12 +107,6 @@ instance Print Function where
    Function type' id arguments exceptions stmts -> prPrec i 0 (concatD [prt 0 type' , prt 0 id , doc (showString "(") , prt 0 arguments , doc (showString ")") , prt 0 exceptions , doc (showString "{") , prt 0 stmts , doc (showString "}")])
 
 
-instance Print Exceptions where
-  prt i e = case e of
-   NoExceptions  -> prPrec i 0 (concatD [])
-   Exceptions types -> prPrec i 0 (concatD [doc (showString "throws") , prt 0 types])
-
-
 instance Print Argument where
   prt i e = case e of
    Argument type' id -> prPrec i 0 (concatD [prt 0 type' , prt 0 id])
@@ -121,6 +115,12 @@ instance Print Argument where
    [] -> (concatD [])
    [x] -> (concatD [prt 0 x])
    x:xs -> (concatD [prt 0 x , doc (showString ",") , prt 0 xs])
+
+instance Print Exceptions where
+  prt i e = case e of
+   NoExceptions  -> prPrec i 0 (concatD [])
+   Exceptions types -> prPrec i 0 (concatD [doc (showString "throws") , prt 0 types])
+
 
 instance Print Class where
   prt i e = case e of
@@ -144,14 +144,14 @@ instance Print Extends where
 
 instance Print Type where
   prt i e = case e of
-   TVoid  -> prPrec i 0 (concatD [doc (showString "void")])
-   TInt  -> prPrec i 0 (concatD [doc (showString "int")])
-   TChar  -> prPrec i 0 (concatD [doc (showString "char")])
-   TBool  -> prPrec i 0 (concatD [doc (showString "boolean")])
-   TString  -> prPrec i 0 (concatD [doc (showString "string")])
    TObject  -> prPrec i 0 (concatD [doc (showString "Object")])
    TUser id -> prPrec i 0 (concatD [prt 0 id])
    TArray type' -> prPrec i 0 (concatD [prt 0 type' , doc (showString "[]")])
+   TChar  -> prPrec i 0 (concatD [doc (showString "char")])
+   TInt  -> prPrec i 0 (concatD [doc (showString "int")])
+   TString  -> prPrec i 0 (concatD [doc (showString "string")])
+   TBool  -> prPrec i 0 (concatD [doc (showString "boolean")])
+   TVoid  -> prPrec i 0 (concatD [doc (showString "void")])
 
   prtList es = case es of
    [] -> (concatD [doc (showString "")])
@@ -160,18 +160,21 @@ instance Print Type where
 
 instance Print Stmt where
   prt i e = case e of
+   SThrow expr -> prPrec i 0 (concatD [doc (showString "throw") , prt 0 expr , doc (showString ";")])
+   STryCatch stmt0 type' id stmt -> prPrec i 0 (concatD [doc (showString "try") , prt 0 stmt0 , doc (showString "catch") , doc (showString "(") , prt 0 type' , prt 0 id , doc (showString ")") , prt 0 stmt])
    SBlock stmts -> prPrec i 0 (concatD [doc (showString "{") , prt 0 stmts , doc (showString "}")])
-   SAssignOp id assignop expr -> prPrec i 0 (concatD [prt 0 id , prt 0 assignop , prt 0 expr , doc (showString ";")])
-   SAssignOpArr id expr0 assignop expr -> prPrec i 0 (concatD [prt 0 id , doc (showString "[") , prt 0 expr0 , doc (showString "]") , prt 0 assignop , prt 0 expr , doc (showString ";")])
-   SAssignOpFld id0 id assignop expr -> prPrec i 0 (concatD [prt 0 id0 , doc (showString ".") , prt 0 id , prt 0 assignop , prt 0 expr , doc (showString ";")])
-   SAssignOpThis id assignop expr -> prPrec i 0 (concatD [doc (showString "self") , doc (showString ".") , prt 0 id , prt 0 assignop , prt 0 expr , doc (showString ";")])
-   SPostInc id -> prPrec i 0 (concatD [prt 0 id , doc (showString "++") , doc (showString ";")])
-   SPostDec id -> prPrec i 0 (concatD [prt 0 id , doc (showString "--") , doc (showString ";")])
    SEmpty  -> prPrec i 0 (concatD [doc (showString ";")])
+   SDeclVar type' items -> prPrec i 0 (concatD [prt 0 type' , prt 0 items , doc (showString ";")])
    SAssign id expr -> prPrec i 0 (concatD [prt 0 id , doc (showString "=") , prt 0 expr , doc (showString ";")])
    SAssignArr id expr0 expr -> prPrec i 0 (concatD [prt 0 id , doc (showString "[") , prt 0 expr0 , doc (showString "]") , doc (showString "=") , prt 0 expr , doc (showString ";")])
    SAssignFld id0 id expr -> prPrec i 0 (concatD [prt 0 id0 , doc (showString ".") , prt 0 id , doc (showString "=") , prt 0 expr , doc (showString ";")])
    SAssignThis id expr -> prPrec i 0 (concatD [doc (showString "self") , doc (showString ".") , prt 0 id , doc (showString "=") , prt 0 expr , doc (showString ";")])
+   SPostInc id -> prPrec i 0 (concatD [prt 0 id , doc (showString "++") , doc (showString ";")])
+   SPostDec id -> prPrec i 0 (concatD [prt 0 id , doc (showString "--") , doc (showString ";")])
+   SAssignOp id assignop expr -> prPrec i 0 (concatD [prt 0 id , prt 0 assignop , prt 0 expr , doc (showString ";")])
+   SAssignOpArr id expr0 assignop expr -> prPrec i 0 (concatD [prt 0 id , doc (showString "[") , prt 0 expr0 , doc (showString "]") , prt 0 assignop , prt 0 expr , doc (showString ";")])
+   SAssignOpFld id0 id assignop expr -> prPrec i 0 (concatD [prt 0 id0 , doc (showString ".") , prt 0 id , prt 0 assignop , prt 0 expr , doc (showString ";")])
+   SAssignOpThis id assignop expr -> prPrec i 0 (concatD [doc (showString "self") , doc (showString ".") , prt 0 id , prt 0 assignop , prt 0 expr , doc (showString ";")])
    SReturn expr -> prPrec i 0 (concatD [doc (showString "return") , prt 0 expr , doc (showString ";")])
    SReturnV  -> prPrec i 0 (concatD [doc (showString "return") , doc (showString ";")])
    SIf expr stmt -> prPrec i 0 (concatD [doc (showString "if") , doc (showString "(") , prt 0 expr , doc (showString ")") , prt 0 stmt])
@@ -179,9 +182,6 @@ instance Print Stmt where
    SWhile expr stmt -> prPrec i 0 (concatD [doc (showString "while") , doc (showString "(") , prt 0 expr , doc (showString ")") , prt 0 stmt])
    SForeach type' id expr stmt -> prPrec i 0 (concatD [doc (showString "for") , doc (showString "(") , prt 0 type' , prt 0 id , doc (showString ":") , prt 0 expr , doc (showString ")") , prt 0 stmt])
    SExpr expr -> prPrec i 0 (concatD [prt 0 expr , doc (showString ";")])
-   SThrow expr -> prPrec i 0 (concatD [doc (showString "throw") , prt 0 expr , doc (showString ";")])
-   STryCatch stmt0 type' id stmt -> prPrec i 0 (concatD [doc (showString "try") , prt 0 stmt0 , doc (showString "catch") , doc (showString "(") , prt 0 type' , prt 0 id , doc (showString ")") , prt 0 stmt])
-   SDeclVar type' items -> prPrec i 0 (concatD [prt 0 type' , prt 0 items , doc (showString ";")])
 
   prtList es = case es of
    [] -> (concatD [])

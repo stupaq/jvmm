@@ -5,96 +5,133 @@ entrypoints Program;
 
 -- DECLARATION --
 -----------------
+
 DVariable.    Declaration ::= Type Ident;
 
 -- PROGRAM --
 --------------
+
 Program.      Program ::= [Definition];
-separator nonempty Definition "";
 
 DFunction.    Definition ::= Function;
+
 DClass.       Definition ::= Class;
+
+separator nonempty Definition "";
 
 -- FUNCTION --
 --------------
-Function.     Function ::= Type Ident "(" [Argument] ")" Exceptions "{" [Stmt] "}";
-separator Argument ",";
 
-NoExceptions. Exceptions ::= ;
-Exceptions.   Exceptions ::= "throws" [Type];
-separator nonempty Type ",";
+Function.     Function ::= Type Ident "(" [Argument] ")" Exceptions "{" [Stmt] "}";
 
 Argument.     Argument ::= Type Ident;
 
+separator Argument ",";
+
+NoExceptions. Exceptions ::= ;
+
+Exceptions.   Exceptions ::= "throws" [Type];
+
 -- CLASS --
 -----------
+
 Class.        Class ::= "class" Ident Extends "{" [Member] "}";
+
+Field.        Member ::= Declaration ";";
+
+Method.       Member ::= Function;
+
 terminator nonempty Member "";
 
-Field.      Member ::= Declaration ";";
-Method.     Member ::= Function;
-
 SuperClass.   Extends ::= "extends" Type;
+
 SuperObject.  Extends ::= ;
 
 -- TYPES --
 -----------
 
-TVoid.      Type ::= "void";
-TInt.       Type ::= "int";
-TChar.      Type ::= "char";
-TBool.      Type ::= "boolean";
-
-TString.    Type ::= "string";
+-- EXTENSIONS/
 TObject.    Type ::= "Object";
+
 TUser.      Type ::= Ident;
 
 TArray.     Type ::= Type "[]";
 
+TChar.      Type ::= "char";
+-- /EXTENSIONS
 
--- TODO --
+TInt.       Type ::= "int";
+
+TString.    Type ::= "string";
+
+TBool.      Type ::= "boolean";
+
+TVoid.      Type ::= "void";
+
+separator nonempty Type ",";
 
 -- STATEMENTS --
 ----------------
+
+-- EXTENSIONS/
+SThrow.         Stmt ::= "throw" Expr ";";
+
+STryCatch.      Stmt ::= "try" Stmt "catch" "(" Type Ident ")" Stmt;
+-- /EXTENSIONS
+
 SBlock.         Stmt ::= "{" [Stmt] "}";
-separator Stmt "";
-
-SAssignOp.      Stmt ::= Ident AssignOp Expr  ";";
-SAssignOpArr.   Stmt ::= Ident "[" Expr "]" AssignOp Expr  ";";
-SAssignOpFld.   Stmt ::= Ident "." Ident AssignOp Expr  ";";
-SAssignOpThis.  Stmt ::= "self" "." Ident AssignOp Expr  ";";
-
-SPostInc.       Stmt ::= Ident "++" ";";
-SPostDec.       Stmt ::= Ident "--" ";";
 
 SEmpty.         Stmt ::= ";";
 
+SDeclVar.       Stmt ::= Type [Item] ";";
+
+separator Stmt "";
+
+NoInit.         Item ::= Ident;
+
+Init.           Item ::= Ident "=" Expr;
+
+separator nonempty Item ",";
+
 SAssign.        Stmt ::= Ident "=" Expr  ";";
+
+-- EXTENSIONS/
 SAssignArr.     Stmt ::= Ident "[" Expr "]" "=" Expr  ";";
+
 SAssignFld.     Stmt ::= Ident "." Ident "=" Expr  ";";
+
 SAssignThis.    Stmt ::= "self" "." Ident "=" Expr  ";";
+-- /EXTENSIONS
+
+SPostInc.       Stmt ::= Ident "++" ";";
+
+SPostDec.       Stmt ::= Ident "--" ";";
+
+SAssignOp.      Stmt ::= Ident AssignOp Expr  ";";
+
+-- EXTENSIONS/
+SAssignOpArr.   Stmt ::= Ident "[" Expr "]" AssignOp Expr  ";";
+
+SAssignOpFld.   Stmt ::= Ident "." Ident AssignOp Expr  ";";
+
+SAssignOpThis.  Stmt ::= "self" "." Ident AssignOp Expr  ";";
+-- /EXTENSIONS
 
 SReturn.        Stmt ::= "return" Expr ";";
+
 SReturnV.       Stmt ::= "return" ";";
 
 -- The following two rules are responsible for the only shift/reduce conflict,
--- tested in examples_good/conflict001.jv.
+-- tested in conflict001 testcase.
 SIf.            Stmt ::= "if" "(" Expr ")" Stmt;
+
 SIfElse.        Stmt ::= "if" "(" Expr ")" Stmt "else" Stmt;
 
 SWhile.         Stmt ::= "while" "(" Expr ")" Stmt;
+
 SForeach.       Stmt ::= "for" "(" Type Ident ":" Expr ")" Stmt;
 
 SExpr.          Stmt ::= Expr ";";
-
-SThrow.         Stmt ::= "throw" Expr ";";
-STryCatch.      Stmt ::= "try" Stmt "catch" "(" Type Ident ")" Stmt;
-
-SDeclVar.       Stmt ::= Type [Item] ";";
-separator nonempty Item ",";
-
-NoInit.         Item ::= Ident;
-Init.           Item ::= Ident "=" Expr;
 
 -- EXPRESSIONS --
 -----------------
@@ -165,11 +202,14 @@ separator Expr ",";
 -- OPERATORS --
 ---------------
 
--- FIXME remove these
 APlus.      AssignOp ::= "+=";
+
 AMinus.     AssignOp ::= "-=";
+
 ATimes.     AssignOp ::= "*=";
+
 ADiv.       AssignOp ::= "/=";
+
 AMod.       AssignOp ::= "%=";
 
 Plus.       AddOp ::= "+";
