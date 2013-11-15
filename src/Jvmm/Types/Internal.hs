@@ -14,7 +14,6 @@ import Jvmm.Errors (rethrow, ErrorInfoT)
 import Jvmm.Builtins
 import Jvmm.Trans.Output
 import Jvmm.Hierarchy.Output
-import qualified Jvmm.Scope as Scope
 
 -- WEIRD STUFF --
 -----------------
@@ -55,15 +54,6 @@ typeenv0 = TypeEnv {
   typeenvSuper = Map.empty
 }
 
-data TypeState = TypeState {
-  -- This keeps trach whether functions actually returned
-  typestateReturned :: Bool
-}
-
-typestate0 = TypeState {
-  typestateReturned = False
-}
-
 -- BUILDING TYPE ENVIRONMENT --
 -------------------------------
 -- Returns TypeEnv filled with type information about all classes in the hierarchy.
@@ -88,9 +78,9 @@ collectTypes classes = fmap snd $ runStateT (Traversable.mapM decClass classes) 
 
 -- TYPE MONAD --
 ----------------
-type TypeM = StateT TypeState (ReaderT TypeEnv (ErrorInfoT Identity))
+type TypeM = ReaderT TypeEnv (ErrorInfoT Identity)
 runTypeM :: TypeEnv -> TypeM a -> ErrorInfoT Identity a
-runTypeM env m = fmap fst $ runReaderT (runStateT m typestate0) env
+runTypeM env m = runReaderT m env
 
 lookupM :: (Ord a) => a -> Map.Map a b -> TypeM b
 lookupM key map = lift $ case Map.lookup key map of
@@ -114,41 +104,17 @@ throws typ = do
 call :: Type -> [UIdent] -> TypeM a -> TypeM a
 call typ@(TFunc returnType argumentTypes exceptions) argumentIdents action = do
   forM_ argumentTypes $ \argt -> notAVoid argt `rethrow` Err.voidArg
-  catches exceptions . argumentsEnv . enterFunction typ . checkReturned returnType $ action
+  catches exceptions . argumentsEnv . enterFunction typ $ action
   where
     argumentsEnv :: TypeM a -> TypeM a
     argumentsEnv = applyAndCompose (uncurry $ flip declare) $ List.zip argumentTypes argumentIdents
 call x _ _ = throwError $ Err.unusedBranch x
-
-probeReturned :: TypeM a -> TypeM (a, Bool)
-probeReturned action = do
-  curr <- gets typestateReturned
-  setReturned False
-  res <- action
-  returned <- gets typestateReturned
-  setReturned curr
-  return (res, returned)
-
-checkReturned :: Type -> TypeM a -> TypeM a
-checkReturned TVoid action = action
-checkReturned _ action = do
-  (res, returned) <- probeReturned action
-  guard returned `rethrow` Err.missingReturn
-  return res
-
-clearReturned :: TypeM a -> TypeM a
-clearReturned = fmap fst . probeReturned
-
-setReturned, orReturned :: Bool -> TypeM ()
-setReturned b = modify (\st -> st { typestateReturned = b })
-orReturned b = gets typestateReturned >>= (setReturned . (|| b))
 
 catches :: [Type] -> TypeM a -> TypeM a
 catches types = local (\env -> env { typeenvExceptions = List.foldl (flip Set.insert) (typeenvExceptions env) types })
 
 returns :: Type -> TypeM ()
 returns typ = do
-  setReturned True
   ftyp <- asks typeenvFunction 
   case ftyp of
     Just (TFunc rett _ _) -> rett =| typ >> return ()
@@ -286,55 +252,40 @@ funS x = case x of
   SIf expr stmt -> do
     (expr', etyp) <- funE expr
     TBool =| etyp
-    -- Whether this statement was executed depends on runtime evaluation of expression
-    stmt' <- clearReturned $ funS stmt
+    stmt' <- funS stmt
     return $ SIf expr' stmt'
   SIfElse expr stmt1 stmt2 -> do
     (expr', etyp) <- funE expr
     TBool =| etyp
-    (stmt1', retd1) <- probeReturned $ funS stmt1
-    (stmt2', retd2) <- probeReturned $ funS stmt2
-    orReturned (retd1 && retd2)
+    stmt1' <- funS stmt1
+    stmt2' <- funS stmt2
     return $ SIfElse expr' stmt1' stmt2'
   SWhile expr stmt -> do
     (expr', etyp) <- funE expr
     TBool =| etyp
-    -- Whether this statement was executed depends on runtime evaluation of expression
-    stmt' <- clearReturned $ funS stmt
+    stmt' <- funS stmt
     return $ SWhile expr' stmt'
   SExpr expr -> do
     (expr', _) <- funE expr
     return $ SExpr expr'
-  -- We consider throw statement to be equivalent to return for the sake of checking whether the
-  -- function returns (we do allow function to throw and not return in the dead code after throw)
   SThrow expr -> do
     (expr', etyp) <- funE expr
     when (etyp `elem` primitiveTypes) $ throwError (Err.referencedPrimitive etyp)
     throws etyp
-    orReturned True
     return $ SThrow expr'
-  -- Since we cannot statically exclude possibility of exception being thrown, we require try {}
-  -- block to return or throw AND catch () {} block to return
   STryCatch stmt1 typ id stmt2 -> do
     when (typ `elem` primitiveTypes) $ throwError (Err.referencedPrimitive typ)
-    (stmt2', retd2) <- probeReturned $ declare id typ $ funS stmt2
+    stmt2' <- declare id typ $ funS stmt2
     catches [typ] $ do
-      (stmt1', retd1) <- probeReturned $ funS stmt1
-      orReturned (retd1 && retd2)
+      stmt1' <- funS stmt1
       return $ STryCatch stmt1' typ id stmt2'
   SReturnV -> do
     returns TVoid
     return x
   SEmpty -> return x
-  SBuiltin -> assumeReturns
-  SInherited -> assumeReturns
+  SBuiltin -> return x
+  SInherited -> return x
   SDeclVar _ _ -> throwError $ Err.unusedBranch x
-  where
-    assumeReturns :: TypeM Stmt
-    assumeReturns = do
-      Just (TFunc rett _ _) <- asks typeenvFunction
-      returns rett
-      return x
 
 funE :: Expr -> TypeM (Expr, Type)
 funE x = case x of

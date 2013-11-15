@@ -23,6 +23,8 @@ import Jvmm.Hierarchy
 import Jvmm.Hierarchy.Output
 import Jvmm.Scope
 import Jvmm.Types
+import Jvmm.Analyser
+import Jvmm.Verifier
 --import Semantics.Virtuals
 --import Semantics.Runtime
 
@@ -40,7 +42,7 @@ parse str =
 
 -- Performs all static checking and semantics analysis
 check :: Workflow ClassHierarchy
-check str = parse str >>= trans >>= hierarchy >>= scope >>= typing
+check str = parse str >>= trans >>= hierarchy >>= scope >>= typing >>= analyse >>= verify
 
 -- Defaault workflow
 deflt = check
