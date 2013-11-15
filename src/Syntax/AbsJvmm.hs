@@ -86,24 +86,24 @@ data Item =
   deriving (Eq,Ord,Show)
 
 data Expr =
-   EAccessArr Expr Expr
- | EAccessFn Expr Ident [Expr]
- | EAccessVar Expr Ident
+   EArray Expr Expr
+ | EMethod Expr Ident [Expr]
+ | EField Expr Ident
+ | EArrayI Ident Expr
+ | EMethodI Ident Ident [Expr]
+ | EFieldI Ident Ident
+ | ENewObject Type
+ | ENewArray Type Expr
+ | EThis
+ | ENullT Type
+ | ENull
+ | ELitChar Char
  | EVar Ident
  | ELitInt Integer
- | ELitString String
- | ELitChar Char
- | EThis
  | ELitTrue
  | ELitFalse
- | ENull
- | ENullT Type
- | EAccessArrI Ident Expr
- | EAccessFnI Ident Ident [Expr]
- | EAccessVarI Ident Ident
  | EApp Ident [Expr]
- | ENewObj Type
- | ENewArr Type Expr
+ | EString String
  | ENeg Expr
  | ENot Expr
  | EMul Expr MulOp Expr

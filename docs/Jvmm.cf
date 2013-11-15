@@ -97,35 +97,50 @@ separator nonempty Item ",";
 NoInit.         Item ::= Ident;
 Init.           Item ::= Ident "=" Expr;
 
--- expressions --
+-- EXPRESSIONS --
 -----------------
 
-EAccessArr. Expr7 ::= Expr7 "[" Expr "]";
-EAccessFn.  Expr7 ::= Expr7 "." Ident "(" [Expr] ")";
-EAccessVar. Expr7 ::= Expr7 "." Ident;
+-- EXTENTIONS/
+EArray.     Expr6 ::= Expr7 "[" Expr "]";
 
-EVar.       Expr6 ::= Ident;
-ELitInt.    Expr6 ::= Integer;
-ELitString. Expr6 ::= String;
-ELitChar.   Expr6 ::= Char;
+EMethod.    Expr6 ::= Expr7 "." Ident "(" [Expr] ")";
+
+EField.     Expr6 ::= Expr7 "." Ident;
+
+EArrayI.    Expr6 ::= Ident "[" Expr "]";
+
+EMethodI.   Expr6 ::= Ident "." Ident "(" [Expr] ")";
+
+EFieldI.    Expr6 ::= Ident "." Ident;
+
+ENewObject. Expr6 ::= "new" Type;
+
+ENewArray.  Expr6 ::= "new" Type "[" Expr "]";
 
 EThis.      Expr6 ::= "self";
-ELitTrue.   Expr6 ::= "true";
-ELitFalse.  Expr6 ::= "false";
-ENull.      Expr6 ::= "null";
+
 ENullT.     Expr6 ::= "(" Type ")null";
 
-EAccessArrI.  Expr5 ::= Ident "[" Expr "]";
-EAccessFnI.   Expr5 ::= Ident "." Ident "(" [Expr] ")";
-EAccessVarI.  Expr5 ::= Ident "." Ident;
+ENull.      Expr6 ::= "null";
 
-EApp.       Expr5 ::= Ident "(" [Expr] ")";
+ELitChar.   Expr6 ::= Char;
+-- /EXTENSIONS
 
-ENewObj.    Expr5 ::= "new" Type;
-ENewArr.    Expr5 ::= "new" Type "[" Expr "]";
+EVar.       Expr6 ::= Ident;
 
-ENeg.       Expr5 ::= "-" Expr5;
-ENot.       Expr5 ::= "!" Expr5;
+ELitInt.    Expr6 ::= Integer;
+
+ELitTrue.   Expr6 ::= "true";
+
+ELitFalse.  Expr6 ::= "false";
+
+EApp.       Expr6 ::= Ident "(" [Expr] ")";
+
+EString.    Expr6 ::= String;
+
+ENeg.       Expr5 ::= "-" Expr6;
+
+ENot.       Expr5 ::= "!" Expr6;
 
 EMul.       Expr4 ::= Expr4 MulOp Expr5;
 
@@ -137,7 +152,7 @@ EAnd.       Expr1 ::= Expr1 "&&" Expr2;
 
 EOr.        Expr ::= Expr "||" Expr1;
 
-coercions Expr 9;
+coercions Expr 7;
 
 separator Expr ",";
 
