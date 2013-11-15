@@ -86,6 +86,18 @@ function run_example() {
   fi
 }
 
+function check_example() {
+  echo -ne "TEST\t$1: "
+  $EXEC $1 1>$OUT 2>$ERR
+  status=$?
+  if [[ $1 == */good* ]]; then
+    check $status
+  else
+    neg $status
+    check $?
+  fi
+}
+
 function parse_example() {
   echo -ne "PARSE\t$1: "
   $PARSE $1 2>&1 | grep "OK" &>/dev/null
@@ -107,11 +119,13 @@ if [[ $# -eq 0 ]]; then
   done
   for f in ${BAD_EXEC}; do
     parse_example $f
-    run_example $f || fail=`expr $fail + 1`
+    # TODO this performs compilation only
+    check_example $f || fail=`expr $fail + 1`
   done
   for f in ${GOOD}; do
     parse_example $f
-    run_example $f || fail=`expr $fail + 1`
+    # TODO this performs compilation only
+    check_example $f || fail=`expr $fail + 1`
   done
 
   echo "TOTAL FAILED: $fail"
@@ -123,7 +137,8 @@ else
   [[ -z $file ]] && fatal "cannot find test: $1"
 
   parse_example $file
-  run_example $file
+  # TODO this performs compilation only
+  check_example $file
   if [[ $? -ne 0 ]] || [[ $2 == -v* ]]; then
     show $file
   fi
