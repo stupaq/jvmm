@@ -1,13 +1,13 @@
 module Jvmm.Hierarchy.Internal where
+import Jvmm.Hierarchy.Output
 
 import Control.Monad
 import Control.Monad.Identity
 import qualified Data.List as List
 
-import Semantics.Commons
 import qualified Jvmm.Errors as Err
 import Jvmm.Errors (rethrow, ErrorInfoT)
-import Jvmm.Trans.Output hiding (HierarchyM)
+import Jvmm.Trans.Output
 
 -- HIERACHY MONAD --
 --------------------

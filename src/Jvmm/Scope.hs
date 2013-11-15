@@ -6,6 +6,7 @@ import Control.Monad.Identity
 
 import Jvmm.Errors (ErrorInfoT)
 import Jvmm.Trans.Output
+import Jvmm.Hierarchy.Output
 
 -- EXPORTED HELPERS --
 ----------------------

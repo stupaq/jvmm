@@ -5,13 +5,12 @@ module Jvmm.Trans.Output where
 import Control.Monad
 import Control.Monad.Identity
 
-import Semantics.Commons
 import Jvmm.Errors (ErrorInfoT, runErrorInfoM)
 
 -- This module provides internal representation of abstract syntax tree that
 -- carries error reporting metadata, type information and many more.
 -- We call this representation Abstract Program Tree to distinguish from the
--- shit that parser outputs..
+-- ... that parser outputs.
 
 -- UNIFIED IDENTIFIER --
 ------------------------
@@ -36,18 +35,16 @@ idt +/ char = case idt of
     strip :: String -> String
     strip = takeWhile (/= char)
 
--- PROGRAM --
--------------
+-- COMPILATION UNIT --
+----------------------
 data CompilationUnit =
   -- Type is a superclass,
   -- ClassDiff maps superclass into class
   CompilationUnit [(Type, ClassDiff)]
   deriving (Show)
 
--- CLASS HIERARCHY --
----------------------
-type ClassHierarchy = Hierarchy Class
-
+-- CLASS --
+-----------
 data Class = Class {
     classType :: Type
   , classSuper :: Type

@@ -10,10 +10,10 @@ import qualified Data.Set as Set
 import qualified Data.List as List
 import qualified Data.Traversable as Traversable
 
-import Semantics.Commons
 import qualified Jvmm.Errors as Err
 import Jvmm.Errors (rethrow, ErrorInfoT, runErrorInfoM)
 import Jvmm.Trans.Output
+import Jvmm.Hierarchy.Output
 
 -- SCOPE REPRESENTATION --
 --------------------------

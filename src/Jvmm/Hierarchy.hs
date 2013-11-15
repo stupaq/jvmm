@@ -1,13 +1,13 @@
-module Jvmm.Hierarchy (hierarchy, prepareClassDiff, HierarchyM) where
+module Jvmm.Hierarchy where
 import Jvmm.Hierarchy.Internal
+import Jvmm.Hierarchy.Output
 
 import Control.Monad
 import Control.Monad.Identity
 
-import Semantics.Commons
 import qualified Jvmm.Errors as Err
 import Jvmm.Errors (ErrorInfoM, ErrorInfoT)
-import Jvmm.Trans.Output hiding (HierarchyM)
+import Jvmm.Trans.Output
 
 -- CLASSES DIFFERENCE --
 ------------------------
