@@ -1,5 +1,5 @@
 int main() {
-  String s = null;
+  string s = null;
   printInt(length(s));
   printInt(length(null));
   printInt(length(""));
@@ -12,11 +12,11 @@ int main() {
   return 0;
 }
 
-String nuller() {
+string nuller() {
   return null;
 }
 
-int length(String s) {
+int length(string s) {
   if (s != null) {
     return s.length;
   } else {

@@ -1,11 +1,11 @@
 int main() {
-  String hidden = "hidden OK";
+  string hidden = "hidden OK";
   checkHidden(100);
-  String r = checkReturn(100);
+  string r = checkReturn(100);
   printString(r);
   try {
     checkThrow(100);
-  } catch (String e) {
+  } catch (string e) {
     printString(e);
   }
   printString(hidden);
@@ -13,20 +13,20 @@ int main() {
 }
 
 void checkHidden(int n) {
-  String hidden = "hidden FAILED";
+  string hidden = "hidden FAILED";
   if (n > 0)
     checkHidden(n - 1);
   runGC();
 }
 
-String checkReturn(int m) {
+string checkReturn(int m) {
   if (m > 0)
     return checkReturn(m - 1);
   runGC();
   return "return OK";
 }
 
-void checkThrow(int l) throws String {
+void checkThrow(int l) throws string {
   if (l > 0)
     checkThrow(l - 1);
   runGC();
@@ -36,7 +36,7 @@ void checkThrow(int l) throws String {
 void runGC() {
   int i = 0, k = 1000;
   while (i < k) {
-    String str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+    string str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
                  "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
                  "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
                  "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +

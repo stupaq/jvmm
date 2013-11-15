@@ -45,7 +45,6 @@ TInt.       Type ::= "int";
 TChar.      Type ::= "char";
 TBool.      Type ::= "boolean";
 
-TString.    Type ::= "String"; -- for compatibility with Java
 TString.    Type ::= "string";
 TObject.    Type ::= "Object";
 TUser.      Type ::= Ident;

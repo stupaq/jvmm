@@ -14,8 +14,8 @@ int dint() {
   return val;
 }
 
-String dstring() {
-  String val;
+string dstring() {
+  string val;
   printString("CALLED");
   return val;
 }

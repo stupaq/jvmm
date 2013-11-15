@@ -3,7 +3,7 @@ int main() {
 	printInt(rfac(10));
 	printInt(mfac(10));
         printInt(ifac(10));
-        String r ; // just to test blocks 
+        string r ; // just to test blocks 
 	{
 	  int n = 10;
 	  int r = 1;
@@ -65,8 +65,8 @@ int ifac2f(int l, int h) {
         return ifac2f(l,m) * ifac2f(m+1,h);
 }
 
-String repStr(String s, int n) {
-  String r = "";
+string repStr(string s, int n) {
+  string r = "";
   int i = 0;
   while(i<n) {
     r = r + s;

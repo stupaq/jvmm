@@ -1,4 +1,4 @@
-// Compare String with boolean.
+// Compare string with boolean.
 
 int main() {
   if ("true" == true) {

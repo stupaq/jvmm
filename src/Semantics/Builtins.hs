@@ -35,7 +35,7 @@ entrypointType = TFunc TInt [] []
 -- TYPES --
 -----------
 isBuiltinType typ = case typ of
-  TUser (TIdent str) -> str `elem` ["int", "char", "boolean", "String", "string"]
+  TUser (TIdent str) -> str `elem` ["int", "char", "boolean", "string"]
   _ -> False
 
 builtinMember typ uid = case (typ, uid) of

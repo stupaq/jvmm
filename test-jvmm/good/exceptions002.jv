@@ -1,4 +1,4 @@
-int main() throws String {
+int main() throws string {
   int a = 1;
   a += 1;
   int length = 5;
@@ -15,7 +15,7 @@ int main() throws String {
       throw "C";
     }
     a ++;
-  } catch (String e) {
+  } catch (string e) {
     printString("Caught: " + e);
     a++;
     arr[1] = 2;
@@ -38,7 +38,7 @@ int main() throws String {
       printInt(a);
       a();
       a = 0;
-    } catch (String e) {
+    } catch (string e) {
       c(e);
       printString("Caught: " + e);
       a = -1;
@@ -47,7 +47,7 @@ int main() throws String {
   printInt(a);
   a = 0;
   printInt(a);
-  String bla = "bla";
+  string bla = "bla";
   printString("Read: " + bla);
   return 0;
   printString("This shouldn't come up.");
@@ -57,7 +57,7 @@ int main() throws String {
 int def(int z){
   return 0;
 }
-void c(String s) {
+void c(string s) {
   s += "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 }
 int b(int x) {
@@ -65,6 +65,6 @@ int b(int x) {
   printInt(x);
   return 5 * x;
 }
-int a() throws String {
+int a() throws string {
   throw "WOW!";
 }

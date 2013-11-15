@@ -27,7 +27,7 @@ int bar(int[] arr) {
    comment */
 int main () {
   printString("Your name: ");
-  String s = readString();
+  string s = readString();
   printString("Hello " + s + "!");
   int c = bar(foo(5));
   if (s.length > 0 && s.charAt(0) == 'M')

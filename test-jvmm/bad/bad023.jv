@@ -1,6 +1,6 @@
-// Assigning int to String variable.
+// Assigning int to string variable.
 
 int main () {
- String x = 1;
+ string x = 1;
  return 0 ;
 }

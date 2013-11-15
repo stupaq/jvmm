@@ -148,7 +148,7 @@ instance Print Type where
    TInt  -> prPrec i 0 (concatD [doc (showString "int")])
    TChar  -> prPrec i 0 (concatD [doc (showString "char")])
    TBool  -> prPrec i 0 (concatD [doc (showString "boolean")])
-   TString  -> prPrec i 0 (concatD [doc (showString "String")])
+   TString  -> prPrec i 0 (concatD [doc (showString "string")])
    TObject  -> prPrec i 0 (concatD [doc (showString "Object")])
    TUser id -> prPrec i 0 (concatD [prt 0 id])
    TArray type' -> prPrec i 0 (concatD [prt 0 type' , doc (showString "[]")])
