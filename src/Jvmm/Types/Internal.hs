@@ -55,7 +55,14 @@ typeenv0 = TypeEnv {
   typeenvSuper = Map.empty
 }
 
-mapExceptions fun env = env { typeenvExceptions = fun (typeenvExceptions env) }
+data TypeState = TypeState {
+  -- This keeps trach whether functions actually returned
+  typestateReturned :: Bool
+}
+
+typestate0 = TypeState {
+  typestateReturned = False
+}
 
 -- BUILDING TYPE ENVIRONMENT --
 -------------------------------
@@ -81,9 +88,9 @@ collectTypes classes = fmap snd $ runStateT (Traversable.mapM decClass classes) 
 
 -- TYPE MONAD --
 ----------------
-type TypeM = ReaderT TypeEnv (ErrorInfoT Identity)
+type TypeM = StateT TypeState (ReaderT TypeEnv (ErrorInfoT Identity))
 runTypeM :: TypeEnv -> TypeM a -> ErrorInfoT Identity a
-runTypeM env m = runReaderT m env
+runTypeM env m = fmap fst $ runReaderT (runStateT m typestate0) env
 
 lookupM :: (Ord a) => a -> Map.Map a b -> TypeM b
 lookupM key map = lift $ case Map.lookup key map of
@@ -104,11 +111,44 @@ throws typ = do
   excepts <- asks typeenvExceptions
   unless (Set.member typ excepts) $ throwError $ Err.uncaughtException typ
 
-catches :: Type -> TypeM a -> TypeM a
-catches typ = local (mapExceptions $ Set.insert typ)
+call :: Type -> [UIdent] -> TypeM a -> TypeM a
+call typ@(TFunc returnType argumentTypes exceptions) argumentIdents action = do
+  forM_ argumentTypes $ \argt -> notAVoid argt `rethrow` Err.voidArg
+  catches exceptions . argumentsEnv . enterFunction typ . checkReturned returnType $ action
+  where
+    argumentsEnv :: TypeM a -> TypeM a
+    argumentsEnv = applyAndCompose (uncurry $ flip declare) $ List.zip argumentTypes argumentIdents
+call x _ _ = throwError $ Err.unusedBranch x
+
+probeReturned :: TypeM a -> TypeM (a, Bool)
+probeReturned action = do
+  curr <- gets typestateReturned
+  setReturned False
+  res <- action
+  returned <- gets typestateReturned
+  setReturned curr
+  return (res, returned)
+
+checkReturned :: Type -> TypeM a -> TypeM a
+checkReturned TVoid action = action
+checkReturned _ action = do
+  (res, returned) <- probeReturned action
+  guard returned `rethrow` Err.missingReturn
+  return res
+
+clearReturned :: TypeM a -> TypeM a
+clearReturned = fmap fst . probeReturned
+
+setReturned, orReturned :: Bool -> TypeM ()
+setReturned b = modify (\st -> st { typestateReturned = b })
+orReturned b = gets typestateReturned >>= (setReturned . (|| b))
+
+catches :: [Type] -> TypeM a -> TypeM a
+catches types = local (\env -> env { typeenvExceptions = List.foldl (flip Set.insert) (typeenvExceptions env) types })
 
 returns :: Type -> TypeM ()
 returns typ = do
+  setReturned True
   ftyp <- asks typeenvFunction 
   case ftyp of
     Just (TFunc rett _ _) -> rett =| typ >> return ()
@@ -189,13 +229,8 @@ intWithinBounds n =
 
 (|=) = flip (=|)
 
--- MAIN --
-----------
-typing :: ClassHierarchy -> ErrorInfoT Identity ClassHierarchy
-typing classes = do
-  env <- collectTypes classes
-  runTypeM env $ funH classes
-
+-- TRAVERSING TREE --
+---------------------
 funH :: ClassHierarchy -> TypeM ClassHierarchy
 funH = Traversable.mapM $ \clazz@Class { classMethods = methods, classType = typ} ->
   enterClass typ $ do
@@ -209,13 +244,9 @@ funF field@Field { fieldType = typ, fieldIdent = id } = do
   return field
 
 funM :: Method -> TypeM Method
-funM method@Method { methodType = typ, methodBody = stmt, methodArgs = argumentIdents } = do
+funM method@Method { methodType = typ, methodBody = stmt, methodArgs = args } = do
   checkEntrypoint method
-  let TFunc _ argumentTypes exceptionTypes = typ
-  forM_ argumentTypes $ \argt -> notAVoid argt `rethrow` Err.voidArg
-  let exceptionsEnv = applyAndCompose catches exceptionTypes
-  let argumentsEnv = applyAndCompose (\(typ, id) -> declare id typ) $ List.zip argumentTypes argumentIdents
-  exceptionsEnv . argumentsEnv . enterFunction typ $ do
+  call typ args $ do
     stmt' <- funS stmt
     return $ method { methodBody = stmt' }
   where
@@ -255,40 +286,55 @@ funS x = case x of
   SIf expr stmt -> do
     (expr', etyp) <- funE expr
     TBool =| etyp
-    stmt' <- funS stmt
+    -- Whether this statement was executed depends on runtime evaluation of expression
+    stmt' <- clearReturned $ funS stmt
     return $ SIf expr' stmt'
   SIfElse expr stmt1 stmt2 -> do
     (expr', etyp) <- funE expr
     TBool =| etyp
-    stmt1' <- funS stmt1
-    stmt2' <- funS stmt2
+    (stmt1', retd1) <- probeReturned $ funS stmt1
+    (stmt2', retd2) <- probeReturned $ funS stmt2
+    orReturned (retd1 && retd2)
     return $ SIfElse expr' stmt1' stmt2'
   SWhile expr stmt -> do
     (expr', etyp) <- funE expr
     TBool =| etyp
-    stmt' <- funS stmt
+    -- Whether this statement was executed depends on runtime evaluation of expression
+    stmt' <- clearReturned $ funS stmt
     return $ SWhile expr' stmt'
   SExpr expr -> do
     (expr', _) <- funE expr
     return $ SExpr expr'
+  -- We consider throw statement to be equivalent to return for the sake of checking whether the
+  -- function returns (we do allow function to throw and not return in the dead code after throw)
   SThrow expr -> do
     (expr', etyp) <- funE expr
     when (etyp `elem` primitiveTypes) $ throwError (Err.referencedPrimitive etyp)
     throws etyp
+    orReturned True
     return $ SThrow expr'
+  -- Since we cannot statically exclude possibility of exception being thrown, we require try {}
+  -- block to return or throw AND catch () {} block to return
   STryCatch stmt1 typ id stmt2 -> do
     when (typ `elem` primitiveTypes) $ throwError (Err.referencedPrimitive typ)
-    stmt2' <- declare id typ (funS stmt2)
-    catches typ $ do
-      stmt1' <- funS stmt1
+    (stmt2', retd2) <- probeReturned $ declare id typ $ funS stmt2
+    catches [typ] $ do
+      (stmt1', retd1) <- probeReturned $ funS stmt1
+      orReturned (retd1 && retd2)
       return $ STryCatch stmt1' typ id stmt2'
   SReturnV -> do
     returns TVoid
     return x
   SEmpty -> return x
-  SBuiltin -> return x
-  SInherited -> return x
+  SBuiltin -> assumeReturns
+  SInherited -> assumeReturns
   SDeclVar _ _ -> throwError $ Err.unusedBranch x
+  where
+    assumeReturns :: TypeM Stmt
+    assumeReturns = do
+      Just (TFunc rett _ _) <- asks typeenvFunction
+      returns rett
+      return x
 
 funE :: Expr -> TypeM (Expr, Type)
 funE x = case x of
