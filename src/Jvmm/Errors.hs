@@ -4,7 +4,6 @@ import Control.Monad.Identity
 import Control.Monad.Error
 
 -- We might want to carry more structure in errors
--- TODO switch all code to these classes
 type ErrorInfo = String
 type ErrorInfoT = ErrorT ErrorInfo
 type ErrorInfoM = Either ErrorInfo
