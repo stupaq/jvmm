@@ -10,7 +10,12 @@ type ErrorInfoM = Either ErrorInfo
 runErrorInfoM = runIdentity . runErrorT
 
 -- Discards error and throws provided one
-action `rethrow` except = action `catchError` (\_ -> throwError except)
+action `rethrow` err = action `catchError` (\_ -> throwError err)
+-- Executes second action in all circumstances (and only once)
+action `finally` always = do
+  res <- action `catchError` (\err -> always >> throwError err)
+  always
+  return res
 
 -- Class hierarchy computation errors
 redeclaredInSuper ids = "fields redeclared in super classes: " ++ (unwords $ map show ids)

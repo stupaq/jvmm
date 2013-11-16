@@ -21,7 +21,5 @@ tempIdent id ctx = id +/+ "#" +/+ ctx
 -----------------------
 -- Creates scoped tree from translated AST.
 scope :: ClassHierarchy -> ErrorInfoT Identity ClassHierarchy
-scope classes = fmap fst $ runScopeM $ do
-  collectClasses classes
-  currentAsGlobal (funH classes)
+scope classes = fmap fst $ runScopeM (collectClasses classes >> funH classes)
 

@@ -19,13 +19,13 @@ prepareClassDiff (clazz@Class { classMethods = methods, classStaticMethods = sta
   super = do
     guard (classType super == classSuper clazz)
     guard (clashing == []) `rethrow` Err.staticNonStaticConflict (head clashing)
-    fields <- fieldsClosure (classFields clazz) (classFields super)
-    methods <- methodsClosure (classMethods clazz) (classMethods super)
-    staticMethods <- methodsClosure (classStaticMethods clazz) (classStaticMethods super)
+    fields' <- fieldsClosure (classFields clazz) (classFields super)
+    methods' <- methodsClosure (classMethods clazz) (classMethods super)
+    staticMethods' <- methodsClosure (classStaticMethods clazz) (classStaticMethods super)
     return clazz {
-      classFields = fields,
-      classMethods = methods,
-      classStaticMethods = staticMethods
+      classFields = fields',
+      classMethods = methods',
+      classStaticMethods = staticMethods'
     }
   where
     clashing :: [UIdent]
