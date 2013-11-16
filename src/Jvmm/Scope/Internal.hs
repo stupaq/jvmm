@@ -222,7 +222,7 @@ funS x = case x of
       filterDeclarations :: [Stmt] -> [Stmt]
       filterDeclarations = concatMap (\x -> case x of
           SDeclVar typ id -> []
-          SMetaLocation _ stmts -> filterDeclarations stmts
+          SMetaLocation loc stmts -> return $ SMetaLocation loc $ filterDeclarations stmts
           _ -> return x)
   SAssign id expr -> do
     expr' <- funE expr

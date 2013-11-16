@@ -14,8 +14,8 @@ data ErrorInfo =
   | Dangling String
 
 instance Show ErrorInfo where
-  show (Located loc msg) = "line:" ++ (show loc) ++ msg
-  show (Dangling msg) = msg
+  show (Located loc msg) = concat ["line: ", (show loc), " error: ", msg]
+  show (Dangling msg) = concat ["line: N/A", " error: ",  msg]
 
 instance Error ErrorInfo where
   noMsg = Dangling "unknown error"
