@@ -37,7 +37,7 @@ parse :: Workflow Program
 parse str =
   let ts = myLexer str
   in case pProgram ts of
-    Bad err -> throwError err
+    Bad err -> throwError $ Dangling err
     Ok tree -> return tree
 
 -- Performs all static checking and semantics analysis
@@ -65,7 +65,7 @@ processFile workflow f = do
   case runErrorInfoM $ workflow str of
     Left err -> do
       printl Error $ "ERROR\n"
-      printl Error $ err
+      printl Error $ show err
       lift exitFailure
     Right _ -> do
       printl Warn $ "OK\n"

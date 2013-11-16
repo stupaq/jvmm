@@ -37,7 +37,7 @@ Exceptions.   Exceptions ::= "throws" [Type];
 
 Class.        Class ::= "class" Ident Extends "{" [Member] "}";
 
-Field.        Member ::= Declaration ";";
+Field.        Member ::= Declaration Semicolon;
 
 Method.       Member ::= Function;
 
@@ -74,16 +74,16 @@ separator nonempty Type ",";
 ----------------
 
 -- EXTENSIONS/
-SThrow.         Stmt ::= "throw" Expr ";";
+SThrow.         Stmt ::= "throw" Expr Semicolon;
 
 STryCatch.      Stmt ::= "try" Stmt "catch" "(" Type Ident ")" Stmt;
 -- /EXTENSIONS
 
 SBlock.         Stmt ::= "{" [Stmt] "}";
 
-SEmpty.         Stmt ::= ";";
+SEmpty.         Stmt ::= Semicolon;
 
-SDeclVar.       Stmt ::= Type [Item] ";";
+SDeclVar.       Stmt ::= Type [Item] Semicolon;
 
 separator Stmt "";
 
@@ -93,33 +93,33 @@ Init.           Item ::= Ident "=" Expr;
 
 separator nonempty Item ",";
 
-SAssign.        Stmt ::= Ident "=" Expr  ";";
+SAssign.        Stmt ::= Ident "=" Expr  Semicolon;
 
 -- EXTENSIONS/
-SAssignArr.     Stmt ::= Ident "[" Expr "]" "=" Expr  ";";
+SAssignArr.     Stmt ::= Ident "[" Expr "]" "=" Expr  Semicolon;
 
-SAssignFld.     Stmt ::= Ident "." Ident "=" Expr  ";";
+SAssignFld.     Stmt ::= Ident "." Ident "=" Expr  Semicolon;
 
-SAssignThis.    Stmt ::= "self" "." Ident "=" Expr  ";";
+SAssignThis.    Stmt ::= "self" "." Ident "=" Expr  Semicolon;
 -- /EXTENSIONS
 
-SPostInc.       Stmt ::= Ident "++" ";";
+SPostInc.       Stmt ::= Ident "++" Semicolon;
 
-SPostDec.       Stmt ::= Ident "--" ";";
+SPostDec.       Stmt ::= Ident "--" Semicolon;
 
-SAssignOp.      Stmt ::= Ident AssignOp Expr  ";";
+SAssignOp.      Stmt ::= Ident AssignOp Expr  Semicolon;
 
 -- EXTENSIONS/
-SAssignOpArr.   Stmt ::= Ident "[" Expr "]" AssignOp Expr  ";";
+SAssignOpArr.   Stmt ::= Ident "[" Expr "]" AssignOp Expr  Semicolon;
 
-SAssignOpFld.   Stmt ::= Ident "." Ident AssignOp Expr  ";";
+SAssignOpFld.   Stmt ::= Ident "." Ident AssignOp Expr  Semicolon;
 
-SAssignOpThis.  Stmt ::= "self" "." Ident AssignOp Expr  ";";
+SAssignOpThis.  Stmt ::= "self" "." Ident AssignOp Expr  Semicolon;
 -- /EXTENSIONS
 
-SReturn.        Stmt ::= "return" Expr ";";
+SReturn.        Stmt ::= "return" Expr Semicolon;
 
-SReturnV.       Stmt ::= "return" ";";
+SReturnV.       Stmt ::= "return" Semicolon;
 
 -- The following two rules are responsible for the only shift/reduce conflict,
 -- tested in conflict001 testcase.
@@ -131,7 +131,7 @@ SWhile.         Stmt ::= "while" "(" Expr ")" Stmt;
 
 SForeach.       Stmt ::= "for" "(" Type Ident ":" Expr ")" Stmt;
 
-SExpr.          Stmt ::= Expr ";";
+SExpr.          Stmt ::= Expr Semicolon;
 
 -- EXPRESSIONS --
 -----------------
@@ -236,6 +236,8 @@ NEQ.        RelOp ::= "!=";
 
 -- TOKENS --
 ------------
+
+position token Semicolon ';';
 
 -- COMMENTS --
 --------------

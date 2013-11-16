@@ -4,6 +4,7 @@ module Syntax.AbsJvmm where
 
 
 newtype Ident = Ident String deriving (Eq,Ord,Show)
+newtype Semicolon = Semicolon ((Int,Int),String) deriving (Eq,Ord,Show)
 data Declaration =
    DVariable Type Ident
   deriving (Eq,Ord,Show)
@@ -35,7 +36,7 @@ data Class =
   deriving (Eq,Ord,Show)
 
 data Member =
-   Field Declaration
+   Field Declaration Semicolon
  | Method Function
   deriving (Eq,Ord,Show)
 
@@ -56,28 +57,28 @@ data Type =
   deriving (Eq,Ord,Show)
 
 data Stmt =
-   SThrow Expr
+   SThrow Expr Semicolon
  | STryCatch Stmt Type Ident Stmt
  | SBlock [Stmt]
- | SEmpty
- | SDeclVar Type [Item]
- | SAssign Ident Expr
- | SAssignArr Ident Expr Expr
- | SAssignFld Ident Ident Expr
- | SAssignThis Ident Expr
- | SPostInc Ident
- | SPostDec Ident
- | SAssignOp Ident AssignOp Expr
- | SAssignOpArr Ident Expr AssignOp Expr
- | SAssignOpFld Ident Ident AssignOp Expr
- | SAssignOpThis Ident AssignOp Expr
- | SReturn Expr
- | SReturnV
+ | SEmpty Semicolon
+ | SDeclVar Type [Item] Semicolon
+ | SAssign Ident Expr Semicolon
+ | SAssignArr Ident Expr Expr Semicolon
+ | SAssignFld Ident Ident Expr Semicolon
+ | SAssignThis Ident Expr Semicolon
+ | SPostInc Ident Semicolon
+ | SPostDec Ident Semicolon
+ | SAssignOp Ident AssignOp Expr Semicolon
+ | SAssignOpArr Ident Expr AssignOp Expr Semicolon
+ | SAssignOpFld Ident Ident AssignOp Expr Semicolon
+ | SAssignOpThis Ident AssignOp Expr Semicolon
+ | SReturn Expr Semicolon
+ | SReturnV Semicolon
  | SIf Expr Stmt
  | SIfElse Expr Stmt Stmt
  | SWhile Expr Stmt
  | SForeach Type Ident Expr Stmt
- | SExpr Expr
+ | SExpr Expr Semicolon
   deriving (Eq,Ord,Show)
 
 data Item =

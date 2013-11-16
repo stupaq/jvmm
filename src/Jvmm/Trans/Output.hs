@@ -1,11 +1,12 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleContexts #-}
 module Jvmm.Trans.Output where
 
-import Control.Monad
 import Control.Monad.Identity
+import Control.Monad.Error
 
-import Jvmm.Errors (ErrorInfoT, runErrorInfoM)
+import Jvmm.Errors (ErrorInfo, ErrorInfoT, runErrorInfoM, addLocation, Location)
 
 -- This module provides internal representation of abstract syntax tree that
 -- carries error reporting metadata, type information and many more.
@@ -95,6 +96,7 @@ data Stmt =
  | SExpr Expr
  | SThrow Expr
  | STryCatch Stmt Type UIdent Stmt
+ | SMetaLocation Location [Stmt]
  | SBuiltin
  | SInherited
   deriving (Eq, Ord, Show)
@@ -102,6 +104,13 @@ data Stmt =
 data Variable =
   Variable Type UIdent
   deriving (Eq, Ord, Show)
+
+-- METADATA --
+--------------
+stmtMetaLocation :: (MonadError ErrorInfo m) => Location -> m [Stmt] -> m Stmt
+stmtMetaLocation loc action = do
+  stmts' <- action `addLocation` loc
+  return $ SMetaLocation loc stmts'
 
 -- TYPES --
 -----------

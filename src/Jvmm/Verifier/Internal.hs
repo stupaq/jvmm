@@ -7,7 +7,7 @@ import qualified Data.Traversable as Traversable
 
 import Jvmm.Builtins (entrypointIdent)
 import qualified Jvmm.Errors as Err
-import Jvmm.Errors (rethrow, ErrorInfoT)
+import Jvmm.Errors (rethrow, ErrorInfoT, addLocation)
 import Jvmm.Trans.Output
 import Jvmm.Hierarchy.Output
 
@@ -109,6 +109,7 @@ funS x = case x of
   SReturnV -> setReturned True
   SBuiltin -> setReturned True
   SInherited -> setReturned True
-  SDeclVar _ _ -> throwError $ Err.unusedBranch x
+  SMetaLocation loc stmts -> (mapM_ funS stmts) `addLocation` loc
+  SDeclVar _ _ -> error $ Err.unusedBranch x
   _ -> return ()
 

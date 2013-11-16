@@ -14,6 +14,11 @@ transIdent x = case x of
   Ident str  -> failure x
 
 
+transSemicolon :: Semicolon -> Result
+transSemicolon x = case x of
+  Semicolon str  -> failure x
+
+
 transDeclaration :: Declaration -> Result
 transDeclaration x = case x of
   DVariable type' id  -> failure x
@@ -53,7 +58,7 @@ transClass x = case x of
 
 transMember :: Member -> Result
 transMember x = case x of
-  Field declaration  -> failure x
+  Field declaration semicolon  -> failure x
   Method function  -> failure x
 
 
@@ -77,28 +82,28 @@ transType x = case x of
 
 transStmt :: Stmt -> Result
 transStmt x = case x of
-  SThrow expr  -> failure x
+  SThrow expr semicolon  -> failure x
   STryCatch stmt1 type'2 id3 stmt4  -> failure x
   SBlock stmts  -> failure x
-  SEmpty  -> failure x
-  SDeclVar type' items  -> failure x
-  SAssign id expr  -> failure x
-  SAssignArr id expr1 expr2  -> failure x
-  SAssignFld id1 id2 expr3  -> failure x
-  SAssignThis id expr  -> failure x
-  SPostInc id  -> failure x
-  SPostDec id  -> failure x
-  SAssignOp id assignop expr  -> failure x
-  SAssignOpArr id expr1 assignop2 expr3  -> failure x
-  SAssignOpFld id1 id2 assignop3 expr4  -> failure x
-  SAssignOpThis id assignop expr  -> failure x
-  SReturn expr  -> failure x
-  SReturnV  -> failure x
+  SEmpty semicolon  -> failure x
+  SDeclVar type' items semicolon  -> failure x
+  SAssign id expr semicolon  -> failure x
+  SAssignArr id expr1 expr2 semicolon3  -> failure x
+  SAssignFld id1 id2 expr3 semicolon4  -> failure x
+  SAssignThis id expr semicolon  -> failure x
+  SPostInc id semicolon  -> failure x
+  SPostDec id semicolon  -> failure x
+  SAssignOp id assignop expr semicolon  -> failure x
+  SAssignOpArr id expr1 assignop2 expr3 semicolon4  -> failure x
+  SAssignOpFld id1 id2 assignop3 expr4 semicolon5  -> failure x
+  SAssignOpThis id assignop expr semicolon  -> failure x
+  SReturn expr semicolon  -> failure x
+  SReturnV semicolon  -> failure x
   SIf expr stmt  -> failure x
   SIfElse expr stmt1 stmt2  -> failure x
   SWhile expr stmt  -> failure x
   SForeach type' id expr stmt  -> failure x
-  SExpr expr  -> failure x
+  SExpr expr semicolon  -> failure x
 
 
 transItem :: Item -> Result

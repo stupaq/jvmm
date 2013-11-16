@@ -82,6 +82,10 @@ instance Print Ident where
   prt _ (Ident i) = doc (showString ( i))
 
 
+instance Print Semicolon where
+  prt _ (Semicolon (_,i)) = doc (showString ( i))
+
+
 
 instance Print Declaration where
   prt i e = case e of
@@ -129,7 +133,7 @@ instance Print Class where
 
 instance Print Member where
   prt i e = case e of
-   Field declaration -> prPrec i 0 (concatD [prt 0 declaration , doc (showString ";")])
+   Field declaration semicolon -> prPrec i 0 (concatD [prt 0 declaration , prt 0 semicolon])
    Method function -> prPrec i 0 (concatD [prt 0 function])
 
   prtList es = case es of
@@ -160,28 +164,28 @@ instance Print Type where
 
 instance Print Stmt where
   prt i e = case e of
-   SThrow expr -> prPrec i 0 (concatD [doc (showString "throw") , prt 0 expr , doc (showString ";")])
+   SThrow expr semicolon -> prPrec i 0 (concatD [doc (showString "throw") , prt 0 expr , prt 0 semicolon])
    STryCatch stmt0 type' id stmt -> prPrec i 0 (concatD [doc (showString "try") , prt 0 stmt0 , doc (showString "catch") , doc (showString "(") , prt 0 type' , prt 0 id , doc (showString ")") , prt 0 stmt])
    SBlock stmts -> prPrec i 0 (concatD [doc (showString "{") , prt 0 stmts , doc (showString "}")])
-   SEmpty  -> prPrec i 0 (concatD [doc (showString ";")])
-   SDeclVar type' items -> prPrec i 0 (concatD [prt 0 type' , prt 0 items , doc (showString ";")])
-   SAssign id expr -> prPrec i 0 (concatD [prt 0 id , doc (showString "=") , prt 0 expr , doc (showString ";")])
-   SAssignArr id expr0 expr -> prPrec i 0 (concatD [prt 0 id , doc (showString "[") , prt 0 expr0 , doc (showString "]") , doc (showString "=") , prt 0 expr , doc (showString ";")])
-   SAssignFld id0 id expr -> prPrec i 0 (concatD [prt 0 id0 , doc (showString ".") , prt 0 id , doc (showString "=") , prt 0 expr , doc (showString ";")])
-   SAssignThis id expr -> prPrec i 0 (concatD [doc (showString "self") , doc (showString ".") , prt 0 id , doc (showString "=") , prt 0 expr , doc (showString ";")])
-   SPostInc id -> prPrec i 0 (concatD [prt 0 id , doc (showString "++") , doc (showString ";")])
-   SPostDec id -> prPrec i 0 (concatD [prt 0 id , doc (showString "--") , doc (showString ";")])
-   SAssignOp id assignop expr -> prPrec i 0 (concatD [prt 0 id , prt 0 assignop , prt 0 expr , doc (showString ";")])
-   SAssignOpArr id expr0 assignop expr -> prPrec i 0 (concatD [prt 0 id , doc (showString "[") , prt 0 expr0 , doc (showString "]") , prt 0 assignop , prt 0 expr , doc (showString ";")])
-   SAssignOpFld id0 id assignop expr -> prPrec i 0 (concatD [prt 0 id0 , doc (showString ".") , prt 0 id , prt 0 assignop , prt 0 expr , doc (showString ";")])
-   SAssignOpThis id assignop expr -> prPrec i 0 (concatD [doc (showString "self") , doc (showString ".") , prt 0 id , prt 0 assignop , prt 0 expr , doc (showString ";")])
-   SReturn expr -> prPrec i 0 (concatD [doc (showString "return") , prt 0 expr , doc (showString ";")])
-   SReturnV  -> prPrec i 0 (concatD [doc (showString "return") , doc (showString ";")])
+   SEmpty semicolon -> prPrec i 0 (concatD [prt 0 semicolon])
+   SDeclVar type' items semicolon -> prPrec i 0 (concatD [prt 0 type' , prt 0 items , prt 0 semicolon])
+   SAssign id expr semicolon -> prPrec i 0 (concatD [prt 0 id , doc (showString "=") , prt 0 expr , prt 0 semicolon])
+   SAssignArr id expr0 expr semicolon -> prPrec i 0 (concatD [prt 0 id , doc (showString "[") , prt 0 expr0 , doc (showString "]") , doc (showString "=") , prt 0 expr , prt 0 semicolon])
+   SAssignFld id0 id expr semicolon -> prPrec i 0 (concatD [prt 0 id0 , doc (showString ".") , prt 0 id , doc (showString "=") , prt 0 expr , prt 0 semicolon])
+   SAssignThis id expr semicolon -> prPrec i 0 (concatD [doc (showString "self") , doc (showString ".") , prt 0 id , doc (showString "=") , prt 0 expr , prt 0 semicolon])
+   SPostInc id semicolon -> prPrec i 0 (concatD [prt 0 id , doc (showString "++") , prt 0 semicolon])
+   SPostDec id semicolon -> prPrec i 0 (concatD [prt 0 id , doc (showString "--") , prt 0 semicolon])
+   SAssignOp id assignop expr semicolon -> prPrec i 0 (concatD [prt 0 id , prt 0 assignop , prt 0 expr , prt 0 semicolon])
+   SAssignOpArr id expr0 assignop expr semicolon -> prPrec i 0 (concatD [prt 0 id , doc (showString "[") , prt 0 expr0 , doc (showString "]") , prt 0 assignop , prt 0 expr , prt 0 semicolon])
+   SAssignOpFld id0 id assignop expr semicolon -> prPrec i 0 (concatD [prt 0 id0 , doc (showString ".") , prt 0 id , prt 0 assignop , prt 0 expr , prt 0 semicolon])
+   SAssignOpThis id assignop expr semicolon -> prPrec i 0 (concatD [doc (showString "self") , doc (showString ".") , prt 0 id , prt 0 assignop , prt 0 expr , prt 0 semicolon])
+   SReturn expr semicolon -> prPrec i 0 (concatD [doc (showString "return") , prt 0 expr , prt 0 semicolon])
+   SReturnV semicolon -> prPrec i 0 (concatD [doc (showString "return") , prt 0 semicolon])
    SIf expr stmt -> prPrec i 0 (concatD [doc (showString "if") , doc (showString "(") , prt 0 expr , doc (showString ")") , prt 0 stmt])
    SIfElse expr stmt0 stmt -> prPrec i 0 (concatD [doc (showString "if") , doc (showString "(") , prt 0 expr , doc (showString ")") , prt 0 stmt0 , doc (showString "else") , prt 0 stmt])
    SWhile expr stmt -> prPrec i 0 (concatD [doc (showString "while") , doc (showString "(") , prt 0 expr , doc (showString ")") , prt 0 stmt])
    SForeach type' id expr stmt -> prPrec i 0 (concatD [doc (showString "for") , doc (showString "(") , prt 0 type' , prt 0 id , doc (showString ":") , prt 0 expr , doc (showString ")") , prt 0 stmt])
-   SExpr expr -> prPrec i 0 (concatD [prt 0 expr , doc (showString ";")])
+   SExpr expr semicolon -> prPrec i 0 (concatD [prt 0 expr , prt 0 semicolon])
 
   prtList es = case es of
    [] -> (concatD [])

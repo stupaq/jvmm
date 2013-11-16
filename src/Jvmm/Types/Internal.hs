@@ -112,7 +112,7 @@ called typ@(TFunc returnType argumentTypes exceptions) argumentIdents action = d
   where
     argumentsEnv :: TypeM a -> TypeM a
     argumentsEnv = applyAndCompose (uncurry $ flip declare) $ List.zip argumentTypes argumentIdents
-called x _ _ = throwError $ Err.unusedBranch x
+called x _ _ = error $ Err.unusedBranch "attempt to call not a functional type"
 
 catches :: [Type] -> TypeM a -> TypeM a
 catches types = local (\env -> env { typeenvExceptions = List.foldl (flip Set.insert) (typeenvExceptions env) types })
@@ -123,7 +123,7 @@ returns typ = do
   case ftyp of
     Just (TFunc rett _ _) -> rett =| typ >> return ()
     Nothing -> throwError Err.danglingReturn
-    _ -> error $ Err.unusedBranch ftyp
+    _ -> error $ Err.unusedBranch "typeenvFunction was not of functional type"
 
 declare :: UIdent -> Type -> TypeM a -> TypeM a
 declare uid typ action = do
@@ -304,7 +304,8 @@ funS x = case x of
   SEmpty -> return x
   SBuiltin -> return x
   SInherited -> return x
-  SDeclVar _ _ -> throwError $ Err.unusedBranch x
+  SMetaLocation loc stmts -> stmtMetaLocation loc $ mapM funS stmts
+  SDeclVar _ _ -> error $ Err.unusedBranch x
 
 funE :: Expr -> TypeM (Expr, Type)
 funE x = case x of

@@ -27,7 +27,7 @@ tClass (I.Class id extends members) =
   in (super, prepareClassDiff $ O.Class {
         O.classType = typ
       , O.classSuper = super
-      , O.classFields = [ (tDeclaration x) { O.fieldOrigin = typ } | I.Field x <- members ]
+      , O.classFields = [ (tDeclaration x) { O.fieldOrigin = typ } | I.Field x _ <- members ]
       , O.classMethods = [ (tFunction x) { O.methodOrigin = typ } | I.Method x <- members ]
       , O.classStaticMethods = []
     })
@@ -63,21 +63,21 @@ tFunction (I.Function typ id args exceptions stmts) =
 
 tStmt :: I.Stmt -> [O.Stmt]
 tStmt x = case x of
-  I.SDeclVar typ items -> concat $ map (tItem typ) items
-  I.SBlock stmts ->  return $ tStmts stmts
-  I.SAssignOp id opassign expr -> return $ O.SAssign (tVIdent id) $ tExpr $ tAssignOp opassign (I.EVar id) expr
-  I.SAssignOpArr id expr1 opassign2 expr3 ->  return $ O.SAssignArr (tVIdent id) (tExpr expr1) $ tExpr $ tAssignOp opassign2 (I.EArrayE (I.EVar id) expr1) expr3
-  I.SAssignOpFld id1 id2 opassign3 expr4 ->  return $ O.SAssignFld (tVIdent id1) (tVIdent id2) $ tExpr $ tAssignOp opassign3 (I.EFieldE (I.EVar id1) id2) expr4
-  I.SAssignOpThis id2 opassign3 expr4 -> return $ O.SAssignFld O.IThis (tVIdent id2) $ tExpr $ tAssignOp opassign3 (I.EFieldE I.EThis id2) expr4
-  I.SPostInc id -> tStmt $ I.SAssignOp id I.APlus (I.ELitInt 1)
-  I.SPostDec id -> tStmt $ I.SAssignOp id I.AMinus (I.ELitInt 1)
-  I.SEmpty -> return O.SEmpty
-  I.SAssign id expr -> return $ O.SAssign (tVIdent id) $ tExpr expr
-  I.SAssignArr id expr1 expr2 ->  return $ O.SAssignArr (tVIdent id) (tExpr expr1) (tExpr expr2)
-  I.SAssignFld id1 id2 expr3 -> return $ O.SAssignFld (tVIdent id1) (tVIdent id2) (tExpr expr3)
-  I.SAssignThis id2 expr3 -> return $ O.SAssignFld O.IThis (tVIdent id2) (tExpr expr3)
-  I.SReturn expr -> return $ O.SReturn $ tExpr expr
-  I.SReturnV -> return O.SReturnV
+  I.SDeclVar typ items s -> tSem s $ concat $ map (tItem typ) items
+  I.SBlock stmts -> return $ tStmts stmts
+  I.SAssignOp id opassign expr s -> tSem s $ return $ O.SAssign (tVIdent id) $ tExpr $ tAssignOp opassign (I.EVar id) expr
+  I.SAssignOpArr id expr1 opassign2 expr3 s -> tSem s $ return $ O.SAssignArr (tVIdent id) (tExpr expr1) $ tExpr $ tAssignOp opassign2 (I.EArrayE (I.EVar id) expr1) expr3
+  I.SAssignOpFld id1 id2 opassign3 expr4 s -> tSem s $ return $ O.SAssignFld (tVIdent id1) (tVIdent id2) $ tExpr $ tAssignOp opassign3 (I.EFieldE (I.EVar id1) id2) expr4
+  I.SAssignOpThis id2 opassign3 expr4 s -> tSem s $ return $ O.SAssignFld O.IThis (tVIdent id2) $ tExpr $ tAssignOp opassign3 (I.EFieldE I.EThis id2) expr4
+  I.SPostInc id s -> tStmt $ I.SAssignOp id I.APlus (I.ELitInt 1) s
+  I.SPostDec id s -> tStmt $ I.SAssignOp id I.AMinus (I.ELitInt 1) s
+  I.SEmpty s -> tSem s $ return O.SEmpty
+  I.SAssign id expr s -> tSem s $ return $ O.SAssign (tVIdent id) $ tExpr expr
+  I.SAssignArr id expr1 expr2 s -> tSem s $  return $ O.SAssignArr (tVIdent id) (tExpr expr1) (tExpr expr2)
+  I.SAssignFld id1 id2 expr3 s -> tSem s $ return $ O.SAssignFld (tVIdent id1) (tVIdent id2) (tExpr expr3)
+  I.SAssignThis id2 expr3 s -> tSem s $ return $ O.SAssignFld O.IThis (tVIdent id2) (tExpr expr3)
+  I.SReturn expr s -> tSem s $ return $ O.SReturn $ tExpr expr
+  I.SReturnV s -> tSem s $ return O.SReturnV
   I.SIf expr stmt -> return $ O.SIf (tExpr expr) (tStmt' stmt)
   I.SIfElse expr stmt1 stmt2 -> return $ O.SIfElse (tExpr expr) (tStmt' stmt1) (tStmt' stmt2)
   I.SWhile expr stmt -> return $ O.SWhile (tExpr expr) (tStmt' stmt)
@@ -86,15 +86,15 @@ tStmt x = case x of
         idlength = tempIdent id "length"
         iditer = tempIdent id "iter"
     in tStmt $ I.SBlock $ [
-      I.SDeclVar (I.TArray I.TInt) [I.Init idarr expr],
+      I.SDeclVar (I.TArray I.TInt) [I.Init idarr expr] noLoc,
       I.SDeclVar I.TInt [I.Init idlength (I.EFieldE (I.EVar idarr) (I.Ident "length")),
-      I.Init iditer (I.ELitInt 0)],
+      I.Init iditer (I.ELitInt 0)] noLoc,
       I.SWhile (I.ERel (I.EVar iditer) I.LTH (I.EVar idlength)) $ I.SBlock [
-        I.SDeclVar typ [I.Init id (I.EArrayE (I.EVar idarr) (I.EVar iditer))],
+        I.SDeclVar typ [I.Init id (I.EArrayE (I.EVar idarr) (I.EVar iditer))] noLoc,
         stmt,
-        I.SPostInc iditer]]
-  I.SExpr expr -> return $ O.SExpr $ tExpr expr
-  I.SThrow expr -> return $ O.SThrow $ tExpr expr
+        I.SPostInc iditer noLoc]]
+  I.SExpr expr s -> tSem s $ return $ O.SExpr $ tExpr expr
+  I.SThrow expr s -> tSem s $ return $ O.SThrow $ tExpr expr
   I.STryCatch stmt1 typ2 id3 stmt4 -> return $ O.STryCatch (tStmt' stmt1) (tType typ2) (tVIdent id3) (tStmt' stmt4)
   where
   tAssignOp :: I.AssignOp -> I.Expr -> I.Expr -> I.Expr
@@ -104,6 +104,13 @@ tStmt x = case x of
     I.ATimes -> I.EMul expr1 I.Times expr2
     I.ADiv -> I.EMul expr1 I.Div expr2
     I.AMod -> I.EMul expr1 I.Mod expr2
+
+tSem :: I.Semicolon -> [O.Stmt] -> [O.Stmt]
+tSem (I.Semicolon ((line, _), _)) stmts
+  | line >= 0 = [O.SMetaLocation line stmts]
+  | otherwise = stmts
+noLoc :: I.Semicolon
+noLoc = I.Semicolon ((-1, -1), ";")
 
 tStmt' :: I.Stmt -> O.Stmt
 tStmt' x = case tStmt x of

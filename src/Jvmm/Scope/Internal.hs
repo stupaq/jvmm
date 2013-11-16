@@ -183,7 +183,7 @@ funH = Traversable.mapM $ \clazz@(Class typ super fields methods staticMethods) 
     enterClass clazz $ do
       (fields', methods') <-
         scopeenvFull `asCurrent` liftM2 (,) (mapM funF fields) (mapM funM methods)
-      staticMethods' <- scopeenvStatic `asCurrent` mapM funSM staticMethods
+      staticMethods' <- scopeenvStatic `asCurrent` mapM funMS staticMethods
       return $ Class typ' super' fields' methods' staticMethods'
 
 funF :: Field -> ScopeM Field
@@ -200,8 +200,8 @@ funM (Method typ id ids stmt origin) = do
     stmt' <- newLocal (funS stmt)
     return $ Method typ' id' ids' stmt' origin'
 
-funSM :: Method -> ScopeM Method
-funSM = funM
+funMS :: Method -> ScopeM Method
+funMS = funM
 
 funS :: Stmt -> ScopeM Stmt
 funS x = case x of
@@ -261,6 +261,7 @@ funS x = case x of
   SEmpty -> return SEmpty
   SBuiltin -> return SBuiltin
   SInherited -> return SInherited
+  SMetaLocation loc stmts -> stmtMetaLocation loc $ mapM funS stmts
 
 funE :: Expr -> ScopeM Expr
 funE x = case x of
