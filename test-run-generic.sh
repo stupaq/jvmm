@@ -41,13 +41,31 @@ function check() {
   status=$1;
   if [[ $status -ne 0 ]]; then 
     tput setaf 1;
-    echo -e "\t[FAILED]";
+    echo -ne "\t[FAILED]";
   else
     tput setaf 2;
-    echo -e "\t[OK]";
+    echo -ne "\t[OK]";
   fi
   tput sgr0;
   return $status;
+}
+
+function check_err() {
+  status=$1
+  if [[ $status == "bad" ]]; then
+    diff <(head -n1 $ERR) <(echo -ne "ERROR\n") &>/dev/null
+    check $?
+  else
+    diff <(head -n1 $ERR) <(echo -ne "OK\n") &>/dev/null
+    check $?
+  fi
+  return $status;
+}
+
+function test_end() {
+  status=$1
+  echo
+  return $1
 }
 
 function show() {
@@ -68,6 +86,7 @@ function fatal() {
   exit 1
 }
 
+# FIXME make it work once we have the first backend
 function run_example() {
   input="${1%$EXECEXT}.input"
   [[ -f $input ]] || input=/dev/null
@@ -84,30 +103,37 @@ function run_example() {
     neg $status
     check $?
   fi
+  test_end $?
 }
 
 function check_example() {
-  echo -ne "TEST\t$1: "
+  echo -ne "CHECK\t$1: "
   $EXEC $1 1>$OUT 2>$ERR
   status=$?
   if [[ $1 == */good* ]]; then
     check $status
+    check_err ok
   else
     neg $status
     check $?
+    check_err bad
   fi
+  test_end $?
 }
 
 function parse_example() {
   echo -ne "PARSE\t$1: "
-  $PARSE $1 2>&1 | grep "OK" &>/dev/null
+  $PARSE $1 1>$OUT 2>$ERR
   status=$?
   if [[ $1 == *$EXECEXT ]]; then
     check $status
+    check_err ok
   else
     neg $status
     check $?
+    check_err bad
   fi
+  test_end $?
 }
 
 
