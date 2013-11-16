@@ -1,5 +1,0 @@
-// Author: Tomasz Wysocki 277696
-int main() {
-    printInt((new int[1]).length);
-    return 0;
-}
