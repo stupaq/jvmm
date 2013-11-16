@@ -89,7 +89,7 @@ tStmt x = case x of
         idlength = tempIdent id "length"
         iditer = tempIdent id "iter"
     in tStmt $ I.SBlock noLbr [
-      I.SDeclVar (I.TArray I.TInt) [I.Init idarr expr] noSem,
+      I.SDeclVar (I.TArray typ) [I.Init idarr expr] noSem,
       I.SDeclVar I.TInt [I.Init idlength (I.EFieldE (I.EVar idarr) (I.Ident "length")),
       I.Init iditer (I.ELitInt 0)] noSem,
       I.SWhile (I.ERel (I.EVar iditer) I.LTH (I.EVar idlength)) (I.SBlock noLbr [

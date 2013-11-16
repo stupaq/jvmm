@@ -184,10 +184,8 @@ intWithinBounds n =
     (TVoid, TVoid) -> ok
     (TNull, TNull) -> ok
     (TArray _, TNull) -> ok
-    (TArray etyp1, TArray etyp2)
-    -- This is an improvement when compared with Java
-      | etyp1 == etyp2 -> ok
-      | otherwise -> bad
+    -- Different people say different things about this
+    (TArray etyp1, TArray etyp2) -> etyp1 =| etyp2
     (TString, TNull) -> ok
     (TString, TString) -> ok
     (TObject, TNull) -> ok
@@ -345,7 +343,7 @@ funE x = case x of
   ENewArr typ expr -> do
     notAVoid typ `rethrow` Err.voidNotIgnored
     (expr', etyp) <- funE expr
-    TInt =| etyp
+    TInt =| etyp `rethrow` Err.indexType
     return (ENewArr typ expr', TArray typ)
   ENewObj typ -> do
     -- Referenced type cannot be primitive
