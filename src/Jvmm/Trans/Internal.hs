@@ -5,7 +5,7 @@ import Control.Monad.Identity
 
 import qualified Syntax.AbsJvmm as I
 
-import Jvmm.Errors (ErrorInfoT)
+import Jvmm.Errors (ErrorInfoT, Location(..))
 import Jvmm.Hierarchy (prepareClassDiff, objectClassDiff)
 
 -- Creates variable-associated identifier from given one (for temporary and iteration variables).
@@ -21,7 +21,7 @@ tProgram (I.Program defs) = do
   return $ O.CompilationUnit $ (O.TUnknown, objectDiff):map tClass userClasses
 
 tClass :: I.Class -> (O.Type, O.ClassDiff)
-tClass (I.Class id extends members) =
+tClass (I.Class id extends lbr members rbr) = -- FIXME what to do with location info?
   let typ = O.TUser (tTIdent id)
       super = tExtends extends
   in (super, prepareClassDiff $ O.Class {
@@ -45,12 +45,12 @@ tDeclaration (I.DVariable typ id) = O.Field {
 }
 
 tFunction :: I.Function -> O.Method
-tFunction (I.Function typ id args exceptions stmts) =
+tFunction (I.Function typ id args exceptions lbr stmts rbr) =
   O.Method {
     O.methodType = funType,
     O.methodIdent = tFIdent id,
     O.methodArgs = argUIdents,
-    O.methodBody = tStmts stmts,
+    O.methodBody = O.SLocal [] $ tBraces lbr rbr (concatMap tStmt stmts),
     O.methodOrigin = O.TUnknown
   }
   where
@@ -64,7 +64,7 @@ tFunction (I.Function typ id args exceptions stmts) =
 tStmt :: I.Stmt -> [O.Stmt]
 tStmt x = case x of
   I.SDeclVar typ items s -> tSem s $ concat $ map (tItem typ) items
-  I.SBlock stmts -> return $ tStmts stmts
+  I.SBlock lbr stmts rbr -> tBraces lbr rbr $ return $ O.SLocal [] $ concatMap tStmt stmts
   I.SAssignOp id opassign expr s -> tSem s $ return $ O.SAssign (tVIdent id) $ tExpr $ tAssignOp opassign (I.EVar id) expr
   I.SAssignOpArr id expr1 opassign2 expr3 s -> tSem s $ return $ O.SAssignArr (tVIdent id) (tExpr expr1) $ tExpr $ tAssignOp opassign2 (I.EArrayE (I.EVar id) expr1) expr3
   I.SAssignOpFld id1 id2 opassign3 expr4 s -> tSem s $ return $ O.SAssignFld (tVIdent id1) (tVIdent id2) $ tExpr $ tAssignOp opassign3 (I.EFieldE (I.EVar id1) id2) expr4
@@ -78,24 +78,24 @@ tStmt x = case x of
   I.SAssignThis id2 expr3 s -> tSem s $ return $ O.SAssignFld O.IThis (tVIdent id2) (tExpr expr3)
   I.SReturn expr s -> tSem s $ return $ O.SReturn $ tExpr expr
   I.SReturnV s -> tSem s $ return O.SReturnV
-  I.SIf expr stmt -> return $ O.SIf (tExpr expr) (tStmt' stmt)
-  I.SIfElse expr stmt1 stmt2 -> return $ O.SIfElse (tExpr expr) (tStmt' stmt1) (tStmt' stmt2)
-  I.SWhile expr stmt -> return $ O.SWhile (tExpr expr) (tStmt' stmt)
+  I.SIf expr stmt -> return $ O.SIf (tExpr expr) (O.SLocal [] $ tStmt stmt)
+  I.SIfElse expr stmt1 stmt2 -> return $ O.SIfElse (tExpr expr) (O.SLocal [] $ tStmt stmt1) (O.SLocal [] $ tStmt stmt2)
+  I.SWhile expr stmt -> return $ O.SWhile (tExpr expr) (O.SLocal [] $ tStmt stmt)
   I.SForeach typ id expr stmt ->  -- SYNTACTIC SUGAR
     let idarr = tempIdent id "arr"
         idlength = tempIdent id "length"
         iditer = tempIdent id "iter"
-    in tStmt $ I.SBlock $ [
-      I.SDeclVar (I.TArray I.TInt) [I.Init idarr expr] noLoc,
+    in tStmt $ I.SBlock noLbr [
+      I.SDeclVar (I.TArray I.TInt) [I.Init idarr expr] noSem,
       I.SDeclVar I.TInt [I.Init idlength (I.EFieldE (I.EVar idarr) (I.Ident "length")),
-      I.Init iditer (I.ELitInt 0)] noLoc,
-      I.SWhile (I.ERel (I.EVar iditer) I.LTH (I.EVar idlength)) $ I.SBlock [
-        I.SDeclVar typ [I.Init id (I.EArrayE (I.EVar idarr) (I.EVar iditer))] noLoc,
+      I.Init iditer (I.ELitInt 0)] noSem,
+      I.SWhile (I.ERel (I.EVar iditer) I.LTH (I.EVar idlength)) (I.SBlock noLbr [
+        I.SDeclVar typ [I.Init id (I.EArrayE (I.EVar idarr) (I.EVar iditer))] noSem,
         stmt,
-        I.SPostInc iditer noLoc]]
+        I.SPostInc iditer noSem] noRbr)] noRbr
   I.SExpr expr s -> tSem s $ return $ O.SExpr $ tExpr expr
   I.SThrow expr s -> tSem s $ return $ O.SThrow $ tExpr expr
-  I.STryCatch stmt1 typ2 id3 stmt4 -> return $ O.STryCatch (tStmt' stmt1) (tType typ2) (tVIdent id3) (tStmt' stmt4)
+  I.STryCatch stmt1 typ2 id3 stmt4 -> return $ O.STryCatch (O.SLocal [] $ tStmt stmt1) (tType typ2) (tVIdent id3) (O.SLocal [] $ tStmt stmt4)
   where
   tAssignOp :: I.AssignOp -> I.Expr -> I.Expr -> I.Expr
   tAssignOp opassign expr1 expr2 = case opassign of
@@ -107,20 +107,20 @@ tStmt x = case x of
 
 tSem :: I.Semicolon -> [O.Stmt] -> [O.Stmt]
 tSem (I.Semicolon ((line, _), _)) stmts
-  | line >= 0 = [O.SMetaLocation line stmts]
+  | line >= 0 = [O.SMetaLocation (Line line) stmts]
   | otherwise = stmts
-noLoc :: I.Semicolon
-noLoc = I.Semicolon ((-1, -1), ";")
 
-tStmt' :: I.Stmt -> O.Stmt
-tStmt' x = case tStmt x of
-  [stmt] -> stmt
-  stmts -> O.SLocal [] stmts
+tBraces :: I.LeftBrace -> I.RightBrace -> [O.Stmt] -> [O.Stmt]
+tBraces (I.LeftBrace ((start, _), _)) (I.RightBrace ((end, _), _)) stmts
+  | start >= 0 && end >= start = [O.SMetaLocation (Range start end) stmts]
+  | otherwise = stmts
 
-tStmts :: [I.Stmt] -> O.Stmt
-tStmts stmts = O.SLocal [] $ do
-  stmt <- stmts
-  tStmt stmt
+noSem :: I.Semicolon
+noSem = I.Semicolon ((-1, -1), ";")
+noLbr :: I.LeftBrace
+noLbr = I.LeftBrace ((-1, -1), ";")
+noRbr :: I.RightBrace
+noRbr = I.RightBrace ((-1, -1), ";")
 
 tItem :: I.Type -> I.Item -> [O.Stmt]
 tItem typ x = case x of

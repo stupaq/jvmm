@@ -5,6 +5,8 @@ module Syntax.AbsJvmm where
 
 newtype Ident = Ident String deriving (Eq,Ord,Show)
 newtype Semicolon = Semicolon ((Int,Int),String) deriving (Eq,Ord,Show)
+newtype LeftBrace = LeftBrace ((Int,Int),String) deriving (Eq,Ord,Show)
+newtype RightBrace = RightBrace ((Int,Int),String) deriving (Eq,Ord,Show)
 data Declaration =
    DVariable Type Ident
   deriving (Eq,Ord,Show)
@@ -19,7 +21,7 @@ data Definition =
   deriving (Eq,Ord,Show)
 
 data Function =
-   Function Type Ident [Argument] Exceptions [Stmt]
+   Function Type Ident [Argument] Exceptions LeftBrace [Stmt] RightBrace
   deriving (Eq,Ord,Show)
 
 data Argument =
@@ -32,7 +34,7 @@ data Exceptions =
   deriving (Eq,Ord,Show)
 
 data Class =
-   Class Ident Extends [Member]
+   Class Ident Extends LeftBrace [Member] RightBrace
   deriving (Eq,Ord,Show)
 
 data Member =
@@ -59,7 +61,7 @@ data Type =
 data Stmt =
    SThrow Expr Semicolon
  | STryCatch Stmt Type Ident Stmt
- | SBlock [Stmt]
+ | SBlock LeftBrace [Stmt] RightBrace
  | SEmpty Semicolon
  | SDeclVar Type [Item] Semicolon
  | SAssign Ident Expr Semicolon

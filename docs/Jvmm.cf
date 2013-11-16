@@ -22,7 +22,7 @@ separator nonempty Definition "";
 -- FUNCTION --
 --------------
 
-Function.     Function ::= Type Ident "(" [Argument] ")" Exceptions "{" [Stmt] "}";
+Function.     Function ::= Type Ident "(" [Argument] ")" Exceptions LeftBrace [Stmt] RightBrace;
 
 Argument.     Argument ::= Type Ident;
 
@@ -35,7 +35,7 @@ Exceptions.   Exceptions ::= "throws" [Type];
 -- CLASS --
 -----------
 
-Class.        Class ::= "class" Ident Extends "{" [Member] "}";
+Class.        Class ::= "class" Ident Extends LeftBrace [Member] RightBrace;
 
 Field.        Member ::= Declaration Semicolon;
 
@@ -79,7 +79,7 @@ SThrow.         Stmt ::= "throw" Expr Semicolon;
 STryCatch.      Stmt ::= "try" Stmt "catch" "(" Type Ident ")" Stmt;
 -- /EXTENSIONS
 
-SBlock.         Stmt ::= "{" [Stmt] "}";
+SBlock.         Stmt ::= LeftBrace [Stmt] RightBrace;
 
 SEmpty.         Stmt ::= Semicolon;
 
@@ -238,6 +238,10 @@ NEQ.        RelOp ::= "!=";
 ------------
 
 position token Semicolon ';';
+
+position token LeftBrace '{';
+
+position token RightBrace '}';
 
 -- COMMENTS --
 --------------

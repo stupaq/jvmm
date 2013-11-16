@@ -5,7 +5,16 @@ import Control.Monad.Error
 
 -- ERROR LOCATION --
 --------------------
-type Location = Int
+data Location =
+    Line Int
+  | Range Int Int
+  | Unknown
+  deriving (Ord, Eq)
+
+instance Show Location where
+  show Unknown = ""
+  show (Line no) = concat ["line ", show no]
+  show (Range start end) = concat ["between ", show start, show end]
 
 -- CUSTOM ERROR TYPE --
 -----------------------

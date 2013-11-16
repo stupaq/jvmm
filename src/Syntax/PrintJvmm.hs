@@ -86,6 +86,14 @@ instance Print Semicolon where
   prt _ (Semicolon (_,i)) = doc (showString ( i))
 
 
+instance Print LeftBrace where
+  prt _ (LeftBrace (_,i)) = doc (showString ( i))
+
+
+instance Print RightBrace where
+  prt _ (RightBrace (_,i)) = doc (showString ( i))
+
+
 
 instance Print Declaration where
   prt i e = case e of
@@ -108,7 +116,7 @@ instance Print Definition where
 
 instance Print Function where
   prt i e = case e of
-   Function type' id arguments exceptions stmts -> prPrec i 0 (concatD [prt 0 type' , prt 0 id , doc (showString "(") , prt 0 arguments , doc (showString ")") , prt 0 exceptions , doc (showString "{") , prt 0 stmts , doc (showString "}")])
+   Function type' id arguments exceptions leftbrace stmts rightbrace -> prPrec i 0 (concatD [prt 0 type' , prt 0 id , doc (showString "(") , prt 0 arguments , doc (showString ")") , prt 0 exceptions , prt 0 leftbrace , prt 0 stmts , prt 0 rightbrace])
 
 
 instance Print Argument where
@@ -128,7 +136,7 @@ instance Print Exceptions where
 
 instance Print Class where
   prt i e = case e of
-   Class id extends members -> prPrec i 0 (concatD [doc (showString "class") , prt 0 id , prt 0 extends , doc (showString "{") , prt 0 members , doc (showString "}")])
+   Class id extends leftbrace members rightbrace -> prPrec i 0 (concatD [doc (showString "class") , prt 0 id , prt 0 extends , prt 0 leftbrace , prt 0 members , prt 0 rightbrace])
 
 
 instance Print Member where
@@ -166,7 +174,7 @@ instance Print Stmt where
   prt i e = case e of
    SThrow expr semicolon -> prPrec i 0 (concatD [doc (showString "throw") , prt 0 expr , prt 0 semicolon])
    STryCatch stmt0 type' id stmt -> prPrec i 0 (concatD [doc (showString "try") , prt 0 stmt0 , doc (showString "catch") , doc (showString "(") , prt 0 type' , prt 0 id , doc (showString ")") , prt 0 stmt])
-   SBlock stmts -> prPrec i 0 (concatD [doc (showString "{") , prt 0 stmts , doc (showString "}")])
+   SBlock leftbrace stmts rightbrace -> prPrec i 0 (concatD [prt 0 leftbrace , prt 0 stmts , prt 0 rightbrace])
    SEmpty semicolon -> prPrec i 0 (concatD [prt 0 semicolon])
    SDeclVar type' items semicolon -> prPrec i 0 (concatD [prt 0 type' , prt 0 items , prt 0 semicolon])
    SAssign id expr semicolon -> prPrec i 0 (concatD [prt 0 id , doc (showString "=") , prt 0 expr , prt 0 semicolon])

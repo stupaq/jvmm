@@ -19,6 +19,16 @@ transSemicolon x = case x of
   Semicolon str  -> failure x
 
 
+transLeftBrace :: LeftBrace -> Result
+transLeftBrace x = case x of
+  LeftBrace str  -> failure x
+
+
+transRightBrace :: RightBrace -> Result
+transRightBrace x = case x of
+  RightBrace str  -> failure x
+
+
 transDeclaration :: Declaration -> Result
 transDeclaration x = case x of
   DVariable type' id  -> failure x
@@ -37,7 +47,7 @@ transDefinition x = case x of
 
 transFunction :: Function -> Result
 transFunction x = case x of
-  Function type' id arguments exceptions stmts  -> failure x
+  Function type' id arguments exceptions leftbrace stmts rightbrace  -> failure x
 
 
 transArgument :: Argument -> Result
@@ -53,7 +63,7 @@ transExceptions x = case x of
 
 transClass :: Class -> Result
 transClass x = case x of
-  Class id extends members  -> failure x
+  Class id extends leftbrace members rightbrace  -> failure x
 
 
 transMember :: Member -> Result
@@ -84,7 +94,7 @@ transStmt :: Stmt -> Result
 transStmt x = case x of
   SThrow expr semicolon  -> failure x
   STryCatch stmt1 type'2 id3 stmt4  -> failure x
-  SBlock stmts  -> failure x
+  SBlock leftbrace stmts rightbrace  -> failure x
   SEmpty semicolon  -> failure x
   SDeclVar type' items semicolon  -> failure x
   SAssign id expr semicolon  -> failure x
