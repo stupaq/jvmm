@@ -68,14 +68,12 @@ funS :: Stmt -> VerifierM ()
 funS x = case x of
   SLocal _ stmts -> mapM_ funS stmts
   SReturn _ -> setReturned True
-  SIf ELitTrue stmt ->
-    -- TODO this should not exist
-    funS stmt
+  SIf ELitTrue stmt -> funS stmt -- TODO analyser resolves this
   SIf _ stmt ->
     -- Whether this statement was executed depends on runtime evaluation of expression
     clearReturned $ funS stmt
-  SIfElse ELitTrue stmt1 stmt2 -> funS stmt1
-  SIfElse ELitFalse stmt1 stmt2 -> funS stmt2
+  SIfElse ELitTrue stmt1 stmt2 -> funS stmt1 -- TODO analyser resolves this
+  SIfElse ELitFalse stmt1 stmt2 -> funS stmt2 -- TODO analyser resolves this
   SIfElse _ stmt1 stmt2 -> do
     (_, retd1) <- probeReturned $ funS stmt1
     (_, retd2) <- probeReturned $ funS stmt2
