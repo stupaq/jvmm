@@ -39,6 +39,7 @@ voidField id = "a field cannot have void type: " ++ (show id)
 voidArg = "an argument cannot have void type"
 voidNotIgnored = "void value not ignored as it should be"
 incompatibleMain = "incompatible main() type"
+missingMain = "missing main() function"
 redeclaredType id = "redeclared type name: " ++ (show id)
 referencedPrimitive typ = "primitive type cannot be referenced: " ++ (show typ)
 danglingThis = "dangling this"

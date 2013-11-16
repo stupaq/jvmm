@@ -5,6 +5,7 @@ import Control.Monad.Error
 import Control.Monad.State
 import qualified Data.Traversable as Traversable
 
+import Jvmm.Builtins (entrypointIdent)
 import qualified Jvmm.Errors as Err
 import Jvmm.Errors (rethrow, ErrorInfoT)
 import Jvmm.Trans.Output
@@ -15,12 +16,15 @@ import Jvmm.Hierarchy.Output
 -- STATIC INFORMATION REPRESENTATION --
 ---------------------------------------
 data VerifierState = VerifierState {
-  -- This keeps trach whether functions actually returned
-  verifierstateReturned :: Bool
+    -- This keeps trach whether functions actually returned
+    verifierstateReturned :: Bool
+    -- Determine whether entrypoint is present
+  , verifierstateMain :: Bool
 }
 
 verifierstate0 = VerifierState {
-  verifierstateReturned = False
+    verifierstateReturned = False
+  , verifierstateMain = False
 }
 
 -- ANALYSER MONAD --
@@ -52,15 +56,21 @@ setReturned, orReturned :: Bool -> VerifierM ()
 setReturned b = modify (\st -> st { verifierstateReturned = b })
 orReturned b = gets verifierstateReturned >>= (setReturned . (|| b))
 
+checkEntrypoint :: Method -> VerifierM ()
+checkEntrypoint Method { methodIdent = ident, methodOrigin = TUnknown }
+  | ident  == entrypointIdent = modify (\st -> st { verifierstateMain = True })
+checkEntrypoint _ = return ()
+
 -- TRAVERSING TREE --
 ---------------------
 funH :: ClassHierarchy -> VerifierM ()
 funH classes = do
   Traversable.mapM (\Class { classMethods = methods } -> mapM_ funM methods) classes
-  return ()
+  (gets verifierstateMain >>= guard) `rethrow` Err.missingMain
 
 funM :: Method -> VerifierM ()
 funM method@Method { methodBody = stmt, methodType = typ } = do
+  checkEntrypoint method
   let TFunc rett _ _ = typ
   checkReturned rett $ funS stmt
 
