@@ -7,6 +7,7 @@ all:
 	$(MAKE) -C src/ all
 	ln -sf src/Interpreter/Main ./latc
 
+docs: $(DOCS)
 $(DOCS): %.pdf : %.md
 	pandoc $< -o $@
 
@@ -21,4 +22,4 @@ distclean: clean
 	$(MAKE) -C src/ distclean
 	-rm -f $(DOCS) *.zip ./latc ./latc_syntax
 
-.PHONY: clean distclean test-examples
+.PHONY: clean distclean docs
