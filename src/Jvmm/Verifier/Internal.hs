@@ -7,7 +7,7 @@ import qualified Data.Traversable as Traversable
 
 import Jvmm.Builtins (entrypointIdent)
 import qualified Jvmm.Errors as Err
-import Jvmm.Errors (rethrow, ErrorInfoT, addLocation)
+import Jvmm.Errors (rethrow, ErrorInfoT)
 import Jvmm.Trans.Output
 import Jvmm.Hierarchy.Output
 
@@ -66,18 +66,19 @@ checkEntrypoint _ = return ()
 funH :: ClassHierarchy -> VerifierM ()
 funH classes = do
   Traversable.mapM
-    (\Class { classMethods = methods, classStaticMethods = staticMethods } -> do
-        mapM_ funM methods >> mapM_ funSM staticMethods)
+    (\Class { classMethods = methods, classStaticMethods = staticMethods, classLocation = loc } ->
+        Err.withLocation loc (mapM_ funM methods >> mapM_ funSM staticMethods))
     classes
   (gets verifierstateMain >>= guard) `rethrow` Err.missingMain
 
 funM, funSM :: Method -> VerifierM ()
-funM method@Method { methodBody = stmt, methodType = typ } = do
-  let TFunc rett _ _ = typ
-  checkReturned rett $ funS stmt
-funSM method = do
-  checkEntrypoint method
-  funM method
+funM method@Method { methodBody = stmt, methodType = typ , methodLocation = loc } =
+  Err.withLocation loc $ do
+    let TFunc rett _ _ = typ
+    checkReturned rett $ funS stmt
+funSM method@Method { methodLocation = loc} = Err.withLocation loc $ do
+    checkEntrypoint method
+    funM method
 
 funS :: Stmt -> VerifierM ()
 funS x = case x of
@@ -109,7 +110,7 @@ funS x = case x of
   SReturnV -> setReturned True
   SBuiltin -> setReturned True
   SInherited -> setReturned True
-  SMetaLocation loc stmts -> (mapM_ funS stmts) `addLocation` loc
+  SMetaLocation loc stmts -> Err.withLocation loc (mapM_ funS stmts)
   SDeclVar _ _ -> error $ Err.unusedBranch x
   _ -> return ()
 

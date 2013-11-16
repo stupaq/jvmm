@@ -177,28 +177,30 @@ staticOrInstance id ifStatic ifInstance = do
     True -> scopeenvInstance `asCurrent` (resFunc id >>= (return . ifInstance))
 
 funH :: ClassHierarchy -> ScopeM ClassHierarchy
-funH = Traversable.mapM $ \clazz@(Class typ super fields methods staticMethods) -> do
+funH = Traversable.mapM $ \clazz@(Class typ super fields methods staticMethods loc) -> 
+  Err.withLocation loc $ do
     typ' <- resType typ
     super' <- resType super
     enterClass clazz $ do
       (fields', methods') <-
         scopeenvFull `asCurrent` liftM2 (,) (mapM funF fields) (mapM funM methods)
       staticMethods' <- scopeenvStatic `asCurrent` mapM funMS staticMethods
-      return $ Class typ' super' fields' methods' staticMethods'
+      return $ Class typ' super' fields' methods' staticMethods' loc
 
 funF :: Field -> ScopeM Field
 funF (Field typ id origin) = liftM3 Field (resType typ) (resVar id) (resType origin)
 
 funM :: Method -> ScopeM Method
-funM (Method typ id ids stmt origin) = do
-  id' <- resFunc id
-  typ' <- resType typ
-  origin' <- resType origin
-  newLocal $ do
-    mapM_ decVar ids `rethrow` Err.duplicateArg typ id
-    ids' <- mapM resVar ids
-    stmt' <- newLocal (funS stmt)
-    return $ Method typ' id' ids' stmt' origin'
+funM (Method typ id ids stmt origin loc) =
+  Err.withLocation loc $ do
+    id' <- resFunc id
+    typ' <- resType typ
+    origin' <- resType origin
+    newLocal $ do
+      mapM_ decVar ids `rethrow` Err.duplicateArg typ id
+      ids' <- mapM resVar ids
+      stmt' <- newLocal (funS stmt)
+      return $ Method typ' id' ids' stmt' origin' loc
 
 funMS :: Method -> ScopeM Method
 funMS = funM

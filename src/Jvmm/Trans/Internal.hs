@@ -5,7 +5,8 @@ import Control.Monad.Identity
 
 import qualified Syntax.AbsJvmm as I
 
-import Jvmm.Errors (ErrorInfoT, Location(..))
+import qualified Jvmm.Errors as Err
+import Jvmm.Errors (ErrorInfoT, Location)
 import Jvmm.Hierarchy (prepareClassDiff, objectClassDiff)
 
 -- Creates variable-associated identifier from given one (for temporary and iteration variables).
@@ -24,12 +25,13 @@ tClass :: I.Class -> (O.Type, O.ClassDiff)
 tClass (I.Class id extends lbr members rbr) = -- FIXME what to do with location info?
   let typ = O.TUser (tTIdent id)
       super = tExtends extends
-  in (super, prepareClassDiff $ O.Class {
+  in (super, prepareClassDiff (brToLoc lbr rbr) $ O.Class {
         O.classType = typ
       , O.classSuper = super
       , O.classFields = [ (tDeclaration x) { O.fieldOrigin = typ } | I.Field x _ <- members ]
       , O.classMethods = [ (tFunction x) { O.methodOrigin = typ } | I.Method x <- members ]
       , O.classStaticMethods = []
+      , O.classLocation = Err.Unknown
     })
 
 tExtends :: I.Extends -> O.Type
@@ -47,11 +49,12 @@ tDeclaration (I.DVariable typ id) = O.Field {
 tFunction :: I.Function -> O.Method
 tFunction (I.Function typ id args exceptions lbr stmts rbr) =
   O.Method {
-    O.methodType = funType,
-    O.methodIdent = tFIdent id,
-    O.methodArgs = argUIdents,
-    O.methodBody = O.SLocal [] $ tBraces lbr rbr (concatMap tStmt stmts),
-    O.methodOrigin = O.TUnknown
+      O.methodType = funType
+    , O.methodIdent = tFIdent id
+    , O.methodArgs = argUIdents
+    , O.methodBody = O.SLocal [] $ tBraces lbr rbr (concatMap tStmt stmts)
+    , O.methodOrigin = O.TUnknown
+    , O.methodLocation = brToLoc lbr rbr
   }
   where
     argUIdents = map (\(I.Argument typ id) -> tVIdent id) args
@@ -107,13 +110,18 @@ tStmt x = case x of
 
 tSem :: I.Semicolon -> [O.Stmt] -> [O.Stmt]
 tSem (I.Semicolon ((line, _), _)) stmts
-  | line >= 0 = [O.SMetaLocation (Line line) stmts]
+  | line >= 0 = [O.SMetaLocation (Err.Line line) stmts]
   | otherwise = stmts
 
+brToLoc :: I.LeftBrace -> I.RightBrace -> Location
+brToLoc (I.LeftBrace ((start, _), _)) (I.RightBrace ((end, _), _))
+  | start >= 0 && end >= start = Err.Range start end
+  | otherwise = Err.Unknown
+
 tBraces :: I.LeftBrace -> I.RightBrace -> [O.Stmt] -> [O.Stmt]
-tBraces (I.LeftBrace ((start, _), _)) (I.RightBrace ((end, _), _)) stmts
-  | start >= 0 && end >= start = [O.SMetaLocation (Range start end) stmts]
-  | otherwise = stmts
+tBraces lbr rbr stmts = let rng = brToLoc lbr rbr in case rng of
+  Err.Range _ _ -> [O.SMetaLocation rng stmts]
+  Err.Unknown -> stmts
 
 noSem :: I.Semicolon
 noSem = I.Semicolon ((-1, -1), ";")

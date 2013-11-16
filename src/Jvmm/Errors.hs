@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts #-}
 module Jvmm.Errors where
 
 import Control.Monad.Identity
@@ -12,9 +13,9 @@ data Location =
   deriving (Ord, Eq)
 
 instance Show Location where
-  show Unknown = ""
-  show (Line no) = concat ["line ", show no]
-  show (Range start end) = concat ["between ", show start, show end]
+  show Unknown = "unknown location"
+  show (Line no) = concat ["near line ", show no]
+  show (Range start end) = concat ["between lines ", show start, " and ", show end]
 
 -- CUSTOM ERROR TYPE --
 -----------------------
@@ -23,8 +24,8 @@ data ErrorInfo =
   | Dangling String
 
 instance Show ErrorInfo where
-  show (Located loc msg) = concat ["line: ", (show loc), " error: ", msg]
-  show (Dangling msg) = concat ["line: N/A", " error: ",  msg]
+  show (Located loc msg) = concat [show loc, ", error: ", msg]
+  show (Dangling msg) = concat [show Unknown, ", error: ",  msg]
 
 instance Error ErrorInfo where
   noMsg = Dangling "unknown error"
@@ -38,13 +39,16 @@ runErrorInfoM = runIdentity . runErrorT
 
 -- Discards error and throws provided one
 action `rethrow` err = action `catchError` (\_ -> throwError err)
+
 -- Executes second action in all circumstances (and only once)
 action `finally` always = do
   res <- action `catchError` (\err -> always >> throwError err)
   always
   return res
+
 -- Tags error with location information
-action `addLocation` loc = action `catchError` handler
+withLocation :: (MonadError ErrorInfo m) => Location -> m a -> m a
+withLocation loc action = action `catchError` handler
   where
     handler (Dangling msg) = throwError $ Located loc msg
     handler err@(Located _ _) = throwError err

@@ -14,22 +14,25 @@ import Jvmm.Trans.Output
 ------------------------
 -- Prepares class diff, a function which returns full class description (inclluding superclass
 -- members) when provided with superclass description.
-prepareClassDiff :: Class -> ClassDiff
-prepareClassDiff (clazz@Class { classMethods = methods, classStaticMethods = staticMethods })
-  super = do
+prepareClassDiff :: Err.Location -> Class -> ClassDiff
+prepareClassDiff loc clazz super = Err.withLocation loc $ do
     guard (classType super == classSuper clazz)
     guard (clashing == []) `rethrow` Err.staticNonStaticConflict (head clashing)
     fields' <- fieldsClosure (classFields clazz) (classFields super)
     methods' <- methodsClosure (classMethods clazz) (classMethods super)
     staticMethods' <- methodsClosure (classStaticMethods clazz) (classStaticMethods super)
     return clazz {
-      classFields = fields',
-      classMethods = methods',
-      classStaticMethods = staticMethods'
+        classFields = fields'
+      , classMethods = methods'
+      , classStaticMethods = staticMethods'
+      , classLocation = loc
     }
   where
     clashing :: [UIdent]
     clashing = (List.map methodIdent methods) `intersect` (List.map methodIdent staticMethods)
+    methods, staticMethods :: [Method]
+    methods = classMethods clazz
+    staticMethods = classStaticMethods clazz
 
 -- CLASS HIERARCHY --
 ---------------------
@@ -44,12 +47,13 @@ objectClassDiff :: [Method] -> ErrorInfoT Identity ClassDiff
 objectClassDiff functions = do
   guard (repeated == []) `rethrow` Err.repeatedDeclaration (head repeated)
   guard (redefined == []) `rethrow` Err.redefinedBuiltin (head redefined)
-  return $ prepareClassDiff Class {
+  return $ prepareClassDiff Err.Unknown Class {
         classType = TObject
       , classSuper = TUnknown
       , classFields = []
       , classMethods = []
       , classStaticMethods = builtinFunctions ++ functions
+      , classLocation = Err.Unknown
     }
   where
     repeated, idents, redefined :: [UIdent]

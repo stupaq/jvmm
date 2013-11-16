@@ -6,7 +6,8 @@ module Jvmm.Trans.Output where
 import Control.Monad.Identity
 import Control.Monad.Error
 
-import Jvmm.Errors (ErrorInfo, ErrorInfoT, runErrorInfoM, addLocation, Location)
+import qualified Jvmm.Errors as Err
+import Jvmm.Errors (ErrorInfo, ErrorInfoT, runErrorInfoM, withLocation, Location)
 
 -- This module provides internal representation of abstract syntax tree that
 -- carries error reporting metadata, type information and many more.
@@ -52,6 +53,7 @@ data Class = Class {
   , classFields :: [Field]
   , classMethods :: [Method]
   , classStaticMethods :: [Method]
+  , classLocation :: Location
 } deriving (Eq, Ord, Show)
 
 type ClassDiff = Class -> ErrorInfoT Identity Class
@@ -63,6 +65,7 @@ instance Show ClassDiff where
       , classFields = []
       , classMethods = []
       , classStaticMethods = []
+      , classLocation = Err.Unknown
     }
 
 data Field = Field {
@@ -77,6 +80,7 @@ data Method = Method {
   , methodArgs :: [UIdent]
   , methodBody :: Stmt
   , methodOrigin :: Type
+  , methodLocation :: Location
 } deriving (Eq, Ord, Show)
 
 -- STATEMENTS --
@@ -101,16 +105,14 @@ data Stmt =
  | SInherited
   deriving (Eq, Ord, Show)
 
+stmtMetaLocation :: (MonadError ErrorInfo m) => Location -> m [Stmt] -> m Stmt
+stmtMetaLocation loc action = do
+  stmts' <- withLocation loc action
+  return $ SMetaLocation loc stmts'
+
 data Variable =
   Variable Type UIdent
   deriving (Eq, Ord, Show)
-
--- METADATA --
---------------
-stmtMetaLocation :: (MonadError ErrorInfo m) => Location -> m [Stmt] -> m Stmt
-stmtMetaLocation loc action = do
-  stmts' <- action `addLocation` loc
-  return $ SMetaLocation loc stmts'
 
 -- TYPES --
 -----------

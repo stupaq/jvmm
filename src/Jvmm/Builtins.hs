@@ -3,7 +3,8 @@ module Jvmm.Builtins where
 import Control.Monad.Identity
 import Control.Monad.Error
 
-import Jvmm.Errors (ErrorInfoT)
+import qualified Jvmm.Errors as Err
+import Jvmm.Errors (ErrorInfoT, Location)
 import Jvmm.Trans.Output
 import qualified Jvmm.Scope as Scope
 
@@ -17,7 +18,7 @@ builtinFunctions = map fun [
     ("readString", TFunc TString [] []),
     ("error", TFunc TVoid [] [])]
   where
-    fun (name, typ) = Method typ (FIdent name) [] SBuiltin TUnknown
+    fun (name, typ) = Method typ (FIdent name) [] SBuiltin TUnknown Err.Unknown
 
 -- ENTRYPOINT --
 ----------------

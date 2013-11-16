@@ -208,8 +208,8 @@ intWithinBounds n =
 -- TRAVERSING TREE --
 ---------------------
 funH :: ClassHierarchy -> TypeM ClassHierarchy
-funH = Traversable.mapM $ \clazz@Class { classType = typ } ->
-  enterClass typ $ do
+funH = Traversable.mapM $ \clazz@Class { classType = typ, classLocation = loc } ->
+  Err.withLocation loc . enterClass typ $ do
     fields' <- mapM funF $ classFields clazz
     methods' <- mapM funM $ classMethods clazz
     staticMethods' <- mapM funMS $ classStaticMethods clazz
@@ -226,7 +226,7 @@ funF field@Field { fieldType = typ, fieldIdent = id } = do
 
 funM :: Method -> TypeM Method
 funM method@Method { methodType = typ, methodBody = stmt, methodArgs = args } = do
-  called typ args $ do
+  Err.withLocation (methodLocation method) . called typ args $ do
     stmt' <- funS stmt
     return $ method { methodBody = stmt' }
 
