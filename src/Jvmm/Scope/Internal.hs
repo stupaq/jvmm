@@ -16,15 +16,6 @@ import Jvmm.Errors (rethrow, finally, ErrorInfoT)
 import Jvmm.Trans.Output
 import Jvmm.Hierarchy.Output
 
--- DEBUG/
-import Text.Show.Pretty (ppShow)
-debug :: ScopeM a
-debug = do
-  st <- get
-  env <- ask
-  error $ "\n" ++ ppShow st ++ "\n" ++ ppShow env
--- /DEBUG
-
 -- SCOPE REPRESENTATION --
 --------------------------
 type Tag = Int

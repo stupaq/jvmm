@@ -15,14 +15,6 @@ import Jvmm.Builtins
 import Jvmm.Trans.Output
 import Jvmm.Hierarchy.Output
 
--- DEBUG/
-import Text.Show.Pretty (ppShow)
-debug :: TypeM a
-debug = do
-  env <- ask
-  error $ "\n" ++ ppShow env
--- /DEBUG
-
 -- WEIRD STUFF --
 -----------------
 -- For MonadReader this can be easily used to collect and compose environments (e.g. when we collect
