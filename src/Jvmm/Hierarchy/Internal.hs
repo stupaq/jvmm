@@ -20,6 +20,7 @@ fieldsClosure clazz super = do
   let repeated = List.nub [ x | Field { fieldIdent = x } <- clazz, Field { fieldIdent = y } <- super, x == y ]
   guard (repeated == []) `rethrow` Err.redeclaredInSuper repeated
   return $ super ++ clazz
+
 methodsClosure :: [Method] -> [Method] -> HierarchyM [Method]
 methodsClosure clazz superOrig = do
   -- Strip down super class' methods implementation

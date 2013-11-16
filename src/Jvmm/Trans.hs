@@ -10,5 +10,5 @@ import Jvmm.Errors (ErrorInfoT)
 
 -- Translates AST into APT performing several simplifications and syntactic sugar removal.
 trans :: Program -> ErrorInfoT Identity O.CompilationUnit
-trans program = return $ tProgram program
+trans = tProgram
 

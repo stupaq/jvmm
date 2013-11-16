@@ -21,6 +21,8 @@ duplicateArg typ id = concat ["duplicate argument: ", show typ, " ", show id]
 unboundSymbol id = "unbound symbol: " ++ (show id)
 redeclaredSymbol id = "redeclared symbol in the same scope: " ++ (show id)
 globalForbidden = "statement not allowed in global scope"
+repeatedDeclaration id = "repeated declaration for: " ++ (show id)
+redefinedBuiltin id = "redefined built-in method: " ++ (show id)
 
 -- Type resolution errors
 unknownMemberType typ id = concat ["unknown member type: ", show typ, " . ", show id]

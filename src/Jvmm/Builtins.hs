@@ -1,17 +1,11 @@
 module Jvmm.Builtins where
 
+import Control.Monad.Identity
+import Control.Monad.Error
+
+import Jvmm.Errors (ErrorInfoT)
 import Jvmm.Trans.Output
 import qualified Jvmm.Scope as Scope
-
--- HIERARCHY --
----------------
-buildObjectClass :: [Method] -> Class
-buildObjectClass methods = Class {
-    classType = TObject,
-    classSuper = TUnknown,
-    classFields = [],
-    classMethods = builtins ++ methods
-  }
 
 -- FUNCTIONS --
 ---------------

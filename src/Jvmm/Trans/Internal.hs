@@ -5,8 +5,8 @@ import Control.Monad.Identity
 
 import qualified Syntax.AbsJvmm as I
 
-import Jvmm.Builtins (buildObjectClass)
-import Jvmm.Hierarchy (prepareClassDiff)
+import Jvmm.Errors (ErrorInfoT)
+import Jvmm.Hierarchy (prepareClassDiff, objectClassDiff)
 
 -- Creates variable-associated identifier from given one (for temporary and iteration variables).
 -- Only variable-associated identifiers derived from the same variable and with the same context
@@ -14,11 +14,11 @@ import Jvmm.Hierarchy (prepareClassDiff)
 tempIdent :: I.Ident -> String -> I.Ident
 tempIdent (I.Ident id) ctx = I.Ident $ id ++ "#" ++ ctx
 
-tProgram :: I.Program -> O.CompilationUnit
-tProgram (I.Program defs) = O.CompilationUnit $
+tProgram :: I.Program -> ErrorInfoT Identity O.CompilationUnit
+tProgram (I.Program defs) = do
+  objectDiff <- objectClassDiff [ tFunction x | I.DFunction x <- defs ]
   let userClasses = [ x | I.DClass x <- defs ]
-      objectClass = buildObjectClass [ tFunction x | I.DFunction x <- defs ]
-  in (O.TUnknown, prepareClassDiff objectClass) : map tClass userClasses
+  return $ O.CompilationUnit $ (O.TUnknown, objectDiff):map tClass userClasses
 
 tClass :: I.Class -> (O.Type, O.ClassDiff)
 tClass (I.Class id extends members) =
