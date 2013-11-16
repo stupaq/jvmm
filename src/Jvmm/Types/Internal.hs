@@ -15,6 +15,14 @@ import Jvmm.Builtins
 import Jvmm.Trans.Output
 import Jvmm.Hierarchy.Output
 
+-- DEBUG/
+import Text.Show.Pretty (ppShow)
+debug :: TypeM a
+debug = do
+  env <- ask
+  error $ "\n" ++ ppShow env
+-- /DEBUG
+
 -- WEIRD STUFF --
 -----------------
 -- For MonadReader this can be easily used to collect and compose environments (e.g. when we collect
@@ -70,7 +78,8 @@ collectTypes classes = fmap snd $ runStateT (Traversable.mapM decClass classes) 
       where
         fields = List.map (\x -> (fieldIdent x, fieldType x)) $ classFields clazz
         methods = List.map (\x -> (methodIdent x, methodType x)) $ classMethods clazz
-        types = Map.fromList $ fields ++ methods
+        staticMethods = List.map (\x -> (methodIdent x, methodType x)) $ classStaticMethods clazz
+        types = Map.fromList $ fields ++ methods ++ staticMethods
 
 -- Typing is fully static. TObject type is a superclass of every non-primitive.
 -- Note that after scope resolution we can't throw undeclared errors (also for
@@ -95,6 +104,9 @@ typeof' :: Type -> UIdent -> TypeM Type
 typeof' typ uid = case builtinMemberType typ uid of
   TUnknown -> (asks typeenvTypes >>= lookupM typ >>= lookupM uid) `rethrow` Err.unknownMemberType typ uid
   typ -> return typ
+
+typeof'' :: UIdent -> TypeM Type
+typeof'' uid = this >>= flip typeof' uid
 
 throws :: Type -> TypeM ()
 throws typ = do
@@ -204,11 +216,16 @@ intWithinBounds n =
 -- TRAVERSING TREE --
 ---------------------
 funH :: ClassHierarchy -> TypeM ClassHierarchy
-funH = Traversable.mapM $ \clazz@Class { classMethods = methods, classType = typ} ->
+funH = Traversable.mapM $ \clazz@Class { classType = typ } ->
   enterClass typ $ do
-    fields <- mapM funF (classFields clazz)
-    methods <- mapM funM (classMethods clazz)
-    return $ clazz { classMethods = methods, classFields = fields }
+    fields' <- mapM funF $ classFields clazz
+    methods' <- mapM funM $ classMethods clazz
+    staticMethods' <- mapM funMS $ classStaticMethods clazz
+    return $ clazz {
+          classMethods = methods'
+        , classFields = fields'
+        , classStaticMethods = staticMethods'
+      }
 
 funF :: Field -> TypeM Field
 funF field@Field { fieldType = typ, fieldIdent = id } = do
@@ -217,10 +234,14 @@ funF field@Field { fieldType = typ, fieldIdent = id } = do
 
 funM :: Method -> TypeM Method
 funM method@Method { methodType = typ, methodBody = stmt, methodArgs = args } = do
-  checkEntrypoint method
   called typ args $ do
     stmt' <- funS stmt
     return $ method { methodBody = stmt' }
+
+funMS :: Method -> TypeM Method
+funMS method = do
+  checkEntrypoint method
+  funM method
   where
     checkEntrypoint :: Method -> TypeM ()
     checkEntrypoint method =
@@ -315,7 +336,7 @@ funE x = case x of
       _ -> throwError Err.subscriptNonArray
   ECall id exprs -> do
     (exprs', etypes) <- mapAndUnzipM funE exprs
-    ftyp <- typeof id
+    ftyp <- typeof'' id
     rett <- invoke ftyp etypes
     return (ECall id exprs', rett)
   EAccessFn expr id exprs -> do
