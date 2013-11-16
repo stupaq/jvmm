@@ -50,6 +50,7 @@ data Class = Class {
   , classSuper :: Type
   , classFields :: [Field]
   , classMethods :: [Method]
+  , classStaticMethods :: [Method]
 } deriving (Eq, Ord, Show)
 
 type ClassDiff = Class -> ErrorInfoT Identity Class
@@ -60,6 +61,7 @@ instance Show ClassDiff where
       , classSuper = TUnknown
       , classFields = []
       , classMethods = []
+      , classStaticMethods = []
     }
 
 data Field = Field {
@@ -129,6 +131,7 @@ data Expr =
  | ELitString String
  | ELitChar Char
  | ENull
+ | ECall UIdent [Expr]
  | EAccessArr Expr Expr
  | EAccessFn Expr UIdent [Expr]
  | EAccessVar Expr UIdent

@@ -65,14 +65,19 @@ checkEntrypoint _ = return ()
 ---------------------
 funH :: ClassHierarchy -> VerifierM ()
 funH classes = do
-  Traversable.mapM (\Class { classMethods = methods } -> mapM_ funM methods) classes
+  Traversable.mapM
+    (\Class { classMethods = methods, classStaticMethods = staticMethods } -> do
+        mapM_ funM methods >> mapM_ funSM staticMethods)
+    classes
   (gets verifierstateMain >>= guard) `rethrow` Err.missingMain
 
-funM :: Method -> VerifierM ()
+funM, funSM :: Method -> VerifierM ()
 funM method@Method { methodBody = stmt, methodType = typ } = do
-  checkEntrypoint method
   let TFunc rett _ _ = typ
   checkReturned rett $ funS stmt
+funSM method = do
+  checkEntrypoint method
+  funM method
 
 funS :: Stmt -> VerifierM ()
 funS x = case x of

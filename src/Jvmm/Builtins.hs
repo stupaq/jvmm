@@ -9,8 +9,8 @@ import qualified Jvmm.Scope as Scope
 
 -- FUNCTIONS --
 ---------------
-builtins :: [Method]
-builtins = map fun [
+builtinFunctions :: [Method]
+builtinFunctions = map fun [
     ("printInt", TFunc TVoid [TInt] []),
     ("readInt", TFunc TInt [] []),
     ("printString", TFunc TVoid [TString] []),
@@ -30,7 +30,7 @@ isBuiltinType typ = case typ of
   TUser (TIdent str) -> str `elem` ["int", "char", "boolean", "string"]
   _ -> False
 
-builtinMember typ uid = case (typ, uid) of
+builtinMemberType typ uid = case (typ, uid) of
   (TArray _, VIdent "length$0") -> TInt
   (TString, VIdent "length$0") -> TInt
   (TString, FIdent "charAt$0") -> TFunc TChar [TInt] []

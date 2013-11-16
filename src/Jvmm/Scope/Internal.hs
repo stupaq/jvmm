@@ -32,36 +32,47 @@ data Scope = Scope {
   scopeVars :: Symbols,
   scopeFuncs :: Symbols,
   scopeTypes :: Symbols
-} deriving (Eq, Show)
+} deriving (Show)
 
--- Empty scope
-scope0 = Scope {
-  scopeVars = symbols0,
-  scopeFuncs = symbols0,
-  scopeTypes = symbols0
-}
+scope0 = Scope symbols0 symbols0 symbols0
 
 newOccurence :: Symbols -> UIdent -> Symbols
-newOccurence m id = Map.insertWith (\_ -> (+1)) id tag0 m
+newOccurence m id = Map.insertWith (\_ -> (+ 1)) id tag0 m
 
 resolve :: (Scope -> Symbols) -> UIdent -> Scope -> (ErrorInfoT Identity) UIdent
 resolve acc id sc = case Map.lookup id (acc sc) of
   Just tag -> return $ tagWith tag id
   Nothing -> throwError $ Err.unboundSymbol id
 
+data ScopeEnv = ScopeEnv {
+    scopeenvInstance :: Scope
+  , scopeenvStatic :: Scope
+  , scopeenvParent :: Scope
+} deriving (Show)
+
+scopeenv0 = ScopeEnv scope0 scope0 scope0
+
+-- We cannot resolve scope here without type information
+scopeenvForeign :: UIdent -> ScopeEnv -> Scope
+scopeenvForeign member _ = let scope1 = newOccurence symbols0 member in
+  case member of
+    FIdent _ -> scopeenv0 { scopeFuncs = scope1 }
+    VIdent _ -> scopeenv0 { scopeVars = scope1 }
+    _ -> error $ Err.unusedBranch "scopeenvForeign afked for member type"
+
+scopeenvEmpty :: ScopeEnv -> Scope
+scopeenvEmpty = const scope0
+
 -- SCOPE MONAD --
 -----------------
--- The first scope in reader monad is the global one, second is the one from
--- beginning of a block, scope in state is the current one, we need all of them
--- for tracking redeclarations in single block and resolving member symbols.
-type ScopeM = StateT Scope (ReaderT (Scope, Scope) (ErrorInfoT Identity))
+type ScopeM = StateT Scope (ReaderT ScopeEnv (ErrorInfoT Identity))
 runScopeM :: ScopeM a -> ErrorInfoT Identity (a, Scope)
-runScopeM m = runReaderT (runStateT m scope0) (scope0, scope0)
+runScopeM m = runReaderT (runStateT m scope0) scopeenv0
 
-resolveLocal, resolveGlobal, resolveParent :: (Scope -> Symbols) -> UIdent -> ScopeM UIdent
+resolveLocal, resolveInstance, resolveParent :: (Scope -> Symbols) -> UIdent -> ScopeM UIdent
 resolveLocal acc id = (get) >>= (lift . lift . (resolve acc id))
-resolveGlobal acc id = (asks fst) >>= (lift . lift . (resolve acc id))
-resolveParent acc id = (asks snd) >>= (lift . lift . (resolve acc id))
+resolveInstance acc id = (asks scopeenvInstance) >>= (lift . lift . (resolve acc id))
+resolveParent acc id = (asks scopeenvParent) >>= (lift . lift . (resolve acc id))
 
 checkRedeclaration:: (Scope -> Symbols) -> UIdent -> ScopeM ()
 checkRedeclaration acc id = do
@@ -75,37 +86,22 @@ checkRedeclaration acc id = do
 ---------------------
 -- Pushes scope 'stack frame', runs action in it, restores 'stack frame'
 newLocal action = do
-  sc <- get
-  (glob, _) <- ask
-  res <- local (const (glob, sc)) action
-  put sc
+  parent <- get
+  res <- local (\env -> env { scopeenvParent = parent }) action
+  put parent
   return res
 
--- Runs action with global scope as current one, note that action will never
--- modify global scope inside, restores scope after action is executed
-globalAsCurrent action = do
-  sc <- get
-  glob <- asks fst
-  put glob
-  res <- local (const (glob, glob)) action
-  put sc
+-- Sets current scope fromScopeEnv via given accessor
+asCurrent query action = do
+  saved <- get
+  dest <- asks query
+  put dest
+  res <- action
+  put saved
   return res
 
--- Runs given action in empty scope
-emptyAsCurrent action = do
-  sc <- get
-  put scope0
-  res <- local (const (scope0, scope0)) action
-  put sc
-  return res
-
--- Runs action with current scope as global one, restores scope after action is
--- executed
-currentAsGlobal action = do
-  sc <- get
-  res <- local (const (sc, sc)) action
-  put sc
-  return res
+-- Returns current scope
+getCurrent = get
 
 -- SCOPE READING --
 -------------------
@@ -124,7 +120,7 @@ resType typ = case typ of
 isField :: UIdent -> ScopeM Bool
 isField id = do
   -- resolve in global scope
-  idout <- resolveGlobal scopeVars id `catchError` (\_ -> return id)
+  idout <- resolveInstance scopeVars id `catchError` (\_ -> return id)
   -- resolve in current scope
   idin <- resolveLocal scopeVars id `catchError` (\_ -> return id)
   return (idout == idin)
@@ -156,25 +152,35 @@ collectClasses :: ClassHierarchy -> ScopeM ()
 collectClasses classes =
   Traversable.mapM (decType . classType) classes >> return ()
 
-collectMembers :: Class -> ScopeM ()
-collectMembers clazz = do
-  mapM_ (\Field { fieldIdent = id } -> decVar id) $ classFields clazz
-  mapM_ (\Method { methodIdent = id } -> decFunc id) $ classMethods clazz
+enterClassScope :: Class -> ScopeM a -> ScopeM a
+enterClassScope clazz action = do
+  globalScope <- 
+  instanceScope <- scopenvEmpty `asCurrent` do
+    mapM_ (\Field { fieldIdent = id } -> decVar id) $ classFields clazz
+    mapM_ (\Method { methodIdent = id } -> decFunc id) $ classMethods clazz
+  staticScope <- scopenvEmpty `asCurrent` do
+    mapM_ (\Method { methodIdent = id } -> decFunc id) $ classStaticMethods clazz
+  let parent = Scope {
+      , scopeFuns = union (scopeFunc staticScope) (scopeFuns instanceScope)
+      , scopeFuns = union (scopeFunc staticScope) (scopeFuns instanceScope)
+      , scopeFuns = union (scopeFunc staticScope) (scopeFuns instanceScope)
+  local (const $ ScopeEnv { scopeenvParent = parent }) action
 
 funH :: ClassHierarchy -> ScopeM ClassHierarchy
 funH = Traversable.mapM $ \clazz -> do
     typ' <- resType $ classType clazz
     super' <- resType $ classSuper clazz
     newLocal $ do
-      collectMembers clazz
-      currentAsGlobal $ do
+      enterClassScope clazz $ do
         fields' <- mapM funF $ classFields clazz
         methods' <- mapM funM $ classMethods clazz
-        return $ clazz {
-            classType = typ',
-            classSuper = super',
-            classFields = fields',
-            classMethods = methods'
+        staticMethods' <- mapM funSM $ classStaticMethods clazz
+        return $ Class {
+              classType = typ'
+            , classSuper = super'
+            , classFields = fields'
+            , classMethods = methods'
+            , classStaticMethods = staticMethods'
           }
 
 funF :: Field -> ScopeM Field
@@ -190,6 +196,9 @@ funM (Method typ id ids stmt origin) = do
     ids' <- mapM resVar ids
     stmt' <- newLocal (funS stmt)
     return $ Method typ' id' ids' stmt' origin'
+
+funSM :: Method -> ScopeM Method
+funSM = funM
 
 funS :: Stmt -> ScopeM Stmt
 funS x = case x of
@@ -214,8 +223,7 @@ funS x = case x of
   SAssignFld id1 id2 expr2 -> do
     expr2' <- funE expr2
     id1' <- resVar id1
-    emptyAsCurrent $ do
-      decVar id2
+    scopeenvForeign id2 `asCurrent` do
       id2' <- resVar id2
       return $ SAssignFld id1' id2' expr2'
   SReturn expr -> do
@@ -264,17 +272,20 @@ funE x = case x of
     expr1' <- funE expr1
     expr2' <- funE expr2
     return $ EAccessArr expr1' expr2'
+  ECall id exprs -> do
+    exprs' <- mapM funE exprs
+    scopeenvStatic `asCurrent` do
+      id' <- resFunc id
+      return $ ECall id' exprs'
   EAccessFn expr id exprs -> do
     expr' <- funE expr
     exprs' <- mapM funE exprs
-    emptyAsCurrent $ do
-      decFunc id
+    scopeenvForeign id `asCurrent` do
       id' <- resFunc id
       return $ EAccessFn expr' id' exprs'
   EAccessVar expr id -> do
     expr' <- funE expr
-    emptyAsCurrent $ do
-      decVar id
+    scopeenvForeign id `asCurrent` do
       id' <- resVar id
       return $ EAccessVar expr' id'
   ENewArr typ expr -> do

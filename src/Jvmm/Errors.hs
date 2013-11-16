@@ -17,6 +17,7 @@ redeclaredInSuper ids = "fields redeclared in super classes: " ++ (unwords $ map
 redeclaredWithDifferentType ids = "method redeclared in super classes with not mathing type: " ++ (unwords $ map show ids)
 
 -- Scope resolution errors
+staticNonStaticConflict id = "static and non-static symbol conflict: " ++ (show id)
 duplicateArg typ id = concat ["duplicate argument: ", show typ, " ", show id]
 unboundSymbol id = "unbound symbol: " ++ (show id)
 redeclaredSymbol id = "redeclared symbol in the same scope: " ++ (show id)

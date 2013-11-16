@@ -25,10 +25,11 @@ tClass (I.Class id extends members) =
   let typ = O.TUser (tTIdent id)
       super = tExtends extends
   in (super, prepareClassDiff $ O.Class {
-      O.classType = typ,
-      O.classSuper = super,
-      O.classFields = [ (tDeclaration x) { O.fieldOrigin = typ } | I.Field x <- members ],
-      O.classMethods = [ (tFunction x) { O.methodOrigin = typ } | I.Method x <- members ]
+        O.classType = typ
+      , O.classSuper = super
+      , O.classFields = [ (tDeclaration x) { O.fieldOrigin = typ } | I.Field x <- members ]
+      , O.classMethods = [ (tFunction x) { O.methodOrigin = typ } | I.Method x <- members ]
+      , O.classStaticMethods = []
     })
 
 tExtends :: I.Extends -> O.Type
@@ -145,7 +146,7 @@ tExpr x = case x of
   I.EFieldI ide id -> O.EAccessVar (tExpr $ I.EVar ide) (tVIdent id)  -- GRAMMAR IRREGULARITY
   I.EFieldIT id -> O.EAccessVar O.EThis (tVIdent id)
   I.EMethodIT id exprs -> O.EAccessFn O.EThis (tFIdent id) (map tExpr exprs)
-  I.EApp id exprs -> O.EAccessFn O.EThis (tFIdent id) (map tExpr exprs)
+  I.EApp id exprs -> O.ECall (tFIdent id) (map tExpr exprs)
   I.ENewArray typ expr -> O.ENewArr (tType typ) (tExpr expr)
   I.ENewObject typ -> O.ENewObj $ tType typ
   I.ENeg expr -> O.EUnary O.TUnknown O.OuNeg (tExpr expr)

@@ -17,7 +17,10 @@ type HierarchyM = ErrorInfoT Identity
 -------------------
 fieldsClosure :: [Field] -> [Field] -> HierarchyM [Field]
 fieldsClosure clazz super = do
-  let repeated = List.nub [ x | Field { fieldIdent = x } <- clazz, Field { fieldIdent = y } <- super, x == y ]
+  let repeated = List.nub [ x |
+        Field { fieldIdent = x } <- clazz,
+        Field { fieldIdent = y } <- super,
+        x == y ]
   guard (repeated == []) `rethrow` Err.redeclaredInSuper repeated
   return $ super ++ clazz
 
@@ -25,7 +28,10 @@ methodsClosure :: [Method] -> [Method] -> HierarchyM [Method]
 methodsClosure clazz superOrig = do
   -- Strip down super class' methods implementation
   let super = List.map (\method -> method { methodBody = SInherited }) superOrig
-  let repeated = List.nub [ x | Method { methodType = tx, methodIdent = x } <- clazz, Method { methodType = ty, methodIdent = y } <- super, x == y, tx /= ty ]
+  let repeated = List.nub [ x |
+        Method { methodType = tx, methodIdent = x } <- clazz,
+        Method { methodType = ty, methodIdent = y } <- super,
+        x == y, tx /= ty ]
   guard (repeated == []) `rethrow` Err.redeclaredWithDifferentType repeated
   -- This will leave the last occurence of a function with given name
   return $ List.nubBy eqMethodName $ clazz ++ super
@@ -40,7 +46,8 @@ objectSuperClass = Class {
   classType = TUnknown,
   classSuper = TUnknown,
   classFields = [],
-  classMethods = []
+  classMethods = [],
+  classStaticMethods = []
 }
 
 visit :: Class -> [(Type, ClassDiff)] -> ClassDiff -> HierarchyM ClassHierarchy

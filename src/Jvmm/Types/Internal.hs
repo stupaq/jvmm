@@ -92,7 +92,7 @@ typeof IThis = this
 typeof uid = (asks typeenvIdents >>= lookupM uid) `rethrow` Err.unknownSymbolType uid
 
 typeof' :: Type -> UIdent -> TypeM Type
-typeof' typ uid = case builtinMember typ uid of
+typeof' typ uid = case builtinMemberType typ uid of
   TUnknown -> (asks typeenvTypes >>= lookupM typ >>= lookupM uid) `rethrow` Err.unknownMemberType typ uid
   typ -> return typ
 
@@ -101,14 +101,14 @@ throws typ = do
   excepts <- asks typeenvExceptions
   unless (Set.member typ excepts) $ throwError $ Err.uncaughtException typ
 
-call :: Type -> [UIdent] -> TypeM a -> TypeM a
-call typ@(TFunc returnType argumentTypes exceptions) argumentIdents action = do
+called :: Type -> [UIdent] -> TypeM a -> TypeM a
+called typ@(TFunc returnType argumentTypes exceptions) argumentIdents action = do
   forM_ argumentTypes $ \argt -> notAVoid argt `rethrow` Err.voidArg
   catches exceptions . argumentsEnv . enterFunction typ $ action
   where
     argumentsEnv :: TypeM a -> TypeM a
     argumentsEnv = applyAndCompose (uncurry $ flip declare) $ List.zip argumentTypes argumentIdents
-call x _ _ = throwError $ Err.unusedBranch x
+called x _ _ = throwError $ Err.unusedBranch x
 
 catches :: [Type] -> TypeM a -> TypeM a
 catches types = local (\env -> env { typeenvExceptions = List.foldl (flip Set.insert) (typeenvExceptions env) types })
@@ -137,6 +137,12 @@ super typ = (asks typeenvSuper >>= lookupM typ) `rethrow` Err.noSuperType typ
 enterFunction, enterClass :: Type -> TypeM a -> TypeM a
 enterFunction x = local $ \env -> env { typeenvFunction = Just x }
 enterClass x = local $ \env -> env { typeenvThis = Just x }
+
+invoke :: Type -> [Type] -> TypeM Type
+invoke ftyp@(TFunc ret args excepts) etypes = do
+    forM excepts throws
+    (ftyp =| TFunc ret etypes []) `rethrow` Err.argumentsNotMatch args etypes
+    return ret
 
 -- COMMON ASSERTIONS --
 -----------------------
@@ -212,7 +218,7 @@ funF field@Field { fieldType = typ, fieldIdent = id } = do
 funM :: Method -> TypeM Method
 funM method@Method { methodType = typ, methodBody = stmt, methodArgs = args } = do
   checkEntrypoint method
-  call typ args $ do
+  called typ args $ do
     stmt' <- funS stmt
     return $ method { methodBody = stmt' }
   where
@@ -307,13 +313,17 @@ funE x = case x of
     case etyp1 of
       TArray typ -> return (EAccessArr expr1' expr2', typ)
       _ -> throwError Err.subscriptNonArray
+  ECall id exprs -> do
+    (exprs', etypes) <- mapAndUnzipM funE exprs
+    ftyp <- typeof id
+    rett <- invoke ftyp etypes
+    return (ECall id exprs', rett)
   EAccessFn expr id exprs -> do
     (expr', etyp) <- funE expr
     (exprs', etypes) <- mapAndUnzipM funE exprs
-    ftyp1@(TFunc ret args excepts) <- typeof' etyp id
-    forM excepts throws
-    (ftyp1 =| TFunc ret etypes []) `rethrow` Err.argumentsNotMatch args etypes
-    return (EAccessFn expr' id exprs', ret)
+    ftyp <- typeof' etyp id
+    rett <- invoke ftyp etypes
+    return (EAccessFn expr' id exprs', rett)
   EAccessVar expr id -> do
     (expr', etyp) <- funE expr
     typ <- typeof' etyp id
