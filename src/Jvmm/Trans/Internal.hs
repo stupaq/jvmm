@@ -22,7 +22,7 @@ tProgram (I.Program defs) = do
   return $ O.CompilationUnit $ (O.TUnknown, objectDiff):map tClass userClasses
 
 tClass :: I.Class -> (O.Type, O.ClassDiff)
-tClass (I.Class id extends lbr members rbr) = -- FIXME what to do with location info?
+tClass (I.Class id extends lbr members rbr) =
   let typ = O.TUser (tTIdent id)
       super = tExtends extends
   in (super, prepareClassDiff (brToLoc lbr rbr) $ O.Class {
