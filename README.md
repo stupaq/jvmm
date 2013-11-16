@@ -3,32 +3,28 @@ jvmm - a Java-like interpreted and compiled language
 
 INTRODUCTION
 ------------
-The goal of this project is to develop Java-like programming language
-environment (interpreter and compiler) with full support for object-oriented
-design and easily swappable backend. Project priorities are state-of-art
-interpreter/compiler design and robust implementation in Haskell.
+The goal of this project is to develop Java-like programming language environment (interpreter and
+compiler) with full support for object-oriented design and easily swappable backend.
 
 USAGE
 -----
-Build-time requirements
+Build-time requirements:
 + `ghc`
 + `ghc-mtl`
 + `bnfc`
 
-In order to compile and test interpreter
+In order to compile `jvmm`:
 ```
 make
-make test-examples
-./run_examples.sh <example name>
 ```
 
-You can run an arbitrary code in interpreter
+You can run entire test suite or a single test case using:
 ```
-./interpreter <source file>
+make test-latte
+./test-latte/test-run.sh <example name>
 ```
 
 SOURCES
 -------
-Many of test programs come from test packages freely available at:
-+ http://www.mimuw.edu.pl/~ben/Zajecia/Mrj2012/Latte/
-+ https://github.com/tomwys/mrjp-tests
+Test programs under `test-latte` come from official package: http://www.mimuw.edu.pl/~ben/Zajecia/Mrj2012/Latte/
+Test programs under `test-mrjp` and partially `test-jvmm` come from: https://github.com/tomwys/mrjp-tests
