@@ -210,8 +210,20 @@ funS x = case x of
     liftM2 SDeclVar (resType typ) (resVar id)
   SLocal _ stmts -> do -- definitions part of SLocal is empty at this point
     stmts' <- newLocal (mapM funS stmts)
-    let (decls, instrs) = List.partition (\x -> case x of { SDeclVar _ _ -> True; _ -> False }) stmts'
-    return $ SLocal (map (\(SDeclVar typ id) -> Variable typ id) decls) instrs
+    let decls = collectDeclarations stmts'
+    let instrs = filterDeclarations stmts'
+    return $ SLocal decls instrs
+    where
+      collectDeclarations :: [Stmt] -> [Variable]
+      collectDeclarations = concatMap (\x -> case x of
+          SDeclVar typ id -> return $ Variable typ id
+          SMetaLocation _ stmts -> collectDeclarations stmts
+          _ -> [])
+      filterDeclarations :: [Stmt] -> [Stmt]
+      filterDeclarations = concatMap (\x -> case x of
+          SDeclVar typ id -> []
+          SMetaLocation _ stmts -> filterDeclarations stmts
+          _ -> return x)
   SAssign id expr -> do
     expr' <- funE expr
     -- Decide if this is actually a field access
