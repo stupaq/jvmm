@@ -1,0 +1,31 @@
+int a() {
+  int c = 4;
+  return b(c + 1);
+}
+
+int main() {
+  string[] arr = new string[3];
+  int a = 1;
+  printInt(a);
+  a++;
+  printInt(a);
+  for (string a : arr) {
+    printString(a);
+    a += "Asdf";
+    printString(a);
+    boolean a;
+    a = a && true;
+    {
+      int a;
+      a += a();
+    }
+  }
+  printInt(a);
+  a++;
+  printInt(a);
+  return 0;
+}
+
+int b(int a) {
+  return a * 5 - a;
+}

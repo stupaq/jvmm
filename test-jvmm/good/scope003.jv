@@ -1,0 +1,16 @@
+int main() {
+  string[] arr = new string[3];
+  int a = 1;
+  printInt(a);
+  for (string a : arr) {
+    printString(a);
+    a += "Asdf";
+    printString(a);
+    boolean a;
+    a = a && true;
+  }
+  printInt(a);
+  a+=100;
+  printInt(a);
+  return a;
+}
