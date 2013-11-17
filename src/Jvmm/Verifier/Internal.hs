@@ -84,17 +84,21 @@ funS :: Stmt -> VerifierM ()
 funS x = case x of
   SLocal _ stmts -> mapM_ funS stmts
   SReturn _ -> setReturned True
-  SIf ELitTrue stmt -> funS stmt -- TODO analyser resolves this
+  SIf ELitTrue stmt -> funS stmt -- TODO analyser should resolve this
   SIf _ stmt ->
     -- Whether this statement was executed depends on runtime evaluation of expression
     clearReturned $ funS stmt
-  SIfElse ELitTrue stmt1 stmt2 -> funS stmt1 -- TODO analyser resolves this
-  SIfElse ELitFalse stmt1 stmt2 -> funS stmt2 -- TODO analyser resolves this
+  SIfElse ELitTrue stmt1 stmt2 -> funS stmt1 -- TODO analyser should resolve this
+  SIfElse ELitFalse stmt1 stmt2 -> funS stmt2 -- TODO analyser should resolve this
   SIfElse _ stmt1 stmt2 -> do
     (_, retd1) <- probeReturned $ funS stmt1
     (_, retd2) <- probeReturned $ funS stmt2
     orReturned (retd1 && retd2)
-  SWhile ELitTrue stmt -> funS stmt
+  -- We have no break nor goto instruction therefore infinite loop will either loop or return or
+  -- terminate entire program with 'runtime error' (which I consider as returning)
+  SWhile ELitTrue stmt -> do
+    funS stmt
+    orReturned True
   SWhile _ stmt ->
     -- Whether this statement was executed depends on runtime evaluation of expression
     clearReturned $ funS stmt
