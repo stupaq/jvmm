@@ -28,8 +28,8 @@ tClass (I.Class id extends lbr members rbr) =
   in (super, prepareClassDiff (brToLoc lbr rbr) $ O.Class {
         O.classType = clazzTyp
       , O.classSuper = super
-      , O.classFields = [ (tField typ x) { O.fieldOrigin = clazzTyp } | I.FieldsList typ fields _ <- members, x <- fields ]
-      , O.classMethods = [ (tFunction x) { O.methodOrigin = clazzTyp } | I.Method x <- members ]
+      , O.classFields = [ tField typ x | I.FieldsList typ fields _ <- members, x <- fields ]
+      , O.classMethods = [ tFunction x | I.Method x <- members ]
       , O.classStaticMethods = []
       , O.classLocation = Err.Unknown
     })

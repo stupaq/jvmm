@@ -15,12 +15,12 @@ import Jvmm.Trans.Output
 -- Prepares class diff, a function which returns full class description (inclluding superclass
 -- members) when provided with superclass description.
 prepareClassDiff :: Err.Location -> Class -> ClassDiff
-prepareClassDiff loc clazz super = Err.withLocation loc $ do
+prepareClassDiff loc clazz@(Class { classType = typ }) super = Err.withLocation loc $ do
     guard (classType super == classSuper clazz)
     guard (clashing == []) `rethrow` Err.staticNonStaticConflict (head clashing)
-    fields' <- fieldsClosure (classFields clazz) (classFields super)
-    methods' <- methodsClosure (classMethods clazz) (classMethods super)
-    staticMethods' <- methodsClosure (classStaticMethods clazz) (classStaticMethods super)
+    fields' <- fieldsClosure fields (classFields super)
+    methods' <- methodsClosure methods (classMethods super)
+    staticMethods' <- methodsClosure staticMethods (classStaticMethods super)
     return clazz {
         classFields = fields'
       , classMethods = methods'
@@ -30,9 +30,14 @@ prepareClassDiff loc clazz super = Err.withLocation loc $ do
   where
     clashing :: [UIdent]
     clashing = (List.map methodIdent methods) `intersect` (List.map methodIdent staticMethods)
+    fields :: [Field]
+    fields = [ field { fieldOrigin = typ } | field <- classFields clazz]
+    methodsWithOrigin :: (Class -> [Method]) -> [Method]
+    methodsWithOrigin accessor =
+      List.map (\method -> method { methodOrigin = typ }) $ accessor clazz
     methods, staticMethods :: [Method]
-    methods = classMethods clazz
-    staticMethods = classStaticMethods clazz
+    methods = methodsWithOrigin classMethods
+    staticMethods = methodsWithOrigin classStaticMethods
 
 -- CLASS HIERARCHY --
 ---------------------
