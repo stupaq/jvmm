@@ -25,7 +25,10 @@ separator Argument ",";
 
 NoExceptions. Exceptions ::= ;
 
-Exceptions.   Exceptions ::= "throws" [Type];
+-- EXTENSIONS/
+-- This extension is termporarily disabled
+internal Exceptions.   Exceptions ::= "throws" [Type];
+-- /EXTENSIONS
 
 -- CLASS --
 -----------
@@ -73,9 +76,10 @@ separator nonempty Type ",";
 ----------------
 
 -- EXTENSIONS/
-SThrow.         Stmt ::= "throw" Expr Semicolon;
+-- This extension is termporarily disabled
+internal SThrow.         Stmt ::= "throw" Expr Semicolon;
 
-STryCatch.      Stmt ::= "try" Stmt "catch" "(" Type Ident ")" Stmt;
+internal STryCatch.      Stmt ::= "try" Stmt "catch" "(" Type Ident ")" Stmt;
 -- /EXTENSIONS
 
 SBlock.         Stmt ::= LeftBrace [Stmt] RightBrace;
