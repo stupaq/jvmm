@@ -19,6 +19,7 @@ import Jvmm.Hierarchy.Output
 -- SCOPE REPRESENTATION --
 --------------------------
 type Tag = Int
+
 tag0 = 0 :: Tag
 
 tagWith :: Tag -> UIdent -> UIdent
@@ -33,11 +34,6 @@ scope0 = Map.empty
 newOccurence :: UIdent -> Scope -> Scope
 newOccurence id = Map.insertWith (\_ -> (+ 1)) id tag0
 
-resolve :: UIdent -> Scope -> (ErrorInfoT Identity) UIdent
-resolve id sc = case Map.lookup id sc of
-  Just tag -> return $ tagWith tag id
-  Nothing -> throwError $ Err.unboundSymbol id
-
 -- SCOPE ENVIRONMENT --
 -----------------------
 data ScopeEnv = ScopeEnv {
@@ -48,7 +44,7 @@ data ScopeEnv = ScopeEnv {
 
 scopeenv0 = ScopeEnv scope0 scope0 scope0
 
--- We cannot resolve scope here without type information
+-- We cannot lookupM scope here without type information
 scopeenvForeign :: UIdent -> ScopeEnv -> Scope
 scopeenvForeign member _ = let scope1 = newOccurence member scope0 in
   case member of
@@ -66,19 +62,10 @@ type ScopeM = StateT Scope (ReaderT ScopeEnv (ErrorInfoT Identity))
 runScopeM :: ScopeM a -> ErrorInfoT Identity (a, Scope)
 runScopeM m = runReaderT (runStateT m scope0) scopeenv0
 
-resolveLocal, resolveInstance, resolveParent :: UIdent -> ScopeM UIdent
-resolveLocal id = (get) >>= (lift . lift . (resolve id))
-resolveInstance id = (asks scopeenvInstance) >>= (lift . lift . (resolve id))
-resolveStatic id = (asks scopeenvStatic) >>= (lift . lift . (resolve id))
-resolveParent id = (asks scopeenvParent) >>= (lift . lift . (resolve id))
-
-checkRedeclaration:: UIdent -> ScopeM ()
-checkRedeclaration id = do
-  -- resolve in block's beginning's scope
-  idout <- resolveParent id `catchError` (\_ -> return id)
-  -- resolve in current scope
-  idin <- resolveLocal id `catchError` (\_ -> return id)
-  unless (idin == idout) $ throwError $ Err.redeclaredSymbol id
+resolveInScope :: UIdent -> Scope -> ScopeM UIdent
+resolveInScope id scope = case Map.lookup id scope of
+  Just tag -> return $ tagWith tag id
+  Nothing -> throwError $ Err.unboundSymbol id
 
 -- SCOPE SWITCHING --
 ---------------------
@@ -103,11 +90,11 @@ enterClass :: Class -> ScopeM a -> ScopeM a
 enterClass clazz action = do
   global <- getCurrent
   instanceScope <- const global `asCurrent` do
-    mapM_ (\Field { fieldIdent = id } -> decVar id) $ classFields clazz
-    mapM_ (\Method { methodIdent = id } -> decFunc id) $ classMethods clazz
+    mapM_ (\Field { fieldIdent = id } -> declare id) $ classFields clazz
+    mapM_ (\Method { methodIdent = id } -> declare id) $ classMethods clazz
     getCurrent
   staticScope <- const global `asCurrent` do
-    mapM_ (\Method { methodIdent = id } -> decFunc id) $ classStaticMethods clazz
+    mapM_ (\Method { methodIdent = id } -> declare id) $ classStaticMethods clazz
     getCurrent
   -- ASSERTION
   (getCurrent >>= return . (flip assert ()) . (== global))
@@ -119,10 +106,51 @@ enterClass clazz action = do
       }) action
 
 collectClasses :: ClassHierarchy -> ScopeM ()
-collectClasses classes = Traversable.mapM (decType . classType) classes >> return ()
+collectClasses classes = Traversable.mapM (declare' . classType) classes >> return ()
 
--- SCOPE READING --
+-- SCOPE QUERING --
 -------------------
+-- Two different identifiers
+oneIdent, otherIdent :: UIdent
+oneIdent = VIdent "#$#$#$#"
+otherIdent = VIdent "@%@%@%@"
+
+checkRedeclaration:: UIdent -> ScopeM ()
+checkRedeclaration id = do
+  idpar <- resolveParent id `catchError` (\_ -> return oneIdent)
+  idloc <- resolveLocal id `catchError` (\_ -> return oneIdent)
+  unless (idpar == idloc) $ throwError $ Err.redeclaredSymbol id
+
+isMember :: UIdent -> ScopeM Bool
+isMember id = do
+  idinst <- resolveInstance id `catchError` (\_ -> return oneIdent)
+  idloc <- resolveLocal id `catchError` (\_ -> return oneIdent)
+  return (idinst == idloc)
+
+isStatic :: UIdent -> ScopeM Bool
+isStatic id = do
+  idstat <- resolveStatic id `catchError` (\_ -> return oneIdent)
+  idloc <- resolveLocal id `catchError` (\_ -> return oneIdent)
+  return (idstat == idloc)
+
+resolve :: UIdent -> ScopeM UIdent
+resolve id = case id of
+  IThis -> return id
+  _ -> resolveLocal id
+
+resolve' :: Type -> ScopeM Type
+resolve' typ = case typ of
+  TUser id -> resolve id >> return typ
+  TFunc ret args excs -> liftM3 TFunc (resolve' ret) (mapM resolve' args) (mapM resolve' excs)
+  _ -> return typ
+
+-- FIXME vvvvvvvvvvvvvvvv
+resolveLocal, resolveInstance, resolveParent :: UIdent -> ScopeM UIdent
+resolveLocal id = get >>= resolveInScope id
+resolveInstance id = asks scopeenvInstance >>= resolveInScope id
+resolveStatic id = asks scopeenvStatic >>= resolveInScope id
+resolveParent id = asks scopeenvParent >>= resolveInScope id
+
 resVar, resFunc :: UIdent -> ScopeM UIdent
 resVar id = case id of
   IThis -> return id
@@ -135,47 +163,22 @@ resType typ = case typ of
   TFunc ret args excs -> liftM3 TFunc (resType ret) (mapM resType args) (mapM resType excs)
   _ -> return typ
 
-isField :: UIdent -> ScopeM Bool
-isField id@(VIdent _) = do
-  -- resolve in global scope
-  idout <- resolveInstance id `catchError` (\_ -> return id)
-  -- resolve in current scope
-  idin <- resolveLocal id `catchError` (\_ -> return id)
-  return (idout == idin)
-isField _ = error $ Err.unusedBranch "checking whether not a variable identifier is field"
-
-isStatic :: UIdent -> ScopeM Bool
-isStatic id@(FIdent _) = (resolveStatic id >> return False) `catchError` (\_ -> return False)
-isStatic _ = error $ Err.unusedBranch "checking whether not a function identifier is static"
-
 -- SCOPE UPDATING --
 --------------------
-decVar, decFunc :: UIdent -> ScopeM ()
-decVar id = do
-  checkRedeclaration id
-  modify (newOccurence id)
-decFunc id = do
-  checkRedeclaration id
-  modify (newOccurence id)
-decType :: Type -> ScopeM ()
-decType (TUser id) = do
-  checkRedeclaration id
-  modify (newOccurence id)
-decType _ = return ()
+declare :: UIdent -> ScopeM ()
+declare id = checkRedeclaration id >> modify (newOccurence id)
+
+declare' :: Type -> ScopeM ()
+declare' (TUser id) = declare id
+declare' _ = return ()
 
 -- SCOPE COMPUTATION --
 -----------------------
 varOrField id ifVar ifField = do
-  field <- isField id
+  field <- isMember id
   case field of
     False -> resVar id >>= (return . ifVar)
     True -> scopeenvInstance `asCurrent` (resVar id >>= (return . ifField))
-
-staticOrInstance id ifStatic ifInstance = do
-  static <- isStatic id
-  case static of
-    False -> scopeenvStatic `asCurrent` (resFunc id >>= (return . ifStatic))
-    True -> scopeenvInstance `asCurrent` (resFunc id >>= (return . ifInstance))
 
 funH :: ClassHierarchy -> ScopeM ClassHierarchy
 funH = Traversable.mapM $ \clazz@(Class typ super fields methods staticMethods loc) -> 
@@ -198,7 +201,7 @@ funM (Method typ id ids stmt origin loc) =
     typ' <- resType typ
     origin' <- resType origin
     newLocal $ do
-      mapM_ decVar ids `rethrow` Err.duplicateArg id
+      mapM_ declare ids `rethrow` Err.duplicateArg id
       ids' <- mapM resVar ids
       stmt' <- newLocal (funS stmt)
       return $ Method typ' id' ids' stmt' origin' loc
@@ -209,7 +212,7 @@ funMS = funM
 funS :: Stmt -> ScopeM Stmt
 funS x = case x of
   SDeclVar typ id -> do
-    decVar id
+    declare id
     liftM2 SDeclVar (resType typ) (resVar id)
   SLocal _ stmts -> do -- definitions part of SLocal is empty at this point
     stmts' <- newLocal (mapM funS stmts)
@@ -227,9 +230,10 @@ funS x = case x of
           SDeclVar typ id -> []
           SMetaLocation loc stmts -> return $ SMetaLocation loc $ filterDeclarations stmts
           _ -> return x)
+  -- We replace all assignments that actually refer to instance fields but give precedence to local
+  -- variables (like in Java), to referencee hidden field self.<field_name> construct can be used
   SAssign id expr -> do
     expr' <- funE expr
-    -- Decide if this is actually a field access
     varOrField id (\id' -> SAssign id' expr') (\id' -> SAssignFld IThis id' expr')
   SAssignArr id expr1 expr2 -> do
     expr1' <- funE expr1
@@ -267,9 +271,9 @@ funS x = case x of
   STryCatch stmt1 typ2 id3 stmt4 -> do
     stmt1' <- newLocal (funS stmt1)
     newLocal $ do
-      decVar id3
+      declare id3
       id3' <- resVar id3
-      -- catch body can hide exception variable
+      -- Catch body can hide exception variable
       stmt4' <- newLocal (funS stmt4)
       return $ STryCatch stmt1' typ2 id3' stmt4'
   SReturnV -> return SReturnV
@@ -285,9 +289,18 @@ funE x = case x of
     expr1' <- funE expr1
     expr2' <- funE expr2
     return $ EAccessArr expr1' expr2'
+  -- We replace all assignments that actually refer to instance method, we also give precedence to
+  -- instance methods over static ones.
   ECall id exprs -> do
     exprs' <- mapM funE exprs
-    staticOrInstance id (\id' -> ECall id' exprs') (\id' -> EAccessFn EThis id' exprs')
+    member <- isMember id
+    case member of
+      True -> scopeenvInstance `asCurrent` do
+        id' <- resFunc id
+        return $ EAccessFn EThis id' exprs'
+      False -> scopeenvStatic `asCurrent` do
+        id' <- resFunc id
+        return $ ECall id' exprs'
   EAccessFn EThis id exprs -> do
     exprs' <- mapM funE exprs
     scopeenvInstance `asCurrent` do

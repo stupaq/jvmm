@@ -1,8 +1,8 @@
 // Author: Tomasz Wysocki 277696
 //
-// Zajmuje około 15Gb pamięci, jeśli nie masz żadnego odśmiecania.
+// Zajmuje okolo 15Gb pamieci, jesli nie masz zadnego odsmiecania.
 //
-// UWAGA: Jeśli masz swap, może porządnie zamulić komputer.
+// UWAGA: Jesli masz swap, moze porzadnie zamulic komputer.
 int main() {
     string s1 = "";
     string s2 = "";
