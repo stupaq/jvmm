@@ -1,0 +1,16 @@
+int main() {
+  int a = show();
+  Show instance = new Show;
+  string s = instance.show();
+  return a;
+}
+
+int show() {
+  return 3;
+}
+
+class Show {
+  string show() {
+    return "ASDFS";
+  }
+}

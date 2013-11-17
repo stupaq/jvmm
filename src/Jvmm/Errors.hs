@@ -61,7 +61,7 @@ redeclaredWithDifferentType ids = Dangling $ "method redeclared in super classes
 
 -- Scope resolution errors
 staticNonStaticConflict id = Dangling $ "static and non-static symbol conflict: " ++ (show id)
-duplicateArg typ id = Dangling $ concat ["duplicate argument: ", show typ, " ", show id]
+duplicateArg id = Dangling $ concat ["duplicated argument identifier in function definition: ", show id]
 unboundSymbol id = Dangling $ "unbound symbol: " ++ (show id)
 redeclaredSymbol id = Dangling $ "redeclared symbol in the same scope: " ++ (show id)
 globalForbidden = Dangling $ "statement not allowed in global scope"

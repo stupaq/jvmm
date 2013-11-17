@@ -31,27 +31,30 @@ type MemberTypes = Map.Map Type Types
 membertypes0 = Map.empty
 
 data TypeEnv = TypeEnv {
-  -- Type of a function currently executed
-  typeenvFunction :: Maybe Type,
-  -- Set of exceptions that are caught when throw in current context
-  typeenvExceptions :: Set.Set Type,
-  -- Types of identifiers
-  typeenvIdents :: Types,
-  -- Definitions of types
-  typeenvTypes :: MemberTypes,
-  -- This type
-  typeenvThis :: Maybe Type,
-  -- Mapping from type to super
-  typeenvSuper :: Map.Map Type Type
+    -- Type of a function currently executed
+    typeenvFunction :: Maybe Type
+    -- Set of exceptions that are caught when throw in current context
+  , typeenvExceptions :: Set.Set Type
+    -- Types of identifiers
+  , typeenvIdents :: Types
+    -- Definitions of types
+  , typeenvTypes :: MemberTypes
+    -- This type
+  , typeenvThis :: Maybe Type
+    -- Mapping from type to super
+  , typeenvSuper :: Map.Map Type Type
+    -- Static identifiers
+  , typeenvStatic :: Types
 } deriving (Show)
 
 typeenv0 = TypeEnv {
-  typeenvFunction = Nothing,
-  typeenvExceptions = Set.empty,
-  typeenvIdents = types0,
-  typeenvTypes = membertypes0,
-  typeenvThis = Nothing,
-  typeenvSuper = Map.empty
+    typeenvFunction = Nothing
+  , typeenvExceptions = Set.empty
+  , typeenvIdents = types0
+  , typeenvTypes = membertypes0
+  , typeenvThis = Nothing
+  , typeenvSuper = Map.empty
+  , typeenvStatic = types0
 }
 
 -- BUILDING TYPE ENVIRONMENT --
@@ -64,14 +67,15 @@ collectTypes classes = fmap snd $ runStateT (Traversable.mapM decClass classes) 
     decClass clazz@Class { classType = typ, classSuper = super } = do
       when (isBuiltinType typ) $ throwError (Err.redeclaredType typ)
       modify $ \env -> env {
-        typeenvTypes = Map.insert typ types (typeenvTypes env),
-        typeenvSuper = Map.insert typ super (typeenvSuper env)
+          typeenvTypes = Map.insert typ types (typeenvTypes env)
+        , typeenvSuper = Map.insert typ super (typeenvSuper env)
+        , typeenvStatic = Map.fromList staticMethods
       }
       where
         fields = List.map (\x -> (fieldIdent x, fieldType x)) $ classFields clazz
         methods = List.map (\x -> (methodIdent x, methodType x)) $ classMethods clazz
         staticMethods = List.map (\x -> (methodIdent x, methodType x)) $ classStaticMethods clazz
-        types = Map.fromList $ fields ++ methods ++ staticMethods
+        types = Map.fromList $ fields ++ methods
 
 -- Typing is fully static. TObject type is a superclass of every non-primitive.
 -- Note that after scope resolution we can't throw undeclared errors (also for
@@ -98,7 +102,7 @@ typeof' typ uid = case builtinMemberType typ uid of
   typ -> return typ
 
 typeof'' :: UIdent -> TypeM Type
-typeof'' uid = this >>= flip typeof' uid
+typeof'' uid = (asks typeenvStatic >>= lookupM uid) `rethrow` Err.unknownSymbolType uid
 
 throws :: Type -> TypeM ()
 throws typ = do

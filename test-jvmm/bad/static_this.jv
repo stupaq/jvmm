@@ -1,0 +1,10 @@
+class Show {
+  void show() {
+    printString("OK\n");
+  }
+}
+
+
+int main() {
+  self.show();
+}

@@ -57,7 +57,8 @@ scopeenvForeign member _ = let scope1 = newOccurence member scope0 in
 
 scopeenvEmpty, scopeenvFull :: ScopeEnv -> Scope
 scopeenvEmpty = const scope0
-scopeenvFull env = Map.union (scopeenvStatic env) (scopeenvInstance env)
+-- This prefers non-static symbols and this is what we want
+scopeenvFull env = Map.union (scopeenvInstance env) (scopeenvStatic env)
 
 -- SCOPE MONAD --
 -----------------
@@ -197,7 +198,7 @@ funM (Method typ id ids stmt origin loc) =
     typ' <- resType typ
     origin' <- resType origin
     newLocal $ do
-      mapM_ decVar ids `rethrow` Err.duplicateArg typ id
+      mapM_ decVar ids `rethrow` Err.duplicateArg id
       ids' <- mapM resVar ids
       stmt' <- newLocal (funS stmt)
       return $ Method typ' id' ids' stmt' origin' loc
