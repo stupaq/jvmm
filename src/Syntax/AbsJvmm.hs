@@ -7,10 +7,6 @@ newtype Ident = Ident String deriving (Eq,Ord,Show)
 newtype Semicolon = Semicolon ((Int,Int),String) deriving (Eq,Ord,Show)
 newtype LeftBrace = LeftBrace ((Int,Int),String) deriving (Eq,Ord,Show)
 newtype RightBrace = RightBrace ((Int,Int),String) deriving (Eq,Ord,Show)
-data Declaration =
-   DVariable Type Ident
-  deriving (Eq,Ord,Show)
-
 data Program =
    Program [Definition]
   deriving (Eq,Ord,Show)
@@ -38,8 +34,12 @@ data Class =
   deriving (Eq,Ord,Show)
 
 data Member =
-   Field Declaration Semicolon
+   FieldsList Type [Field] Semicolon
  | Method Function
+  deriving (Eq,Ord,Show)
+
+data Field =
+   Field Ident
   deriving (Eq,Ord,Show)
 
 data Extends =

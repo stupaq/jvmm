@@ -23,13 +23,13 @@ tProgram (I.Program defs) = do
 
 tClass :: I.Class -> (O.Type, O.ClassDiff)
 tClass (I.Class id extends lbr members rbr) =
-  let typ = O.TUser (tTIdent id)
+  let clazzTyp = O.TUser (tTIdent id)
       super = tExtends extends
   in (super, prepareClassDiff (brToLoc lbr rbr) $ O.Class {
-        O.classType = typ
+        O.classType = clazzTyp
       , O.classSuper = super
-      , O.classFields = [ (tDeclaration x) { O.fieldOrigin = typ } | I.Field x _ <- members ]
-      , O.classMethods = [ (tFunction x) { O.methodOrigin = typ } | I.Method x <- members ]
+      , O.classFields = [ (tField typ x) { O.fieldOrigin = clazzTyp } | I.FieldsList typ fields _ <- members, x <- fields ]
+      , O.classMethods = [ (tFunction x) { O.methodOrigin = clazzTyp } | I.Method x <- members ]
       , O.classStaticMethods = []
       , O.classLocation = Err.Unknown
     })
@@ -39,8 +39,8 @@ tExtends x = case x of
   I.SuperClass typ -> tType typ
   I.SuperObject -> tType I.TObject
 
-tDeclaration :: I.Declaration -> O.Field
-tDeclaration (I.DVariable typ id) = O.Field {
+tField :: I.Type -> I.Field -> O.Field
+tField typ (I.Field id) = O.Field {
   O.fieldType = tType typ,
   O.fieldIdent = tVIdent id,
   O.fieldOrigin = O.TUnknown

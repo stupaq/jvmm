@@ -95,11 +95,6 @@ instance Print RightBrace where
 
 
 
-instance Print Declaration where
-  prt i e = case e of
-   DVariable type' id -> prPrec i 0 (concatD [prt 0 type' , prt 0 id])
-
-
 instance Print Program where
   prt i e = case e of
    Program definitions -> prPrec i 0 (concatD [prt 0 definitions])
@@ -141,12 +136,20 @@ instance Print Class where
 
 instance Print Member where
   prt i e = case e of
-   Field declaration semicolon -> prPrec i 0 (concatD [prt 0 declaration , prt 0 semicolon])
+   FieldsList type' fields semicolon -> prPrec i 0 (concatD [prt 0 type' , prt 0 fields , prt 0 semicolon])
    Method function -> prPrec i 0 (concatD [prt 0 function])
 
   prtList es = case es of
    [x] -> (concatD [prt 0 x])
    x:xs -> (concatD [prt 0 x , prt 0 xs])
+
+instance Print Field where
+  prt i e = case e of
+   Field id -> prPrec i 0 (concatD [prt 0 id])
+
+  prtList es = case es of
+   [x] -> (concatD [prt 0 x])
+   x:xs -> (concatD [prt 0 x , doc (showString ",") , prt 0 xs])
 
 instance Print Extends where
   prt i e = case e of

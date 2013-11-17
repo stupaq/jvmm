@@ -3,11 +3,6 @@
 
 entrypoints Program;
 
--- DECLARATION --
------------------
-
-DVariable.    Declaration ::= Type Ident;
-
 -- PROGRAM --
 --------------
 
@@ -37,7 +32,11 @@ Exceptions.   Exceptions ::= "throws" [Type];
 
 Class.        Class ::= "class" Ident Extends LeftBrace [Member] RightBrace;
 
-Field.        Member ::= Declaration Semicolon;
+FieldsList.   Member ::= Type [Field] Semicolon;
+
+Field.        Field ::= Ident;
+
+separator nonempty Field ",";
 
 Method.       Member ::= Function;
 

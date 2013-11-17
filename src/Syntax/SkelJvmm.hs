@@ -29,11 +29,6 @@ transRightBrace x = case x of
   RightBrace str  -> failure x
 
 
-transDeclaration :: Declaration -> Result
-transDeclaration x = case x of
-  DVariable type' id  -> failure x
-
-
 transProgram :: Program -> Result
 transProgram x = case x of
   Program definitions  -> failure x
@@ -68,8 +63,13 @@ transClass x = case x of
 
 transMember :: Member -> Result
 transMember x = case x of
-  Field declaration semicolon  -> failure x
+  FieldsList type' fields semicolon  -> failure x
   Method function  -> failure x
+
+
+transField :: Field -> Result
+transField x = case x of
+  Field id  -> failure x
 
 
 transExtends :: Extends -> Result
