@@ -239,7 +239,7 @@ funMS method = do
   where
     checkEntrypoint :: Method -> TypeM ()
     checkEntrypoint method =
-      when (entrypointIdent == methodIdent method) $
+      when (entrypointIdent == methodIdent method && methodOrigin method == TObject) $
         (entrypointType =| methodType method >> return ()) `rethrow` Err.incompatibleMain
 
 funS :: Stmt -> TypeM Stmt

@@ -57,7 +57,7 @@ setReturned b = modify (\st -> st { verifierstateReturned = b })
 orReturned b = gets verifierstateReturned >>= (setReturned . (|| b))
 
 checkEntrypoint :: Method -> VerifierM ()
-checkEntrypoint Method { methodIdent = ident, methodOrigin = TUnknown }
+checkEntrypoint Method { methodIdent = ident, methodOrigin = TObject }
   | ident  == entrypointIdent = modify (\st -> st { verifierstateMain = True })
 checkEntrypoint _ = return ()
 
