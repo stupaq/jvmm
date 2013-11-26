@@ -18,8 +18,8 @@ type HierarchyM = ErrorInfoT Identity
 fieldsClosure :: [Field] -> [Field] -> HierarchyM [Field]
 fieldsClosure clazz super = do
   let repeated = List.nub [ x |
-        Field { fieldIdent = x } <- clazz,
-        Field { fieldIdent = y } <- super,
+        Field { fieldName = x } <- clazz,
+        Field { fieldName = y } <- super,
         x == y ]
   guard (repeated == []) `rethrow` Err.redeclaredInSuper repeated
   return $ super ++ clazz
@@ -29,15 +29,15 @@ methodsClosure clazz superOrig = do
   -- Strip down super class' methods implementation
   let super = List.map (\method -> method { methodBody = SInherited }) superOrig
   let repeated = List.nub [ x |
-        Method { methodType = tx, methodIdent = x } <- clazz,
-        Method { methodType = ty, methodIdent = y } <- super,
+        Method { methodType = tx, methodName = x } <- clazz,
+        Method { methodType = ty, methodName = y } <- super,
         x == y, tx /= ty ]
   guard (repeated == []) `rethrow` Err.redeclaredWithDifferentType repeated
   -- This will leave the last occurence of a function with given name
   return $ List.nubBy eqMethodName $ clazz ++ super
   where
     eqMethodName :: Method -> Method -> Bool
-    eqMethodName x y = methodIdent x == methodIdent y
+    eqMethodName x y = methodName x == methodName y
 
 -- CLASS HIERARCHY --
 ---------------------

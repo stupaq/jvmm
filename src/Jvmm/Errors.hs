@@ -40,6 +40,9 @@ runErrorInfoM = runIdentity . runErrorT
 -- Discards error and throws provided one
 action `rethrow` err = action `catchError` (\_ -> throwError err)
 
+-- Discards error and returns provided value
+action `orReturn` value = action `catchError` (\_ -> return value)
+
 -- Executes second action in all circumstances (and only once)
 action `finally` always = do
   res <- action `catchError` (\err -> always >> throwError err)

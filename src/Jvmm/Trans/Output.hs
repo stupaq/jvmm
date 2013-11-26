@@ -14,40 +14,10 @@ import Jvmm.Errors (ErrorInfo, ErrorInfoT, runErrorInfoM, withLocation, Location
 -- We call this representation Abstract Program Tree to distinguish from the
 -- ... that parser outputs.
 
--- UNIFIED IDENTIFIER --
-------------------------
-data UIdent =
-    IThis
-  | VIdent String
-  | FIdent String
-  | TIdent String
-  deriving (Ord, Eq, Show)
-
-(+/+) :: UIdent -> String -> UIdent
-(VIdent id) +/+ str = VIdent $ id ++ str
-(FIdent id) +/+ str = FIdent $ id ++ str
-(TIdent id) +/+ str = TIdent $ id ++ str
-
-(+/) :: UIdent -> Char -> UIdent
-idt +/ char = case idt of
-  (VIdent id) -> VIdent $ strip id
-  (FIdent id) -> FIdent $ strip id
-  (TIdent id) -> TIdent $ strip id
-  where
-    strip :: String -> String
-    strip = takeWhile (/= char)
-
-uidentName :: UIdent -> String
-uidentName x = case x of
-  VIdent str -> str
-  FIdent str -> str
-  TIdent str -> str
-  IThis -> "self"
-
 -- CLASS --
 -----------
 data Class = Class {
-    classType :: Type
+    className :: ClassName
   , classSuper :: Type
   , classFields :: [Field]
   , classMethods :: [Method]
@@ -55,22 +25,28 @@ data Class = Class {
   , classLocation :: Location
 } deriving (Eq, Ord, Show)
 
+classType :: Class -> Type
+classType = TUser . className
+
 newtype ClassName = ClassName String
   deriving (Show, Eq, Ord)
 
 data Field = Field {
     fieldType :: Type
-  , fieldIdent :: UIdent
+  , fieldName :: FieldName
   , fieldOrigin :: Type
 } deriving (Eq, Ord, Show)
 
 newtype FieldName = FieldName String
   deriving (Show, Eq, Ord)
 
+fieldFromVariable :: VariableName -> FieldName
+fieldFromVariable (VariableName name) = FieldName name
+
 data Method = Method {
     methodType :: Type
-  , methodIdent :: UIdent
-  , methodArgs :: [UIdent]
+  , methodName :: MethodName
+  , methodArgs :: [VariableName]
   , methodBody :: Stmt
   , methodOrigin :: Type
   , methodLocation :: Location
@@ -87,6 +63,7 @@ data Variable = Variable {
 } deriving (Eq, Ord, Show)
 
 type VariableNum = Int
+variablenum0 = 0 :: VariableNum
 
 newtype VariableName = VariableName String
   deriving (Show, Eq, Ord)
@@ -96,8 +73,8 @@ newtype VariableName = VariableName String
 data Stmt =
     SEmpty
   | SStore VariableNum Expr
-  | SStoreArray VariableNum Expr
-  | SPutField VariableNum UIdent Expr
+  | SStoreArray VariableNum Expr Expr
+  | SPutField VariableNum FieldName Expr
   | SExpr Expr
   | SBlock [Stmt]
   -- Control statements
@@ -107,17 +84,17 @@ data Stmt =
   | SIfElse Expr Stmt Stmt
   | SWhile Expr Stmt
   | SThrow Expr
-  | STryCatch Stmt Type UIdent Stmt
+  | STryCatch Stmt Type VariableNum Stmt
   -- Special function bodies
   | SBuiltin
   | SInherited
   -- Metainformation carriers
   | SMetaLocation Location [Stmt]
   -- These statements will be replaced with ones caring more context in subsequent phases
-  | T_SDeclVar Type UIdent
-  | T_SAssign UIdent Expr
-  | T_SAssignArr UIdent Expr Expr
-  | T_SAssignFld UIdent UIdent Expr
+  | T_SDeclVar Type VariableName
+  | T_SAssign VariableName Expr
+  | T_SAssignArr VariableName Expr Expr
+  | T_SAssignFld VariableName FieldName Expr
   deriving (Eq, Ord, Show)
 
 -- TYPES --
@@ -132,7 +109,7 @@ data Type =
   | TBool
   | TString
   | TObject
-  | TUser UIdent
+  | TUser ClassName
   | TArray Type
   deriving (Eq,Ord,Show)
 
@@ -143,20 +120,20 @@ data Expr =
   | ELoad VariableNum
   | ELoadThis
   | EArrayLoad Expr Expr
-  | EGetField Expr UIdent
+  | EGetField Expr FieldName
+  | EInvokeStatic MethodName [Expr]
+  | EInvokeVirtual Expr MethodName [Expr]
   | ELitTrue
   | ELitFalse
   | ELitChar Char
   | ELitString String
   | ELitInt Integer
-  | ECall UIdent [Expr]
-  | EAccessFn Expr UIdent [Expr]
   | ENewObj Type
   | ENewArr Type Expr
   | EBinary Type OpBin Expr Expr
   | EUnary Type OpUn Expr
   -- These expressions will be replaced with ones caring more context in subsequent phases
-  | T_EVar UIdent
+  | T_EVar VariableName
   deriving (Eq,Ord,Show)
 
 -- BINARY OPERATIONS --
@@ -203,7 +180,7 @@ type ClassDiff = Class -> ErrorInfoT Identity Class
 
 instance Show ClassDiff where
   show diff = show $ runErrorInfoM $ diff Class {
-        classType = TUnknown
+        className = ClassName ""
       , classSuper = TUnknown
       , classFields = []
       , classMethods = []

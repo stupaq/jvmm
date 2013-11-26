@@ -18,23 +18,26 @@ builtinFunctions = map fun [
     ("readString", TFunc TString [] []),
     ("error", TFunc TVoid [] [])]
   where
-    fun (name, typ) = Method typ (FIdent name) [] SBuiltin TUnknown Err.Unknown []
+    fun (name, typ) = Method typ (MethodName name) [] SBuiltin TUnknown Err.Unknown []
 
 -- ENTRYPOINT --
 ----------------
-entrypointIdent = Scope.tagGlobal $ FIdent "main"
+entrypointIdent = MethodName "main"
 entrypointType = TFunc TInt [] []
 
 -- TYPES --
 -----------
 isBuiltinType typ = case typ of
-  TUser (TIdent str) -> str `elem` ["int", "char", "boolean", "string"]
+  TUser (ClassName str) -> str `elem` ["int", "char", "boolean", "string"]
   _ -> False
 
-builtinMemberType typ uid = case (typ, uid) of
-  (TArray _, VIdent "length$0") -> TInt
-  (TString, VIdent "length$0") -> TInt
-  (TString, FIdent "charAt$0") -> TFunc TChar [TInt] []
+builtinFieldType typ uid = case (typ, uid) of
+  (TArray _, FieldName "length$0") -> TInt
+  (TString, FieldName "length$0") -> TInt
+  _ -> TUnknown
+
+builtinMethodType typ uid = case (typ, uid) of
+  (TString, MethodName "charAt$0") -> TFunc TChar [TInt] []
   _ -> TUnknown
 
 primitiveTypes = [TVoid, TInt, TChar, TBool]
