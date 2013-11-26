@@ -37,13 +37,12 @@ idt +/ char = case idt of
     strip :: String -> String
     strip = takeWhile (/= char)
 
--- COMPILATION UNIT --
-----------------------
-data CompilationUnit =
-  -- Type is a superclass,
-  -- ClassDiff maps superclass into class
-  CompilationUnit [(Type, ClassDiff)]
-  deriving (Show)
+uidentName :: UIdent -> String
+uidentName x = case x of
+  VIdent str -> str
+  FIdent str -> str
+  TIdent str -> str
+  IThis -> "self"
 
 -- CLASS --
 -----------
@@ -56,23 +55,17 @@ data Class = Class {
   , classLocation :: Location
 } deriving (Eq, Ord, Show)
 
-type ClassDiff = Class -> ErrorInfoT Identity Class
-
-instance Show ClassDiff where
-  show diff = show $ runErrorInfoM $ diff Class {
-        classType = TUnknown
-      , classSuper = TUnknown
-      , classFields = []
-      , classMethods = []
-      , classStaticMethods = []
-      , classLocation = Err.Unknown
-    }
+newtype ClassName = ClassName String
+  deriving (Show, Eq, Ord)
 
 data Field = Field {
     fieldType :: Type
   , fieldIdent :: UIdent
   , fieldOrigin :: Type
 } deriving (Eq, Ord, Show)
+
+newtype FieldName = FieldName String
+  deriving (Show, Eq, Ord)
 
 data Method = Method {
     methodType :: Type
@@ -81,74 +74,89 @@ data Method = Method {
   , methodBody :: Stmt
   , methodOrigin :: Type
   , methodLocation :: Location
+  , methodVariables :: [Variable]
 } deriving (Eq, Ord, Show)
+
+newtype MethodName = MethodName String
+  deriving (Show, Eq, Ord)
+
+data Variable = Variable {
+    variableType :: Type
+  , variableNum :: VariableNum
+  , variableName :: VariableName
+} deriving (Eq, Ord, Show)
+
+type VariableNum = Int
+
+newtype VariableName = VariableName String
+  deriving (Show, Eq, Ord)
 
 -- STATEMENTS --
 ----------------
 data Stmt =
-   SLocal [Variable] [Stmt]
- | SDeclVar Type UIdent
- | SEmpty
- | SAssign UIdent Expr
- | SAssignArr UIdent Expr Expr
- | SAssignFld UIdent UIdent Expr
- | SReturn Expr
- | SReturnV
- | SIf Expr Stmt
- | SIfElse Expr Stmt Stmt
- | SWhile Expr Stmt
- | SExpr Expr
- | SThrow Expr
- | STryCatch Stmt Type UIdent Stmt
- | SMetaLocation Location [Stmt]
- | SBuiltin
- | SInherited
-  deriving (Eq, Ord, Show)
-
-stmtMetaLocation :: (MonadError ErrorInfo m) => Location -> m [Stmt] -> m Stmt
-stmtMetaLocation loc action = do
-  stmts' <- withLocation loc action
-  return $ SMetaLocation loc stmts'
-
-data Variable =
-  Variable Type UIdent
+    SEmpty
+  | SStore VariableNum Expr
+  | SStoreArray VariableNum Expr
+  | SPutField VariableNum UIdent Expr
+  | SExpr Expr
+  | SBlock [Stmt]
+  -- Control statements
+  | SReturn Expr
+  | SReturnV
+  | SIf Expr Stmt
+  | SIfElse Expr Stmt Stmt
+  | SWhile Expr Stmt
+  | SThrow Expr
+  | STryCatch Stmt Type UIdent Stmt
+  -- Special function bodies
+  | SBuiltin
+  | SInherited
+  -- Metainformation carriers
+  | SMetaLocation Location [Stmt]
+  -- These statements will be replaced with ones caring more context in subsequent phases
+  | T_SDeclVar Type UIdent
+  | T_SAssign UIdent Expr
+  | T_SAssignArr UIdent Expr Expr
+  | T_SAssignFld UIdent UIdent Expr
   deriving (Eq, Ord, Show)
 
 -- TYPES --
 -----------
 data Type =
-   TFunc Type [Type] [Type]
- | TUnknown
- | TNull
- | TVoid
- | TInt
- | TChar
- | TBool
- | TString
- | TObject
- | TUser UIdent
- | TArray Type
+    TUnknown
+  | TFunc Type [Type] [Type]
+  | TNull
+  | TVoid
+  | TInt
+  | TChar
+  | TBool
+  | TString
+  | TObject
+  | TUser UIdent
+  | TArray Type
   deriving (Eq,Ord,Show)
 
 -- EXPRESSIONS --
 -----------------
 data Expr =
-   EBinary Type OpBin Expr Expr
- | EUnary Type OpUn Expr
- | EVar UIdent
- | ELitInt Integer
- | ELitTrue
- | ELitFalse
- | ELitString String
- | ELitChar Char
- | ENull
- | ECall UIdent [Expr]
- | EAccessArr Expr Expr
- | EAccessFn Expr UIdent [Expr]
- | EAccessVar Expr UIdent
- | ENewObj Type
- | ENewArr Type Expr
- | EThis
+    ENull
+  | ELoad VariableNum
+  | ELoadThis
+  | EArrayLoad Expr Expr
+  | EGetField Expr UIdent
+  | ELitTrue
+  | ELitFalse
+  | ELitChar Char
+  | ELitString String
+  | ELitInt Integer
+  | ECall UIdent [Expr]
+  | EAccessFn Expr UIdent [Expr]
+  | ENewObj Type
+  | ENewArr Type Expr
+  | EBinary Type OpBin Expr Expr
+  | EUnary Type OpUn Expr
+  -- These expressions will be replaced with ones caring more context in subsequent phases
+  | T_EVar UIdent
   deriving (Eq,Ord,Show)
 
 -- BINARY OPERATIONS --
@@ -175,4 +183,31 @@ data OpBin =
  | ObAnd
  | ObOr
   deriving (Eq,Ord,Show)
+
+-- AUXILIARY --
+---------------
+stmtMetaLocation :: (MonadError ErrorInfo m) => Location -> m [Stmt] -> m Stmt
+stmtMetaLocation loc action = do
+  stmts' <- withLocation loc action
+  return $ SMetaLocation loc stmts'
+
+-- TOP LEVEL --
+---------------
+data CompilationUnit =
+  -- Type is a superclass,
+  -- ClassDiff maps superclass into class
+  CompilationUnit [(Type, ClassDiff)]
+  deriving (Show)
+
+type ClassDiff = Class -> ErrorInfoT Identity Class
+
+instance Show ClassDiff where
+  show diff = show $ runErrorInfoM $ diff Class {
+        classType = TUnknown
+      , classSuper = TUnknown
+      , classFields = []
+      , classMethods = []
+      , classStaticMethods = []
+      , classLocation = Err.Unknown
+    }
 

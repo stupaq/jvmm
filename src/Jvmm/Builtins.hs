@@ -18,7 +18,7 @@ builtinFunctions = map fun [
     ("readString", TFunc TString [] []),
     ("error", TFunc TVoid [] [])]
   where
-    fun (name, typ) = Method typ (FIdent name) [] SBuiltin TUnknown Err.Unknown
+    fun (name, typ) = Method typ (FIdent name) [] SBuiltin TUnknown Err.Unknown []
 
 -- ENTRYPOINT --
 ----------------

@@ -19,8 +19,8 @@ import Jvmm.Hierarchy.Output
 -----------------
 -- For MonadReader this can be easily used to collect and compose environments (e.g. when we collect
 -- arguments definitions to create environment for function body).
-applyAndCompose :: (b -> a -> a) -> [b] -> a -> a
-applyAndCompose f = Prelude.foldl (flip (.)) Prelude.id . map f
+foldF :: (b -> a -> a) -> [b] -> a -> a
+foldF f = Prelude.foldl (flip (.)) Prelude.id . map f
 
 -- TYPE REPRESENTATION --
 -------------------------
@@ -109,14 +109,15 @@ throws typ = do
   excepts <- asks typeenvExceptions
   unless (Set.member typ excepts) $ throwError $ Err.uncaughtException typ
 
-called :: Type -> [UIdent] -> TypeM a -> TypeM a
-called typ@(TFunc returnType argumentTypes exceptions) argumentIdents action = do
+called :: Type -> [UIdent] -> [Variable] -> TypeM a -> TypeM a
+called typ@(TFunc returnType argumentTypes exceptions) argumentIdents localVariables action = do
   forM_ argumentTypes $ \argt -> notAVoid argt `rethrow` Err.voidArg
-  catches exceptions . argumentsEnv . enterFunction typ $ action
+  catches exceptions . argumentsEnv . variablesEnv . enterFunction typ $ action
   where
-    argumentsEnv :: TypeM a -> TypeM a
-    argumentsEnv = applyAndCompose (uncurry $ flip declare) $ List.zip argumentTypes argumentIdents
-called x _ _ = error $ Err.unusedBranch "attempt to call not a functional type"
+    argumentsEnv, variablesEnv :: TypeM a -> TypeM a
+    argumentsEnv = foldF (uncurry $ flip declare) $ List.zip argumentTypes argumentIdents
+    variablesEnv = argumentsEnv . foldF (\(Variable typ _ (VariableName id)) -> declare (VIdent id) typ) localVariables
+called x _ _ _ = error $ Err.unusedBranch "attempt to call not a functional type"
 
 catches :: [Type] -> TypeM a -> TypeM a
 catches types = local (\env -> env { typeenvExceptions = List.foldl (flip Set.insert) (typeenvExceptions env) types })
@@ -227,8 +228,8 @@ funF field@Field { fieldType = typ, fieldIdent = id } = do
   return field
 
 funM :: Method -> TypeM Method
-funM method@Method { methodType = typ, methodBody = stmt, methodArgs = args } = do
-  Err.withLocation (methodLocation method) . called typ args $ do
+funM method@Method { methodType = typ, methodBody = stmt, methodArgs = args, methodVariables = vars } = do
+  Err.withLocation (methodLocation method) . called typ args vars $ do
     stmt' <- funS stmt
     return $ method { methodBody = stmt' }
 
@@ -244,27 +245,9 @@ funMS method = do
 
 funS :: Stmt -> TypeM Stmt
 funS x = case x of
-  SLocal vars stmts -> applyAndCompose (\(Variable typ id) -> declare id typ) vars $ do
+  SBlock stmts -> do
     stmts' <- mapM funS stmts
-    return $ SLocal vars stmts'
-  SAssign id expr -> do
-    (expr', etyp) <- funE expr
-    vtyp <- typeof id
-    vtyp =| etyp
-    return $ SAssign id expr'
-  SAssignArr id expr1 expr2 -> do
-    (expr1', etyp1) <- funE expr1
-    (expr2', etyp2) <- funE expr2
-    TInt =| etyp1 `rethrow` Err.indexType
-    atyp <- typeof id
-    atyp =| TArray etyp2
-    return $ SAssignArr id expr1' expr2'
-  SAssignFld ido idf expr -> do
-    (expr', etyp) <- funE expr
-    otyp <- typeof ido
-    ftyp <- typeof' otyp idf
-    ftyp =| etyp
-    return $ SAssignFld ido idf expr'
+    return $ SBlock stmts'
   SReturn expr -> do
     (expr', etyp) <- funE expr
     notAVoid etyp `rethrow` Err.voidNotIgnored
@@ -307,13 +290,28 @@ funS x = case x of
   SBuiltin -> return x
   SInherited -> return x
   SMetaLocation loc stmts -> stmtMetaLocation loc $ mapM funS stmts
-  SDeclVar _ _ -> error $ Err.unusedBranch x
+  T_SAssign id expr -> do
+    (expr', etyp) <- funE expr
+    vtyp <- typeof id
+    vtyp =| etyp
+    return $ T_SAssign id expr'
+  T_SAssignArr id expr1 expr2 -> do
+    (expr1', etyp1) <- funE expr1
+    (expr2', etyp2) <- funE expr2
+    TInt =| etyp1 `rethrow` Err.indexType
+    atyp <- typeof id
+    atyp =| TArray etyp2
+    return $ T_SAssignArr id expr1' expr2'
+  T_SAssignFld ido idf expr -> do
+    (expr', etyp) <- funE expr
+    otyp <- typeof ido
+    ftyp <- typeof' otyp idf
+    ftyp =| etyp
+    return $ T_SAssignFld ido idf expr'
+  T_SDeclVar _ _ -> error $ Err.unusedBranch x
 
 funE :: Expr -> TypeM (Expr, Type)
 funE x = case x of
-  EVar id -> do
-    typ <- typeof id
-    return (x, typ)
   ELitInt n -> do
     intWithinBounds n `rethrow` Err.intValueOutOfBounds n
     return (x, TInt)
@@ -322,12 +320,12 @@ funE x = case x of
   ELitString str -> return (x, TString)
   ELitChar c -> return (x, TChar)
   ENull -> return (x, TNull)
-  EAccessArr expr1 expr2 -> do
+  EArrayLoad expr1 expr2 -> do
     (expr1', etyp1) <- funE expr1
     (expr2', etyp2) <- funE expr2
     TInt =| etyp2 `rethrow` Err.indexType
     case etyp1 of
-      TArray typ -> return (EAccessArr expr1' expr2', typ)
+      TArray typ -> return (EArrayLoad expr1' expr2', typ)
       _ -> throwError Err.subscriptNonArray
   ECall id exprs -> do
     (exprs', etypes) <- mapAndUnzipM funE exprs
@@ -340,10 +338,10 @@ funE x = case x of
     ftyp <- typeof' etyp id
     rett <- invoke ftyp etypes
     return (EAccessFn expr' id exprs', rett)
-  EAccessVar expr id -> do
+  EGetField expr id -> do
     (expr', etyp) <- funE expr
     typ <- typeof' etyp id
-    return (EAccessVar expr' id, typ)
+    return (EGetField expr' id, typ)
   ENewArr typ expr -> do
     notAVoid typ `rethrow` Err.voidNotIgnored
     (expr', etyp) <- funE expr
@@ -380,5 +378,8 @@ funE x = case x of
           ObGEQ -> return TBool
           _ -> return TInt
     return (EBinary rett opbin expr1' expr2', rett)
-  EThis -> this >>= \typ -> return (EThis, typ)
+  ELoadThis -> this >>= \typ -> return (ELoadThis, typ)
+  T_EVar id -> do
+    typ <- typeof id
+    return (x, typ)
 

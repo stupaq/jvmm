@@ -82,7 +82,7 @@ funSM method@Method { methodLocation = loc} = Err.withLocation loc $ do
 
 funS :: Stmt -> VerifierM ()
 funS x = case x of
-  SLocal _ stmts -> mapM_ funS stmts
+  SBlock stmts -> mapM_ funS stmts
   SReturn _ -> setReturned True
   SIf ELitTrue stmt -> funS stmt -- TODO analyser should resolve this
   SIf _ stmt ->
@@ -115,6 +115,6 @@ funS x = case x of
   SBuiltin -> setReturned True
   SInherited -> setReturned True
   SMetaLocation loc stmts -> Err.withLocation loc (mapM_ funS stmts)
-  SDeclVar _ _ -> error $ Err.unusedBranch x
+  T_SDeclVar _ _ -> error $ Err.unusedBranch x
   _ -> return ()
 

@@ -19,11 +19,7 @@ import Jvmm.Hierarchy.Output
 -- SCOPE REPRESENTATION --
 --------------------------
 type Tag = Int
-
-tag0 = 0 :: Tag
-
-tagWith :: Tag -> UIdent -> UIdent
-tagWith tag = (+/+ concat ["$", show tag])
+tag0 = 0
 
 -- Each symbol in scoped tree has an identifier which is unique in its scope,
 -- in other words, there is no identifier hiding in scoped tree.
@@ -58,13 +54,13 @@ scopeenvFull env = Map.union (scopeenvInstance env) (scopeenvStatic env)
 
 -- SCOPE MONAD --
 -----------------
-type ScopeM = StateT Scope (ReaderT ScopeEnv (ErrorInfoT Identity))
-runScopeM :: ScopeM a -> ErrorInfoT Identity (a, Scope)
-runScopeM m = runReaderT (runStateT m scope0) scopeenv0
+type ScopeM = WriterT [Variable] (StateT Scope (ReaderT ScopeEnv (ErrorInfoT Identity)))
+runScopeM :: ScopeM a -> ErrorInfoT Identity ((a, [Variable]), Scope)
+runScopeM m = runReaderT (runStateT (runWriterT m) scope0) scopeenv0
 
-resolveInScope :: UIdent -> Scope -> ScopeM UIdent
+resolveInScope :: UIdent -> Scope -> ScopeM Tag
 resolveInScope id scope = case Map.lookup id scope of
-  Just tag -> return $ tagWith tag id
+  Just tag -> return tag
   Nothing -> throwError $ Err.unboundSymbol id
 
 -- SCOPE SWITCHING --
@@ -110,42 +106,54 @@ collectClasses classes = Traversable.mapM (declare' . classType) classes >> retu
 
 -- SCOPE QUERING --
 -------------------
--- Two different identifiers
-oneIdent, otherIdent :: UIdent
-oneIdent = VIdent "#$#$#$#"
-otherIdent = VIdent "@%@%@%@"
 
 checkRedeclaration:: UIdent -> ScopeM ()
 checkRedeclaration id = do
-  idpar <- asCurrent scopeenvParent (resolve id) `catchError` (\_ -> return oneIdent)
-  idloc <- resolve id `catchError` (\_ -> return oneIdent)
+  idpar <- asCurrent scopeenvParent (resolve id) `catchError` (\_ -> return tag0)
+  idloc <- resolve id `catchError` (\_ -> return tag0)
   unless (idpar == idloc) $ throwError $ Err.redeclaredSymbol id
 
 isMember :: UIdent -> ScopeM Bool
 isMember id = do
-  idinst <- asCurrent scopeenvInstance (resolve id) `catchError` (\_ -> return oneIdent)
-  idloc <- resolve id `catchError` (\_ -> return oneIdent)
+  idinst <- asCurrent scopeenvInstance (resolve id) `catchError` (\_ -> return tag0)
+  idloc <- resolve id `catchError` (\_ -> return tag0)
   return (idinst == idloc)
 
 isStatic :: UIdent -> ScopeM Bool
 isStatic id = do
-  idstat <- asCurrent scopeenvStatic (resolve id) `catchError` (\_ -> return oneIdent)
-  idloc <- resolve id `catchError` (\_ -> return oneIdent)
+  idstat <- asCurrent scopeenvStatic (resolve id) `catchError` (\_ -> return tag0)
+  idloc <- resolve id `catchError` (\_ -> return tag0)
   return (idstat == idloc)
 
-resolve :: UIdent -> ScopeM UIdent
-resolve id = case id of
-  IThis -> return id
-  _ -> get >>= resolveInScope id
 
-resolve' :: Type -> ScopeM Type
-resolve' typ = case typ of
+resolve :: UIdent -> ScopeM Tag
+resolve id = get >>= resolveInScope id
+
+resolveField :: UIdent -> ScopeM UIdent
+resolveField id = resolve id >> return id
+
+resolveMethod :: UIdent -> ScopeM UIdent
+resolveMethod id = resolve id >> return id
+
+resolveLocal :: UIdent -> ScopeM VariableNum
+-- A local variable resolves to its numeric identifier
+resolveLocal id = get >>= resolveInScope id
+
+resolveType :: Type -> ScopeM Type
+resolveType typ = case typ of
+  -- We do not support any form of type renaming for now
   TUser id -> resolve id >> return typ
-  TFunc ret args excs -> liftM3 TFunc (resolve' ret) (mapM resolve' args) (mapM resolve' excs)
+  TFunc ret args excs -> liftM3 TFunc (resolveType ret) (mapM resolveType args) (mapM resolveType excs)
   _ -> return typ
 
 -- SCOPE UPDATING --
 --------------------
+aVariable :: UIdent -> ScopeM ()
+aVariable id@(VIdent name) = let sym = VIdent name in do
+  checkRedeclaration sym
+  free <- gets ((+1) . List.maximum . Map.elems)
+  modify (Map.insert id free)
+
 declare :: UIdent -> ScopeM ()
 declare id = checkRedeclaration id >> modify (newOccurence id)
 
@@ -158,14 +166,14 @@ declare' _ = return ()
 varOrField id ifVar ifField = do
   field <- isMember id
   case field of
-    False -> resolve id >>= (return . ifVar)
-    True -> scopeenvInstance `asCurrent` (resolve id >>= (return . ifField))
+    False -> resolveLocal id >>= (return . ifVar)
+    True -> scopeenvInstance `asCurrent` (resolveField id >>= (return . ifField))
 
 funH :: ClassHierarchy -> ScopeM ClassHierarchy
 funH = Traversable.mapM $ \clazz@(Class typ super fields methods staticMethods loc) -> 
   Err.withLocation loc $ do
-    typ' <- resolve' typ
-    super' <- resolve' super
+    typ' <- resolveType typ
+    super' <- resolveType super
     enterClass clazz $ do
       (fields', methods') <-
         scopeenvFull `asCurrent` liftM2 (,) (mapM funF fields) (mapM funM methods)
@@ -173,60 +181,35 @@ funH = Traversable.mapM $ \clazz@(Class typ super fields methods staticMethods l
       return $ Class typ' super' fields' methods' staticMethods' loc
 
 funF :: Field -> ScopeM Field
-funF (Field typ id origin) = liftM3 Field (resolve' typ) (resolve id) (resolve' origin)
+funF (Field typ id origin) = liftM3 Field (resolveType typ) (resolveField id) (resolveType origin)
 
 funM :: Method -> ScopeM Method
-funM (Method typ id ids stmt origin loc) =
+funM (Method typ id ids stmt origin loc []) =
   Err.withLocation loc $ do
-    id' <- resolve id
-    typ' <- resolve' typ
-    origin' <- resolve' origin
+    id' <- resolveMethod id
+    typ' <- resolveType typ
+    origin' <- resolveType origin
     newLocal $ do
       mapM_ declare ids `rethrow` Err.duplicateArg id
-      ids' <- mapM resolve ids
-      stmt' <- newLocal (funS stmt)
-      return $ Method typ' id' ids' stmt' origin' loc
+      ids' <- mapM resolveVariable ids
+      (stmt', vars) <- listen $ newLocal (funS stmt)
+      return $ Method typ' id' ids' stmt' origin' loc vars
+funM x = error $ Err.unusedBranch x
 
 funMS :: Method -> ScopeM Method
 funMS = funM
 
 funS :: Stmt -> ScopeM Stmt
 funS x = case x of
-  SDeclVar typ id -> do
+  T_SDeclVar typ id -> do
     declare id
-    liftM2 SDeclVar (resolve' typ) (resolve id)
-  SLocal _ stmts -> do -- definitions part of SLocal is empty at this point
+    typ' <- resolveType typ
+    num <- resolve id
+    tell [Variable typ' num (uidentName id)]
+    return SEmpty
+  SBlock stmts -> do
     stmts' <- newLocal (mapM funS stmts)
-    let decls = collectDeclarations stmts'
-    let instrs = filterDeclarations stmts'
-    return $ SLocal decls instrs
-    where
-      collectDeclarations :: [Stmt] -> [Variable]
-      collectDeclarations = concatMap (\x -> case x of
-          SDeclVar typ id -> return $ Variable typ id
-          SMetaLocation _ stmts -> collectDeclarations stmts
-          _ -> [])
-      filterDeclarations :: [Stmt] -> [Stmt]
-      filterDeclarations = concatMap (\x -> case x of
-          SDeclVar typ id -> []
-          SMetaLocation loc stmts -> return $ SMetaLocation loc $ filterDeclarations stmts
-          _ -> return x)
-  -- We replace all assignments that actually refer to instance fields but give precedence to local
-  -- variables (like in Java), to referencee hidden field self.<field_name> construct can be used
-  SAssign id expr -> do
-    expr' <- funE expr
-    varOrField id (\id' -> SAssign id' expr') (\id' -> SAssignFld IThis id' expr')
-  SAssignArr id expr1 expr2 -> do
-    expr1' <- funE expr1
-    expr2' <- funE expr2
-    id' <- resolve id
-    return $ SAssignArr id' expr1' expr2'
-  SAssignFld id1 id2 expr2 -> do
-    expr2' <- funE expr2
-    id1' <- resolve id1
-    scopeenvForeign id2 `asCurrent` do
-      id2' <- resolve id2
-      return $ SAssignFld id1' id2' expr2'
+    return $ SBlock stmts'
   SReturn expr -> do
     expr' <- funE expr
     return $ SReturn expr'
@@ -262,14 +245,30 @@ funS x = case x of
   SBuiltin -> return SBuiltin
   SInherited -> return SInherited
   SMetaLocation loc stmts -> stmtMetaLocation loc $ mapM funS stmts
+  -- We replace all assignments that actually refer to instance fields but give precedence to local
+  -- variables (like in Java), to referencee hidden field self.<field_name> construct can be used
+  T_SAssign id expr -> do
+    expr' <- funE expr
+    varOrField id (\id' -> T_SAssign id' expr') (\id' -> T_SAssignFld IThis id' expr')
+  T_SAssignArr id expr1 expr2 -> do
+    expr1' <- funE expr1
+    expr2' <- funE expr2
+    id' <- resolve id
+    return $ T_SAssignArr id' expr1' expr2'
+  T_SAssignFld id1 id2 expr2 -> do
+    expr2' <- funE expr2
+    id1' <- resolve id1
+    scopeenvForeign id2 `asCurrent` do
+      id2' <- resolve id2
+      return $ T_SAssignFld id1' id2' expr2'
 
 funE :: Expr -> ScopeM Expr
 funE x = case x of
-  EVar id -> varOrField id (\id' -> EVar id') (\id' -> EAccessVar EThis id')
-  EAccessArr expr1 expr2 -> do
+  T_EVar id -> varOrField id (\id' -> T_EVar id') (\id' -> EGetField ELoadThis id')
+  EArrayLoad expr1 expr2 -> do
     expr1' <- funE expr1
     expr2' <- funE expr2
-    return $ EAccessArr expr1' expr2'
+    return $ EArrayLoad expr1' expr2'
   -- We replace all assignments that actually refer to instance method, we also give precedence to
   -- instance methods over static ones.
   ECall id exprs -> do
@@ -278,36 +277,36 @@ funE x = case x of
     case member of
       True -> scopeenvInstance `asCurrent` do
         id' <- resolve id
-        return $ EAccessFn EThis id' exprs'
+        return $ EAccessFn ELoadThis id' exprs'
       False -> scopeenvStatic `asCurrent` do
         id' <- resolve id
         return $ ECall id' exprs'
-  EAccessFn EThis id exprs -> do
+  EAccessFn ELoadThis id exprs -> do
     exprs' <- mapM funE exprs
     scopeenvInstance `asCurrent` do
       id' <- resolve id
-      return $ EAccessFn EThis id' exprs'
+      return $ EAccessFn ELoadThis id' exprs'
   EAccessFn expr id exprs -> do
     expr' <- funE expr
     exprs' <- mapM funE exprs
     scopeenvForeign id `asCurrent` do
       id' <- resolve id
       return $ EAccessFn expr' id' exprs'
-  EAccessVar EThis id -> do
+  EGetField ELoadThis id -> do
     scopeenvInstance `asCurrent` do
       id' <- resolve id
-      return $ EAccessVar EThis id'
-  EAccessVar expr id -> do
+      return $ EGetField ELoadThis id'
+  EGetField expr id -> do
     expr' <- funE expr
     scopeenvForeign id `asCurrent` do
       id' <- resolve id
-      return $ EAccessVar expr' id'
+      return $ EGetField expr' id'
   ENewArr typ expr -> do
-    typ' <- resolve' typ
+    typ' <- resolveType typ
     expr' <- funE expr
     return $ ENewArr typ' expr'
   ENewObj typ -> do
-    typ' <- resolve' typ
+    typ' <- resolveType typ
     return $ ENewObj typ'
   EUnary _ op expr -> do
     expr' <- funE expr

@@ -52,9 +52,10 @@ tFunction (I.Function typ id args exceptions lbr stmts rbr) =
       O.methodType = funType
     , O.methodIdent = tFIdent id
     , O.methodArgs = argUIdents
-    , O.methodBody = O.SLocal [] $ tBraces lbr rbr (concatMap tStmt stmts)
+    , O.methodBody = O.SBlock $ tBraces lbr rbr (concatMap tStmt stmts)
     , O.methodOrigin = O.TUnknown
     , O.methodLocation = brToLoc lbr rbr
+    , O.methodVariables = []
   }
   where
     argUIdents = map (\(I.Argument typ id) -> tVIdent id) args
@@ -67,23 +68,23 @@ tFunction (I.Function typ id args exceptions lbr stmts rbr) =
 tStmt :: I.Stmt -> [O.Stmt]
 tStmt x = case x of
   I.SDeclVar typ items s -> tSem s $ concat $ map (tItem typ) items
-  I.SBlock lbr stmts rbr -> tBraces lbr rbr $ return $ O.SLocal [] $ concatMap tStmt stmts
-  I.SAssignOp id opassign expr s -> tSem s $ return $ O.SAssign (tVIdent id) $ tExpr $ tAssignOp opassign (I.EVar id) expr
-  I.SAssignOpArr id expr1 opassign2 expr3 s -> tSem s $ return $ O.SAssignArr (tVIdent id) (tExpr expr1) $ tExpr $ tAssignOp opassign2 (I.EArrayE (I.EVar id) expr1) expr3
-  I.SAssignOpFld id1 id2 opassign3 expr4 s -> tSem s $ return $ O.SAssignFld (tVIdent id1) (tVIdent id2) $ tExpr $ tAssignOp opassign3 (I.EFieldE (I.EVar id1) id2) expr4
-  I.SAssignOpThis id2 opassign3 expr4 s -> tSem s $ return $ O.SAssignFld O.IThis (tVIdent id2) $ tExpr $ tAssignOp opassign3 (I.EFieldE I.EThis id2) expr4
+  I.SBlock lbr stmts rbr -> tBraces lbr rbr $ return $ O.SBlock $ concatMap tStmt stmts
+  I.SAssignOp id opassign expr s -> tSem s $ return $ O.T_SAssign (tVIdent id) $ tExpr $ tAssignOp opassign (I.EVar id) expr
+  I.SAssignOpArr id expr1 opassign2 expr3 s -> tSem s $ return $ O.T_SAssignArr (tVIdent id) (tExpr expr1) $ tExpr $ tAssignOp opassign2 (I.EArrayE (I.EVar id) expr1) expr3
+  I.SAssignOpFld id1 id2 opassign3 expr4 s -> tSem s $ return $ O.T_SAssignFld (tVIdent id1) (tVIdent id2) $ tExpr $ tAssignOp opassign3 (I.EFieldE (I.EVar id1) id2) expr4
+  I.SAssignOpThis id2 opassign3 expr4 s -> tSem s $ return $ O.T_SAssignFld O.IThis (tVIdent id2) $ tExpr $ tAssignOp opassign3 (I.EFieldE I.EThis id2) expr4
   I.SPostInc id s -> tStmt $ I.SAssignOp id I.APlus (I.ELitInt 1) s
   I.SPostDec id s -> tStmt $ I.SAssignOp id I.AMinus (I.ELitInt 1) s
   I.SEmpty s -> tSem s $ return O.SEmpty
-  I.SAssign id expr s -> tSem s $ return $ O.SAssign (tVIdent id) $ tExpr expr
-  I.SAssignArr id expr1 expr2 s -> tSem s $  return $ O.SAssignArr (tVIdent id) (tExpr expr1) (tExpr expr2)
-  I.SAssignFld id1 id2 expr3 s -> tSem s $ return $ O.SAssignFld (tVIdent id1) (tVIdent id2) (tExpr expr3)
-  I.SAssignThis id2 expr3 s -> tSem s $ return $ O.SAssignFld O.IThis (tVIdent id2) (tExpr expr3)
+  I.SAssign id expr s -> tSem s $ return $ O.T_SAssign (tVIdent id) $ tExpr expr
+  I.SAssignArr id expr1 expr2 s -> tSem s $  return $ O.T_SAssignArr (tVIdent id) (tExpr expr1) (tExpr expr2)
+  I.SAssignFld id1 id2 expr3 s -> tSem s $ return $ O.T_SAssignFld (tVIdent id1) (tVIdent id2) (tExpr expr3)
+  I.SAssignThis id2 expr3 s -> tSem s $ return $ O.T_SAssignFld O.IThis (tVIdent id2) (tExpr expr3)
   I.SReturn expr s -> tSem s $ return $ O.SReturn $ tExpr expr
   I.SReturnV s -> tSem s $ return O.SReturnV
-  I.SIf expr stmt -> return $ O.SIf (tExpr expr) (O.SLocal [] $ tStmt stmt)
-  I.SIfElse expr stmt1 stmt2 -> return $ O.SIfElse (tExpr expr) (O.SLocal [] $ tStmt stmt1) (O.SLocal [] $ tStmt stmt2)
-  I.SWhile expr stmt -> return $ O.SWhile (tExpr expr) (O.SLocal [] $ tStmt stmt)
+  I.SIf expr stmt -> return $ O.SIf (tExpr expr) (O.SBlock $ tStmt stmt)
+  I.SIfElse expr stmt1 stmt2 -> return $ O.SIfElse (tExpr expr) (O.SBlock $ tStmt stmt1) (O.SBlock $ tStmt stmt2)
+  I.SWhile expr stmt -> return $ O.SWhile (tExpr expr) (O.SBlock $ tStmt stmt)
   I.SForeach typ id expr stmt ->  -- SYNTACTIC SUGAR
     let idarr = tempIdent id "arr"
         idlength = tempIdent id "length"
@@ -98,7 +99,7 @@ tStmt x = case x of
         I.SPostInc iditer noSem] noRbr)] noRbr
   I.SExpr expr s -> tSem s $ return $ O.SExpr $ tExpr expr
   I.SThrow expr s -> tSem s $ return $ O.SThrow $ tExpr expr
-  I.STryCatch stmt1 typ2 id3 stmt4 -> return $ O.STryCatch (O.SLocal [] $ tStmt stmt1) (tType typ2) (tVIdent id3) (O.SLocal [] $ tStmt stmt4)
+  I.STryCatch stmt1 typ2 id3 stmt4 -> return $ O.STryCatch (O.SBlock $ tStmt stmt1) (tType typ2) (tVIdent id3) (O.SBlock $ tStmt stmt4)
   where
   tAssignOp :: I.AssignOp -> I.Expr -> I.Expr -> I.Expr
   tAssignOp opassign expr1 expr2 = case opassign of
@@ -132,20 +133,20 @@ noRbr = I.RightBrace ((-1, -1), ";")
 
 tItem :: I.Type -> I.Item -> [O.Stmt]
 tItem typ x = case x of
-  I.NoInit id -> [O.SDeclVar (tType typ) (tVIdent id)]
+  I.NoInit id -> [O.T_SDeclVar (tType typ) (tVIdent id)]
   -- We use temporary variable with lifetime limited to four statements,
   -- which cannot hide any user-defined variable
   I.Init id expr ->  -- SYNTACTIC SUGAR
     let idtmp = tempIdent id "decl"
     in [
-      O.SDeclVar (tType typ) (tVIdent idtmp),
-      O.SAssign (tVIdent idtmp) (tExpr expr),
-      O.SDeclVar (tType typ) (tVIdent id),
-      O.SAssign (tVIdent id) (O.EVar (tVIdent idtmp))]
+      O.T_SDeclVar (tType typ) (tVIdent idtmp),
+      O.T_SAssign (tVIdent idtmp) (tExpr expr),
+      O.T_SDeclVar (tType typ) (tVIdent id),
+      O.T_SAssign (tVIdent id) (O.T_EVar (tVIdent idtmp))]
 
 tExpr :: I.Expr -> O.Expr
 tExpr x = case x of
-  I.EVar id -> O.EVar $ tVIdent id
+  I.EVar id -> O.T_EVar $ tVIdent id
   I.ELitInt n -> O.ELitInt n
   I.ELitTrue -> O.ELitTrue
   I.ELitFalse -> O.ELitFalse
@@ -153,14 +154,14 @@ tExpr x = case x of
   I.ELitChar c -> O.ELitChar c
   I.ENull -> O.ENull
   I.ENullT typ -> O.ENull
-  I.EArrayE expr1 expr2 -> O.EAccessArr (tExpr expr1) (tExpr expr2)
+  I.EArrayE expr1 expr2 -> O.EArrayLoad (tExpr expr1) (tExpr expr2)
   I.EMethodE expr id exprs -> O.EAccessFn (tExpr expr) (tFIdent id) (map tExpr exprs)
-  I.EFieldE expr id -> O.EAccessVar (tExpr expr) (tVIdent id)
-  I.EArrayI ide expr2 -> O.EAccessArr (tExpr $ I.EVar ide) (tExpr expr2)  -- GRAMMAR IRREGULARITY
+  I.EFieldE expr id -> O.EGetField (tExpr expr) (tVIdent id)
+  I.EArrayI ide expr2 -> O.EArrayLoad (tExpr $ I.EVar ide) (tExpr expr2)  -- GRAMMAR IRREGULARITY
   I.EMethodI ide id exprs -> O.EAccessFn (tExpr $ I.EVar ide) (tFIdent id) (map tExpr exprs)  -- GRAMMAR IRREGULARITY
-  I.EFieldI ide id -> O.EAccessVar (tExpr $ I.EVar ide) (tVIdent id)  -- GRAMMAR IRREGULARITY
-  I.EFieldIT id -> O.EAccessVar O.EThis (tVIdent id)
-  I.EMethodIT id exprs -> O.EAccessFn O.EThis (tFIdent id) (map tExpr exprs)
+  I.EFieldI ide id -> O.EGetField (tExpr $ I.EVar ide) (tVIdent id)  -- GRAMMAR IRREGULARITY
+  I.EFieldIT id -> O.EGetField O.ELoadThis (tVIdent id)
+  I.EMethodIT id exprs -> O.EAccessFn O.ELoadThis (tFIdent id) (map tExpr exprs)
   I.EApp id exprs -> O.ECall (tFIdent id) (map tExpr exprs)
   I.ENewArray typ expr -> O.ENewArr (tType typ) (tExpr expr)
   I.ENewObject typ -> O.ENewObj $ tType typ
@@ -171,7 +172,7 @@ tExpr x = case x of
   I.ERel expr1 opbin2 expr3 -> O.EBinary O.TUnknown (tRelOp opbin2) (tExpr expr1) (tExpr expr3)
   I.EAnd expr1 expr3 -> O.EBinary O.TUnknown O.ObAnd (tExpr expr1) (tExpr expr3)
   I.EOr expr1 expr3 -> O.EBinary O.TUnknown O.ObOr (tExpr expr1) (tExpr expr3)
-  I.EThis -> O.EThis
+  I.EThis -> O.ELoadThis
 
 tMulOp :: I.MulOp -> O.OpBin
 tMulOp x = case x of
