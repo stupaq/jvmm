@@ -24,7 +24,13 @@ foldF f = Prelude.foldl (flip (.)) Prelude.id . map f
 
 -- TYPE REPRESENTATION --
 -------------------------
-type Types = Map.Map UIdent Type
+data Symbol =
+    SField FieldName
+  | SMethod MethodName
+  | SVariable VariableNum
+  deriving (Show, Eq, Ord)
+
+type Types = Map.Map Symbol Type
 types0 = Map.empty
 
 type MemberTypes = Map.Map Type Types
@@ -72,9 +78,9 @@ collectTypes classes = fmap snd $ runStateT (Traversable.mapM decClass classes) 
         , typeenvStatic = Map.fromList staticMethods
       }
       where
-        fields = List.map (\x -> (fieldIdent x, fieldType x)) $ classFields clazz
-        methods = List.map (\x -> (methodIdent x, methodType x)) $ classMethods clazz
-        staticMethods = List.map (\x -> (methodIdent x, methodType x)) $ classStaticMethods clazz
+        fields = List.map (\x -> (fieldName x, fieldType x)) $ classFields clazz
+        methods = List.map (\x -> (methodName x, methodType x)) $ classMethods clazz
+        staticMethods = List.map (\x -> (methodName x, methodType x)) $ classStaticMethods clazz
         types = Map.fromList $ fields ++ methods
 
 -- Typing is fully static. TObject type is a superclass of every non-primitive.
@@ -92,16 +98,16 @@ lookupM key map = lift $ case Map.lookup key map of
   Just val -> return val
   Nothing -> throwError noMsg
 
-typeof :: UIdent -> TypeM Type
+typeof :: VariableName -> TypeM Type
 typeof IThis = this
 typeof uid = (asks typeenvIdents >>= lookupM uid) `rethrow` Err.unknownSymbolType uid
 
-typeof' :: Type -> UIdent -> TypeM Type
+typeof' :: Type -> FieldName -> TypeM Type
 typeof' typ uid = case builtinMemberType typ uid of
   TUnknown -> (asks typeenvTypes >>= lookupM typ >>= lookupM uid) `rethrow` Err.unknownMemberType typ uid
   typ -> return typ
 
-typeof'' :: UIdent -> TypeM Type
+typeof'' :: MethodName -> TypeM Type
 typeof'' uid = (asks typeenvStatic >>= lookupM uid) `rethrow` Err.unknownSymbolType uid
 
 throws :: Type -> TypeM ()
@@ -109,7 +115,7 @@ throws typ = do
   excepts <- asks typeenvExceptions
   unless (Set.member typ excepts) $ throwError $ Err.uncaughtException typ
 
-called :: Type -> [UIdent] -> [Variable] -> TypeM a -> TypeM a
+called :: Type -> [VariableName] -> [Variable] -> TypeM a -> TypeM a
 called typ@(TFunc returnType argumentTypes exceptions) argumentIdents localVariables action = do
   forM_ argumentTypes $ \argt -> notAVoid argt `rethrow` Err.voidArg
   catches exceptions . argumentsEnv . variablesEnv . enterFunction typ $ action
@@ -130,7 +136,7 @@ returns typ = do
     Nothing -> throwError Err.danglingReturn
     _ -> error $ Err.unusedBranch "typeenvFunction was not of functional type"
 
-declare :: UIdent -> Type -> TypeM a -> TypeM a
+declare :: Symbol -> Type -> TypeM a -> TypeM a
 declare uid typ action = do
   notAVoid typ `rethrow` Err.voidVar uid
   local (\env -> env { typeenvIdents = Map.insert uid typ (typeenvIdents env) }) action
@@ -223,7 +229,7 @@ funH = Traversable.mapM $ \clazz@Class { classType = typ, classLocation = loc } 
       }
 
 funF :: Field -> TypeM Field
-funF field@Field { fieldType = typ, fieldIdent = id } = do
+funF field@Field { fieldType = typ, fieldName = id } = do
   notAVoid typ `rethrow` Err.voidField id
   return field
 
@@ -240,7 +246,7 @@ funMS method = do
   where
     checkEntrypoint :: Method -> TypeM ()
     checkEntrypoint method =
-      when (entrypointIdent == methodIdent method && methodOrigin method == TObject) $
+      when (entrypointIdent == methodName method && methodOrigin method == TObject) $
         (entrypointType =| methodType method >> return ()) `rethrow` Err.incompatibleMain
 
 funS :: Stmt -> TypeM Stmt

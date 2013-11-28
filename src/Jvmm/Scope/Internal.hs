@@ -34,10 +34,14 @@ scope0 = Set.empty
 type Variables = Map.Map VariableName VariableNum
 variables0 = Map.empty
 
+type DeclarationId = VariableNum
+declarationid0 = variablenum0
+
 data ScopeState = ScopeState {
     scopestateVariables :: Variables
+  , scopestateNextId :: DeclarationId
 } deriving (Show)
-scopestate0 = ScopeState variables0
+scopestate0 = ScopeState variables0 declarationid0
 
 -- SCOPE ENVIRONMENT --
 -----------------------
@@ -67,8 +71,9 @@ containsM key set = guard (Set.member key set) `rethrow` Err.unboundSymbol key
 -- Pushes scope 'stack frame', runs action in it, restores 'stack frame'
 newLocalScope :: ScopeM a -> ScopeM a
 newLocalScope action = do
-  parent <- get
-  local (\env -> env { scopeenvParent = scopestateVariables parent }) action `finally` (put parent)
+  parent <- gets scopestateVariables
+  local (\env -> env { scopeenvParent = parent }) action
+      `finally` modify (\st -> st { scopestateVariables = parent })
 
 -- SCOPE COLLECTING --
 ----------------------
@@ -81,6 +86,18 @@ enterClass clazz = do
           scopeenvInstance = instanceScope
         , scopeenvStatic = classes `Set.union` staticScope
       })
+
+enterMethod :: Method -> ScopeM Method -> ScopeM Method
+enterMethod method@Method { methodArgs = args, methodName = name } action = do
+  args' <- mapM rewriteArgument args `rethrow` Err.duplicateArg name
+  method' <- action
+  modify (\st -> st { scopestateNextId = declarationid0 })
+  return method' { methodArgs = args' }
+  where
+    rewriteArgument :: Variable -> ScopeM Variable
+    rewriteArgument var@Variable { variableName = name } = do
+      num' <- declare name
+      return var { variableNum = num' }
 
 enterHierarchy :: ClassHierarchy -> ScopeM a -> ScopeM a
 enterHierarchy hierarchy = do
@@ -114,8 +131,8 @@ instance Resolvable Type where
 
 checkRedeclaration :: VariableName -> ScopeM ()
 checkRedeclaration name = do
-  upper <- current name `orReturn` variablenum0
-  current <- parent name `orReturn` variablenum0
+  upper <- current name `orReturn` variablenumNone
+  current <- parent name `orReturn` variablenumNone
   unless (upper == current) $ throwError (Err.redeclaredSymbol name)
 
 isField :: VariableName -> ScopeM Bool
@@ -142,13 +159,14 @@ class Redeclarable a where
   tryCurrent x = (current x >> return True) `orReturn` False
   tryParent x = (parent x >> return True) `orReturn` False
 
-type DeclarationId = VariableNum
-
 instance Redeclarable VariableName where
   declare name = do
     checkRedeclaration name
-    free <- gets ((+1) . List.maximum . (variablenum0:) . Map.elems . scopestateVariables)
-    modify (\env -> env { scopestateVariables = Map.insert name free (scopestateVariables env)})
+    free <- gets scopestateNextId
+    modify (\st -> st {
+          scopestateVariables = Map.insert name free (scopestateVariables st)
+        , scopestateNextId = free + 1
+      })
     current name
   current name = gets scopestateVariables >>= lookupM name
   parent name = asks scopeenvParent >>= lookupM name
@@ -158,8 +176,8 @@ instance Redeclarable VariableName where
 funH :: ClassHierarchy -> ScopeM ClassHierarchy
 funH = Traversable.mapM $ \clazz@(Class typ super fields methods staticMethods loc) -> 
   Err.withLocation loc $ do
-    dynamic typ
-    dynamic super
+    static typ
+    static super
     enterClass clazz $ do
       mapM funF fields
       methods' <- mapM funM methods
@@ -177,23 +195,23 @@ funF field@(Field typ name origin) = do
   return field
 
 funM :: Method -> ScopeM Method
-funM method@(Method typ name names stmt origin loc []) =
+funM x = do
+  num <- declare (VariableName "self")
+  assert (num == variablenum0) (return ())
+  funMS x
+
+funMS :: Method -> ScopeM Method
+funMS method@(Method typ name _ stmt origin loc []) =
   Err.withLocation loc $ do
     dynamic name
     static typ
     dynamic origin
-    newLocalScope $ do
-      mapM_ declare names `rethrow` Err.duplicateArg name
-      mapM current names
-      (stmt', vars) <- listen $ newLocalScope (funS stmt)
+    enterMethod method $ do
+      (stmt', vars') <- listen $ newLocalScope (funS stmt)
       return $ method {
             methodBody = stmt'
-          , methodVariables = vars
+          , methodVariables = vars'
         }
-funM x = error $ Err.unusedBranch x
-
-funMS :: Method -> ScopeM Method
-funMS = funM
 
 funS :: Stmt -> ScopeM Stmt
 funS x = case x of
@@ -222,13 +240,6 @@ funS x = case x of
   SThrow expr -> do
     expr' <- funE expr
     return $ SThrow expr'
-  STryCatch stmt1 typ2 num stmt4 -> do
-    -- FIXME
-    stmt1' <- newLocalScope (funS stmt1)
-    newLocalScope $ do
-      -- Catch body can hnamee exception variable
-      stmt4' <- newLocalScope (funS stmt4)
-      return $ STryCatch stmt1' typ2 num stmt4'
   SReturnV -> return SReturnV
   SEmpty -> return SEmpty
   SBuiltin -> return SBuiltin
@@ -251,10 +262,19 @@ funS x = case x of
     return $ SPutField num name2 expr2'
   T_SDeclVar typ name -> do
     declare name
-    dynamic typ
+    static typ
     num <- current name
     tell [Variable typ num name]
     return SEmpty
+  T_STryCatch stmt1 typ name stmt2 -> do
+    stmt1' <- newLocalScope (funS stmt1)
+    newLocalScope $ do
+      -- Catch body can hide exception variable
+      declare name
+      num <- current name
+      tell [Variable typ num name]
+      stmt2' <- newLocalScope (funS stmt2)
+      return $ STryCatch stmt1' typ num stmt2'
 
 funE :: Expr -> ScopeM Expr
 funE x = case x of
@@ -281,11 +301,11 @@ funE x = case x of
     dynamic name
     return $ EGetField expr' name
   ENewArr typ expr -> do
-    dynamic typ
+    static typ
     expr' <- funE expr
     return $ ENewArr typ expr'
   ENewObj typ -> do
-    dynamic typ
+    static typ
     return $ ENewObj typ
   EUnary _ op expr -> do
     expr' <- funE expr

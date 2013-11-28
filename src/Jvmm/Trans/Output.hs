@@ -46,7 +46,7 @@ fieldFromVariable (VariableName name) = FieldName name
 data Method = Method {
     methodType :: Type
   , methodName :: MethodName
-  , methodArgs :: [VariableName]
+  , methodArgs :: [Variable]
   , methodBody :: Stmt
   , methodOrigin :: Type
   , methodLocation :: Location
@@ -64,6 +64,7 @@ data Variable = Variable {
 
 type VariableNum = Int
 variablenum0 = 0 :: VariableNum
+variablenumNone = -1 :: VariableNum
 
 newtype VariableName = VariableName String
   deriving (Show, Eq, Ord)
@@ -95,6 +96,7 @@ data Stmt =
   | T_SAssign VariableName Expr
   | T_SAssignArr VariableName Expr Expr
   | T_SAssignFld VariableName FieldName Expr
+  | T_STryCatch Stmt Type VariableName Stmt
   deriving (Eq, Ord, Show)
 
 -- TYPES --
