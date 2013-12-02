@@ -160,16 +160,16 @@ called typ@(TypeMethod returnType argumentTypes exceptions) arguments localVaria
   catches exceptions . declareAll arguments . declareAll localVariables . enterFunction typ $ action
 called x _ _ _ = error $ Err.unusedBranch "attempt to call not a functional type"
 
-catches :: [Type] -> TypeM a -> TypeM a
+catches :: [TypeComposed] -> TypeM a -> TypeM a
 catches types = local (\env -> env {
       typeenvExceptions = List.foldl (flip Set.insert) (typeenvExceptions env) types
     })
 
-returns :: Type -> TypeM ()
+returns :: TypeBasic -> TypeM ()
 returns typ = do
   ftyp <- asks typeenvFunction
   case ftyp of
-    Just (TMethod rett _ _) -> rett =| typ >> return ()
+    Just (TypeMethod rett _ _) -> rett =| typ >> return ()
     Nothing -> throwError Err.danglingReturn
     _ -> error $ Err.unusedBranch "typeenvFunction was not of functional type"
 
@@ -178,15 +178,15 @@ this = asks typeenvThis >>= \x -> case x of
   Just typ -> return typ
   Nothing -> throwError Err.danglingThis
 
-super :: Type -> TypeM Type
-super typ = (asks typeenvSuper >>= lookupM typ) `rethrow` Err.noSuperType typ
-
-enterFunction, enterInstance :: Type -> TypeM a -> TypeM a
+enterFunction :: TypeMethod -> TypeM a -> TypeM a
 enterFunction x = local $ \env -> env { typeenvFunction = Just x }
-enterInstance x = local (\env -> env { typeenvThis = Just x }) . declare (Variable x variablenumThis variablename0)
+
+enterInstance :: TypeComposed -> TypeM a -> TypeM a
+enterInstance x =
+  local (\env -> env { typeenvThis = Just x }) . declare (Variable (TComposed x) variablenumThis variablename0)
 
 invoke :: TypeMethod -> [Type] -> TypeM Type
-invoke ftyp@(TMethod ret args excepts) etypes = do
+invoke ftyp@(TypeMethod ret args excepts) etypes = do
     forM excepts throws
     (ftyp =| TypeMethod ret etypes []) `rethrow` Err.argumentsNotMatch args etypes
     return ret
@@ -205,49 +205,83 @@ intWithinBounds n =
 
 -- TYPE ARITHMETIC --
 ---------------------
--- We say that t <- t1 =||= t2 when t2 and t1 are subtypes of t, and no other
--- type t' such that t =| t' has this property
-(=||=) :: Type -> Type -> TypeM Type
-(=||=) typ1 typ2 =
-  (typ1 =| typ2) `mplus`
-  (typ1 |= typ2) `mplus`
-  (super typ1 >>= (=||= typ2)) `mplus`
-  (super typ2 >>= (typ1 =||=)) `rethrow` Err.unexpectedType typ1 typ2
+class Arithmetizable a where
+  -- We say that t <- t1 =||= t2 when t2 and t1 are subtypes of t, and no other
+  -- type t' such that t =| t' has this property
+  (=||=) :: a -> a -> TypeM a
+  (=||=) typ1 typ2 =
+    (typ1 =| typ2) `mplus`
+    (typ1 |= typ2) `mplus`
+    (super typ1 >>= (=||= typ2)) `mplus`
+    (super typ2 >>= (typ1 =||=)) `rethrow` Err.unexpectedType typ1 typ2
+  -- We say that t1 =| t2 when t2 is a subtype of t1 (t2 can be safely casted to t1)
+  (=|), (|=) :: a -> a -> TypeM a
+  (|=) = flip (=|)
+  super :: a -> TypeM a
 
--- We say that t1 =| t2 when t2 is a subtype of t1 (t2 can be safely casted to t1)
-(=|), (|=) :: Type -> Type -> TypeM Type
-(=|) typ1 typ2 = do
-  let bad = throwError (Err.unexpectedType typ1 typ2)
-      ok = return typ1
-  case (typ1, typ2) of
-    (TypeMethod _ argt1 _, TypeMethod _ argt2 _) -> do
-      unless (length argt1 == length argt2) $ throwError noMsg
-      zipWithM_ (=|) argt1 argt2
-      ok
-    (TInt, TInt) -> ok
-    (TChar, TChar) -> ok
-    (TBool, TBool) -> ok
-    (TVoid, TVoid) -> ok
-    (TNull, TNull) -> ok
-    (TArray _, TNull) -> ok
-    -- Different people say different things about this
-    (TArray etyp1, TArray etyp2) -> etyp1 =| etyp2
-    (TString, TNull) -> ok
-    (TString, TString) -> ok
-    (TObject, TNull) -> ok
-    (TObject, TString) -> ok
-    (TObject, TObject) -> ok
-    (TObject, TArray _) -> ok
-    (TObject, TUser _) -> ok
-    (TUser _, TNull) -> ok
-    (TUser _, TUser _)
-      | typ1 == typ2 -> ok
-      | otherwise -> do
-        typ2' <- super typ2
-        typ1 =| typ2'
-    _ -> bad
+instance Arithmetizable Type where
+  (=|) typ1 typ2 = do
+    let bad = throwError (Err.unexpectedType typ1 typ2)
+        ok = return typ1
+    case (typ1, typ2) of
+      (TMethod typ1', TMethod typ2') -> typ1' =| typ2'
+      (TBasic typ1', TBasic typ2') -> typ1' =| typ2'
+      _ -> bad
 
-(|=) = flip (=|)
+instance Arithmetizable TypeMethod where
+  (=|) typ1 typ2 = do
+    let bad = throwError (Err.unexpectedType typ1 typ2)
+        ok = return typ1
+    case (typ1, typ2) of
+      (TypeMethod _ argt1 _, TypeMethod _ argt2 _) -> do
+        unless (length argt1 == length argt2) $ throwError noMsg
+        zipWithM_ (=|) argt1 argt2
+        ok
+
+instance Arithmetizable TypeBasic where
+  (=|) typ1 typ2 = do
+    let bad = throwError (Err.unexpectedType typ1 typ2)
+        ok = return typ1
+    case (typ1, typ2) of
+      (TPrimitive typ1, TPrimitive typ2) -> typ1 =| typ2
+      (TComposed typ1, TComposed typ2) -> typ1 =| typ2
+      _ -> bad
+
+instance Arithmetizable TypePrimitive where
+  (=|) typ1 typ2 = do
+    let bad = throwError (Err.unexpectedType typ1 typ2)
+        ok = return typ1
+    case (typ1, typ2) of
+      (TInt, TInt) -> ok
+      (TChar, TChar) -> ok
+      (TBool, TBool) -> ok
+      (TVoid, TVoid) -> ok
+      _ -> bad
+
+instance Arithmetizable TypeComposed where
+  (=|) typ1 typ2 = do
+    let bad = throwError (Err.unexpectedType typ1 typ2)
+        ok = return typ1
+    case (typ1, typ2) of
+      (TNull, TNull) -> ok
+      (TArray _, TNull) -> ok
+      -- Different people say different things about this
+      (TArray etyp1, TArray etyp2) -> etyp1 =| etyp2
+      (TString, TNull) -> ok
+      (TString, TString) -> ok
+      (TObject, TNull) -> ok
+      (TObject, TString) -> ok
+      (TObject, TObject) -> ok
+      (TObject, TArray _) -> ok
+      (TObject, TUser _) -> ok
+      (TUser _, TNull) -> ok
+      (TUser _, TUser _)
+        | typ1 == typ2 -> ok
+        | otherwise ->
+          -- We will figure this out in the rule for =||=
+          bad
+      _ -> bad
+  super typ = (asks typeenvSuper >>= lookupM typ)
 
 -- TRAVERSING TREE --
 ---------------------
