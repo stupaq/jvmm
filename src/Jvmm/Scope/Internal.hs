@@ -23,7 +23,7 @@ import Jvmm.Hierarchy.Output
 data Symbol =
     SField FieldName
   | SMethod MethodName
-  | SType Type
+  | SType TypeComposed
   deriving (Show, Eq, Ord)
 
 type Scope = Set.Set Symbol
@@ -115,10 +115,24 @@ instance Resolvable FieldName where
   dynamic name = asks scopeenvInstance >>= containsM (SField name)
 
 instance Resolvable Type where
-  static typ@(TUser _) = asks scopeenvStatic >>= containsM (SType typ)
-  static (TFunc rett argst excepts) = do
+  static (TMethod typ) = static typ
+  static (TBasic typ) = static typ
+  static TUnknown = return ()
+
+instance Resolvable TypeMethod where
+  static (TypeMethod rett argst excepts) = do
     static rett
     forM_ argst static
+
+instance Resolvable TypeBasic where
+  static (TPrimitive typ) = static typ
+  static (TComposed typ) = static typ
+
+instance Resolvable TypePrimitive where
+  static _ = return ()
+
+instance Resolvable TypeComposed where
+  static typ@(TUser _) = asks scopeenvStatic >>= containsM (SType typ)
   static _ = return ()
 
 checkRedeclaration :: VariableName -> ScopeM ()
@@ -348,7 +362,10 @@ instance Scopeable Expr where
       expr2' <- scope expr2
       return $ EBinary TUnknown op expr1' expr2'
     -- These expressions will be replaced with ones caring more context in subsequent phases
-    T_EVar name -> varOrField name (\num -> ELoad num) (\field -> EGetField (ELoad variablenumThis) field)
+    T_EVar name ->
+      varOrField name
+        (\num -> ELoad num)
+        (\field -> EGetField (ELoad variablenumThis) field)
 
 -- HELPERS --
 -------------

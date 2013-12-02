@@ -12,24 +12,24 @@ import qualified Jvmm.Scope as Scope
 ---------------
 builtinFunctions :: [Method]
 builtinFunctions = map fun [
-    ("printInt", TFunc TVoid [TInt] []),
-    ("readInt", TFunc TInt [] []),
-    ("printString", TFunc TVoid [TString] []),
-    ("readString", TFunc TString [] []),
-    ("error", TFunc TVoid [] [])]
+    ("printInt", TypeMethod (TPrimitive TVoid) [TPrimitive TInt] []),
+    ("readInt", TypeMethod (TPrimitive TInt) [] []),
+    ("printString", TypeMethod (TPrimitive TVoid) [TComposed TString] []),
+    ("readString", TypeMethod (TComposed TString) [] []),
+    ("error", TypeMethod (TPrimitive TVoid) [] [])]
   where
-    fun (name, typ) = Method typ (MethodName name) [] SBuiltin TUnknown Err.Unknown []
+    fun (name, typ) = Method typ (MethodName name) [] SBuiltin  TObject Err.Unknown []
 
 -- ENTRYPOINT --
 ----------------
 entrypointIdent = MethodName "main"
-entrypointType = TFunc TInt [] []
+entrypointType = TypeMethod (TPrimitive TInt) [] []
 
 -- TYPES --
 -----------
 isBuiltinType (TUser (ClassName str)) = str `elem` ["int", "char", "boolean", "string"]
 isBuiltinType TObject = False
-isBuiltinType _ = True
+isBuiltinType (TArray _) = True
 
 builtinFieldType typ uid = case (typ, uid) of
   (TArray _, FieldName "length") -> TInt
@@ -37,7 +37,7 @@ builtinFieldType typ uid = case (typ, uid) of
   _ -> TUnknown
 
 builtinMethodType typ uid = case (typ, uid) of
-  (TString, MethodName "charAt") -> TFunc TChar [TInt] []
+  (TString, MethodName "charAt") -> TypeMethod TChar [TInt] []
   _ -> TUnknown
 
 primitiveTypes = [TVoid, TInt, TChar, TBool]

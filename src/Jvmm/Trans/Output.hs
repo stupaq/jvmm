@@ -17,19 +17,19 @@ import Jvmm.Errors (ErrorInfo, ErrorInfoT, runErrorInfoM, withLocation, Location
 -- CLASS --
 -----------
 data Class = Class {
-    classType :: Type
-  , classSuper :: Type
+    classType :: TypeComposed
+  , classSuper :: TypeComposed
   , classFields :: [Field]
   , classMethods :: [Method]
   , classStaticMethods :: [Method]
   , classLocation :: Location
-} deriving (Eq, Ord, Show)
+} deriving (Show, Eq, Ord)
 
 data Field = Field {
-    fieldType :: Type
+    fieldType :: TypeBasic
   , fieldName :: FieldName
-  , fieldOrigin :: Type
-} deriving (Eq, Ord, Show)
+  , fieldOrigin :: TypeComposed
+} deriving (Show, Eq, Ord)
 
 newtype FieldName = FieldName String
   deriving (Show, Eq, Ord)
@@ -38,11 +38,11 @@ fieldFromVariable :: VariableName -> FieldName
 fieldFromVariable (VariableName name) = FieldName name
 
 data Method = Method {
-    methodType :: Type
+    methodType :: TypeMethod
   , methodName :: MethodName
   , methodArgs :: [Variable]
   , methodBody :: Stmt
-  , methodOrigin :: Type
+  , methodOrigin :: TypeComposed
   , methodLocation :: Location
   , methodVariables :: [Variable]
 } deriving (Eq, Ord, Show)
@@ -51,7 +51,7 @@ newtype MethodName = MethodName String
   deriving (Show, Eq, Ord)
 
 data Variable = Variable {
-    variableType :: Type
+    variableType :: TypeBasic
   , variableNum :: VariableNum
   , variableName :: VariableName
 } deriving (Eq, Ord, Show)
@@ -81,38 +81,66 @@ data Stmt =
   | SIfElse Expr Stmt Stmt
   | SWhile Expr Stmt
   | SThrow Expr
-  | STryCatch Stmt Type VariableNum Stmt
+  | STryCatch Stmt TypeBasic VariableNum Stmt
   -- Special function bodies
   | SBuiltin
   | SInherited
   -- Metainformation carriers
   | SMetaLocation Location [Stmt]
   -- These statements will be replaced with ones caring more context in subsequent phases
-  | T_SDeclVar Type VariableName
+  | T_SDeclVar TypeBasic VariableName
   | T_SAssign VariableName Expr
   | T_SAssignArr VariableName Expr Expr
   | T_SAssignFld VariableName FieldName Expr
-  | T_STryCatch Stmt Type VariableName Stmt
+  | T_STryCatch Stmt TypeBasic VariableName Stmt
   deriving (Eq, Ord, Show)
 
 -- TYPES --
 -----------
 data Type =
     TUnknown
-  | TFunc Type [Type] [Type]
-  | TNull
-  | TVoid
+  | TMethod TypeMethod
+  | TBasic TypeBasic
+  deriving (Show, Eq, Ord)
+
+data TypeMethod = TypeMethod TypeBasic [TypeBasic] [TypeComposed]
+  deriving (Show, Eq, Ord)
+
+data TypeBasic =
+    TPrimitive TypePrimitive
+  | TComposed TypeComposed
+  deriving (Show, Eq, Ord)
+
+data TypePrimitive =
+    TVoid
   | TInt
   | TChar
   | TBool
+  deriving (Show, Eq, Ord)
+
+data TypeComposed =
+    TNull
   | TString
+  | TArray TypeBasic
   | TObject
   | TUser ClassName
-  | TArray Type
-  deriving (Eq,Ord,Show)
+  deriving (Show, Eq, Ord)
 
 newtype ClassName = ClassName String
   deriving (Show, Eq, Ord)
+
+class InheritsType a where
+  toType :: a -> Type
+instance InheritsType Type where
+  toType = Prelude.id
+instance InheritsType TypeMethod where
+  toType = TMethod
+instance InheritsType TypeBasic where
+  toType = TBasic
+instance InheritsType TypePrimitive where
+  toType = toType . TPrimitive
+instance InheritsType TypeComposed where
+  toType = toType . TComposed
 
 -- EXPRESSIONS --
 -----------------
@@ -183,10 +211,11 @@ data CompilationUnit =
 
 type ClassDiff = Class -> ErrorInfoT Identity Class
 
+-- TODO this is for debug purpouses only, discard when no longer needed
 instance Show ClassDiff where
   show diff = show $ runErrorInfoM $ diff Class {
-        classType = TUnknown
-      , classSuper = TUnknown
+        classType = TObject
+      , classSuper = TObject
       , classFields = []
       , classMethods = []
       , classStaticMethods = []
