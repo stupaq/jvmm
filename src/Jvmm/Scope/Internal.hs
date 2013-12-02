@@ -35,7 +35,7 @@ type Variables = Map.Map VariableName VariableNum
 variables0 = Map.empty
 
 type DeclarationId = VariableNum
-declarationid0 = variablenum0
+declarationid0 = variablenumThis
 
 data ScopeState = ScopeState {
     scopestateVariables :: Variables
@@ -193,7 +193,7 @@ scopeInstance :: Method -> ScopeM Method
 scopeInstance method@Method { methodName = name, methodLocation = loc } =
   Err.withLocation loc . newLocalScope $ do
     num <- declare (VariableName "self")
-    assert (num == variablenum0) (return ())
+    assert (num == variablenumThis) (return ())
     dynamic name
     scope method
 
@@ -228,13 +228,13 @@ instance Scopeable Stmt where
       stmts' <- newLocalScope (mapM scope stmts)
       return $ SBlock stmts'
     -- Memory access
-    SStore _ _ -> undefined
-    SStoreArray _ _ _ -> undefined
-    SPutField variablenum0 field expr -> do
+    SStore _ _ -> error $ Err.unusedBranch x
+    SStoreArray _ _ _ -> error $ Err.unusedBranch x
+    SPutField variablenumThis field expr -> do
       expr' <- scope expr
       dynamic field
-      return $ SPutField variablenum0 field expr'
-    SPutField _ _ _ -> undefined
+      return $ SPutField variablenumThis field expr'
+    SPutField _ _ _ -> error $ Err.unusedBranch x
     -- Control statements
     SReturn expr -> do
       expr' <- scope expr
@@ -256,7 +256,7 @@ instance Scopeable Stmt where
     SThrow expr -> do
       expr' <- scope expr
       return $ SThrow expr'
-    STryCatch _ _ _ _ -> undefined
+    STryCatch _ _ _ _ -> error $ Err.unusedBranch x
     -- Special function bodies
     SBuiltin -> return SBuiltin
     SInherited -> return SInherited
@@ -276,7 +276,7 @@ instance Scopeable Stmt where
     -- variables (like in Java), to referencee hidden field self.<field_name> construct can be used
     T_SAssign name expr -> do
       expr' <- scope expr
-      varOrField name (\num -> SStore num expr') (\name' -> SPutField variablenum0 name' expr')
+      varOrField name (\num -> SStore num expr') (\name' -> SPutField variablenumThis name' expr')
     T_SAssignArr name expr1 expr2 -> do
       expr1' <- scope expr1
       expr2' <- scope expr2
@@ -307,8 +307,8 @@ instance Scopeable Expr where
     ELitString _ -> return x
     ELitInt _ -> return x
     -- Memory access
-    ELoad _ -> undefined
-    ELoadThis -> return ELoadThis
+    ELoad variablenumThis -> return x
+    ELoad _ -> error $ Err.unusedBranch x
     EArrayLoad expr1 expr2 -> do
       expr1' <- scope expr1
       expr2' <- scope expr2
@@ -325,7 +325,7 @@ instance Scopeable Expr where
       stat <- isStatic name
       case stat of
         True -> static name >> return (EInvokeStatic name exprs')
-        False -> dynamic name >> return (EInvokeVirtual ELoadThis name exprs')
+        False -> dynamic name >> return (EInvokeVirtual (ELoad variablenumThis) name exprs')
     EInvokeVirtual expr name exprs -> do
       expr' <- scope expr
       exprs' <- mapM scope exprs
@@ -348,7 +348,7 @@ instance Scopeable Expr where
       expr2' <- scope expr2
       return $ EBinary TUnknown op expr1' expr2'
     -- These expressions will be replaced with ones caring more context in subsequent phases
-    T_EVar name -> varOrField name (\num -> ELoad num) (\field -> EGetField ELoadThis field)
+    T_EVar name -> varOrField name (\num -> ELoad num) (\field -> EGetField (ELoad variablenumThis) field)
 
 -- HELPERS --
 -------------

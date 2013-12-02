@@ -159,7 +159,9 @@ called typ@(TFunc returnType argumentTypes exceptions) arguments localVariables 
 called x _ _ _ = error $ Err.unusedBranch "attempt to call not a functional type"
 
 catches :: [Type] -> TypeM a -> TypeM a
-catches types = local (\env -> env { typeenvExceptions = List.foldl (flip Set.insert) (typeenvExceptions env) types })
+catches types = local (\env -> env {
+      typeenvExceptions = List.foldl (flip Set.insert) (typeenvExceptions env) types
+    })
 
 returns :: Type -> TypeM ()
 returns typ = do
@@ -179,7 +181,7 @@ super typ = (asks typeenvSuper >>= lookupM typ) `rethrow` Err.noSuperType typ
 
 enterFunction, enterInstance :: Type -> TypeM a -> TypeM a
 enterFunction x = local $ \env -> env { typeenvFunction = Just x }
-enterInstance x = local (\env -> env { typeenvThis = Just x }) . declare (Variable x variablenum0 variablename0)
+enterInstance x = local (\env -> env { typeenvThis = Just x }) . declare (Variable x variablenumThis variablename0)
 
 invoke :: Type -> [Type] -> TypeM Type
 invoke ftyp@(TFunc ret args excepts) etypes = do
@@ -365,7 +367,6 @@ funE x = case x of
     return (x, TInt)
   -- Memory access
   ELoad num -> fmap ((,) $ ELoad num) $ typeof num
-  ELoadThis -> fmap ((,) ELoadThis) $ this
   EArrayLoad expr1 expr2 -> do
     (expr1', etyp1) <- funE expr1
     (expr2', etyp2) <- funE expr2

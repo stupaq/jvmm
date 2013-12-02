@@ -57,7 +57,7 @@ data Variable = Variable {
 } deriving (Eq, Ord, Show)
 
 type VariableNum = Int
-variablenum0 = 0 :: VariableNum
+variablenumThis = 0 :: VariableNum
 variablenumNone = -1 :: VariableNum
 
 newtype VariableName = VariableName String
@@ -126,7 +126,6 @@ data Expr =
   | ELitInt Integer
   -- Memory access
   | ELoad VariableNum
-  | ELoadThis
   | EArrayLoad Expr Expr
   | EGetField Expr FieldName
   -- Method calls
