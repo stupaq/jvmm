@@ -28,15 +28,16 @@ entrypointType = TFunc TInt [] []
 -- TYPES --
 -----------
 isBuiltinType (TUser (ClassName str)) = str `elem` ["int", "char", "boolean", "string"]
+isBuiltinType TObject = False
 isBuiltinType _ = True
 
 builtinFieldType typ uid = case (typ, uid) of
-  (TArray _, FieldName "length$0") -> TInt
-  (TString, FieldName "length$0") -> TInt
+  (TArray _, FieldName "length") -> TInt
+  (TString, FieldName "length") -> TInt
   _ -> TUnknown
 
 builtinMethodType typ uid = case (typ, uid) of
-  (TString, MethodName "charAt$0") -> TFunc TChar [TInt] []
+  (TString, MethodName "charAt") -> TFunc TChar [TInt] []
   _ -> TUnknown
 
 primitiveTypes = [TVoid, TInt, TChar, TBool]

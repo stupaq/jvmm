@@ -1,5 +1,5 @@
 module Jvmm.Scope where
-import Jvmm.Scope.Internal
+import Jvmm.Scope.Internal as Internal
 
 import Control.Monad.Identity
 
@@ -11,5 +11,5 @@ import Jvmm.Hierarchy.Output
 -----------------------
 -- Creates scoped tree from translated AST.
 scope :: ClassHierarchy -> ErrorInfoT Identity ClassHierarchy
-scope classes = fmap fst $ fmap fst $ runScopeM (enterHierarchy classes $ funH classes)
+scope classes = fmap fst $ fmap fst $ runScopeM (enterHierarchy classes $ Internal.scope classes)
 

@@ -1,4 +1,5 @@
 {-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
 module Jvmm.Scope.Internal where
 
 import Control.Exception (assert)
@@ -76,6 +77,11 @@ newLocalScope action = do
 
 -- SCOPE COLLECTING --
 ----------------------
+enterHierarchy :: ClassHierarchy -> ScopeM a -> ScopeM a
+enterHierarchy hierarchy = do
+  let classes = execWriter $ Traversable.mapM (\x -> tell [SType $ classType x]) hierarchy
+  local (\env -> env { scopeenvStatic = Set.fromList classes })
+
 enterClass :: Class -> ScopeM a -> ScopeM a
 enterClass clazz = do
   let instanceScope = Set.fromList $ List.map (SField . fieldName) (classFields clazz)
@@ -86,30 +92,17 @@ enterClass clazz = do
         , scopeenvStatic = classes `Set.union` staticScope
       })
 
-enterMethod :: Method -> ScopeM Method -> ScopeM Method
-enterMethod method@Method { methodArgs = args, methodName = name } action = do
-  args' <- mapM rewriteArgument args `rethrow` Err.duplicateArg name
-  method' <- action
-  modify (\st -> st { scopestateNextId = declarationid0 })
-  return method' { methodArgs = args' }
+enterMethod :: ScopeM a -> ScopeM a
+enterMethod action = newLocalScope action `finally` resetDeclarationId
   where
-    rewriteArgument :: Variable -> ScopeM Variable
-    rewriteArgument var@Variable { variableName = name } = do
-      num' <- declare name
-      return var { variableNum = num' }
-
-enterHierarchy :: ClassHierarchy -> ScopeM a -> ScopeM a
-enterHierarchy hierarchy = do
-  let classes = execWriter $ Traversable.mapM (\x -> tell [SType $ classType x]) hierarchy
-  local (\env -> env { scopeenvStatic = Set.fromList classes })
+    resetDeclarationId :: ScopeM ()
+    resetDeclarationId = modify (\st -> st { scopestateNextId = declarationid0 })
 
 -- SCOPE QUERING --
 ------------------------------
 class Resolvable a where
   dynamic :: a -> ScopeM ()
-  dynamic = static
   static :: a -> ScopeM ()
-  static = dynamic
   tryDynamic, tryStatic :: a -> ScopeM Bool
   tryDynamic x = (dynamic x >> return True) `orReturn` False
   tryStatic x = (static x >> return True) `orReturn` False
@@ -123,6 +116,9 @@ instance Resolvable FieldName where
 
 instance Resolvable Type where
   static typ@(TUser _) = asks scopeenvStatic >>= containsM (SType typ)
+  static (TFunc rett argst excepts) = do
+    static rett
+    forM_ argst static
   static _ = return ()
 
 checkRedeclaration :: VariableName -> ScopeM ()
@@ -169,175 +165,190 @@ instance Redeclarable VariableName where
 
 -- SCOPE COMPUTATION --
 -----------------------
-funH :: ClassHierarchy -> ScopeM ClassHierarchy
-funH = Traversable.mapM $ \clazz@(Class typ super fields methods staticMethods loc) ->
-  Err.withLocation loc $ do
+class Scopeable a where
+  scope :: a -> ScopeM a
+
+instance Scopeable ClassHierarchy where
+  scope = Traversable.mapM $ \clazz@(Class typ super fields methods staticMethods loc) ->
+    Err.withLocation loc $ do
+      static typ
+      static super
+      enterClass clazz $ do
+        mapM scope fields
+        methods' <- mapM scopeInstance methods
+        staticMethods' <- mapM scopeStatic staticMethods
+        return $ clazz {
+              classMethods = methods'
+            , classStaticMethods = staticMethods'
+          }
+
+instance Scopeable Field where
+  scope field@(Field typ name origin) = do
     static typ
-    static super
-    enterClass clazz $ do
-      mapM funF fields
-      methods' <- mapM funM methods
-      staticMethods' <- mapM funMS staticMethods
-      return $ clazz {
-            classMethods = methods'
-          , classStaticMethods = staticMethods'
-        }
-
-funF :: Field -> ScopeM Field
-funF field@(Field typ name origin) = do
-  static typ
-  dynamic name
-  dynamic origin
-  return field
-
-funM :: Method -> ScopeM Method
-funM x = do
-  num <- declare (VariableName "self")
-  assert (num == variablenum0) (return ())
-  funMS x
-
-funMS :: Method -> ScopeM Method
-funMS method@(Method typ name _ stmt origin loc []) =
-  Err.withLocation loc $ do
     dynamic name
+    static origin
+    return field
+
+scopeInstance :: Method -> ScopeM Method
+scopeInstance method@Method { methodName = name, methodLocation = loc } =
+  Err.withLocation loc . newLocalScope $ do
+    num <- declare (VariableName "self")
+    assert (num == variablenum0) (return ())
+    dynamic name
+    scope method
+
+scopeStatic :: Method -> ScopeM Method
+scopeStatic method@Method { methodName = name, methodLocation = loc } =
+  Err.withLocation loc . newLocalScope $ do
+    static name
+    scope method
+
+instance Scopeable Method where
+  scope method@(Method typ name args stmt origin loc []) = do
     static typ
-    dynamic origin
-    enterMethod method $ do
-      (stmt', vars') <- listen $ newLocalScope (funS stmt)
-      return $ method {
+    static origin
+    enterMethod $ do
+      args' <- mapM declareArg args `rethrow` Err.duplicateArg name
+      (stmt', vars') <- listen $ newLocalScope (scope stmt)
+      return method {
             methodBody = stmt'
+          , methodArgs = args'
           , methodVariables = vars'
         }
+    where
+      declareArg :: Variable -> ScopeM Variable
+      declareArg var@Variable { variableName = name } = do
+        num' <- declare name
+        return var { variableNum = num' }
 
-funS :: Stmt -> ScopeM Stmt
-funS x = case x of
-  SEmpty -> return SEmpty
-  SBlock stmts -> do
-    stmts' <- newLocalScope (mapM funS stmts)
-    return $ SBlock stmts'
-  -- Memory access
-  SStore _ _ -> undefined
-  SStoreArray _ _ _ -> undefined
-  SPutField variablenum0 field expr -> do
-    expr' <- funE expr
-    dynamic field
-    return $ SPutField variablenum0 field expr'
-  SPutField _ _ _ -> undefined
-  -- Control statements
-  SReturn expr -> do
-    expr' <- funE expr
-    return $ SReturn expr'
-  SReturnV -> return SReturnV
-  SIf expr stmt -> do
-    stmt' <- funS stmt
-    expr' <- funE expr
-    return $ SIf expr' stmt'
-  SIfElse expr stmt1 stmt2 -> do
-    stmt1' <- funS stmt1
-    stmt2' <- funS stmt2
-    expr' <- funE expr
-    return $ SIfElse expr' stmt1' stmt2'
-  SWhile expr stmt -> do
-    expr' <- funE expr
-    stmt' <- funS stmt
-    return $ SWhile expr' stmt'
-  SThrow expr -> do
-    expr' <- funE expr
-    return $ SThrow expr'
-  STryCatch _ _ _ _ -> undefined
-  -- Special function bodies
-  SBuiltin -> return SBuiltin
-  SInherited -> return SInherited
-  SExpr expr -> do
-    expr' <- funE expr
-    return $ SExpr expr'
-  -- Metainformation carriers
-  SMetaLocation loc stmts -> stmtMetaLocation loc $ mapM funS stmts
-  -- These statements will be replaced with ones caring more context in subsequent phases
-  T_SDeclVar typ name -> do
-    declare name
-    static typ
-    num <- current name
-    tell [Variable typ num name]
-    return SEmpty
-  -- We replace all assignments that actually refer to instance fields but give precedence to local
-  -- variables (like in Java), to referencee hidden field self.<field_name> construct can be used
-  T_SAssign name expr -> do
-    expr' <- funE expr
-    varOrField name (\num -> SStore num expr') (\name' -> SPutField variablenum0 name' expr')
-  T_SAssignArr name expr1 expr2 -> do
-    expr1' <- funE expr1
-    expr2' <- funE expr2
-    num <- current name
-    return $ SStoreArray num expr1' expr2'
-  T_SAssignFld name1 name2 expr2 -> do
-    expr2' <- funE expr2
-    num <- current name1
-    dynamic name2
-    return $ SPutField num name2 expr2'
-  T_STryCatch stmt1 typ name stmt2 -> do
-    stmt1' <- newLocalScope (funS stmt1)
-    newLocalScope $ do
-      -- Catch body can hide exception variable
+instance Scopeable Stmt where
+  scope x = case x of
+    SEmpty -> return SEmpty
+    SBlock stmts -> do
+      stmts' <- newLocalScope (mapM scope stmts)
+      return $ SBlock stmts'
+    -- Memory access
+    SStore _ _ -> undefined
+    SStoreArray _ _ _ -> undefined
+    SPutField variablenum0 field expr -> do
+      expr' <- scope expr
+      dynamic field
+      return $ SPutField variablenum0 field expr'
+    SPutField _ _ _ -> undefined
+    -- Control statements
+    SReturn expr -> do
+      expr' <- scope expr
+      return $ SReturn expr'
+    SReturnV -> return SReturnV
+    SIf expr stmt -> do
+      stmt' <- scope stmt
+      expr' <- scope expr
+      return $ SIf expr' stmt'
+    SIfElse expr stmt1 stmt2 -> do
+      stmt1' <- scope stmt1
+      stmt2' <- scope stmt2
+      expr' <- scope expr
+      return $ SIfElse expr' stmt1' stmt2'
+    SWhile expr stmt -> do
+      expr' <- scope expr
+      stmt' <- scope stmt
+      return $ SWhile expr' stmt'
+    SThrow expr -> do
+      expr' <- scope expr
+      return $ SThrow expr'
+    STryCatch _ _ _ _ -> undefined
+    -- Special function bodies
+    SBuiltin -> return SBuiltin
+    SInherited -> return SInherited
+    SExpr expr -> do
+      expr' <- scope expr
+      return $ SExpr expr'
+    -- Metainformation carriers
+    SMetaLocation loc stmts -> stmtMetaLocation loc $ mapM scope stmts
+    -- These statements will be replaced with ones caring more context in subsequent phases
+    T_SDeclVar typ name -> do
       declare name
+      static typ
       num <- current name
       tell [Variable typ num name]
-      stmt2' <- newLocalScope (funS stmt2)
-      return $ STryCatch stmt1' typ num stmt2'
+      return SEmpty
+    -- We replace all assignments that actually refer to instance fields but give precedence to local
+    -- variables (like in Java), to referencee hidden field self.<field_name> construct can be used
+    T_SAssign name expr -> do
+      expr' <- scope expr
+      varOrField name (\num -> SStore num expr') (\name' -> SPutField variablenum0 name' expr')
+    T_SAssignArr name expr1 expr2 -> do
+      expr1' <- scope expr1
+      expr2' <- scope expr2
+      num <- current name
+      return $ SStoreArray num expr1' expr2'
+    T_SAssignFld name field expr2 -> do
+      expr2' <- scope expr2
+      num <- current name
+      static field
+      return $ SPutField num field expr2'
+    T_STryCatch stmt1 typ name stmt2 -> do
+      stmt1' <- newLocalScope (scope stmt1)
+      newLocalScope $ do
+        -- Catch body can hide exception variable
+        declare name
+        num <- current name
+        tell [Variable typ num name]
+        stmt2' <- newLocalScope (scope stmt2)
+        return $ STryCatch stmt1' typ num stmt2'
 
-funE :: Expr -> ScopeM Expr
-funE x = case x of
-  -- Literals
-  ENull -> return x
-  ELitTrue -> return x
-  ELitFalse -> return x
-  ELitChar _ -> return x
-  ELitString _ -> return x
-  ELitInt _ -> return x
-  -- Memory access
-  ELoad _ -> undefined
-  ELoadThis -> return ELoadThis
-  EArrayLoad expr1 expr2 -> do
-    expr1' <- funE expr1
-    expr2' <- funE expr2
-    return $ EArrayLoad expr1' expr2'
-  EGetField expr name -> do
-    expr' <- funE expr
-    dynamic name
-    return $ EGetField expr' name
-  -- Method calls
-  -- We replace all calls that actually refer to instance method, we also give precedence to
-  -- instance methods over static ones.
-  EInvokeStatic name exprs -> do
-    exprs' <- mapM funE exprs
-    stat <- isStatic name
-    case stat of
-      True -> static name >> return (EInvokeStatic name exprs')
-      False -> dynamic name >> return (EInvokeVirtual ELoadThis name exprs')
-  EInvokeVirtual expr name exprs -> do
-    expr' <- funE expr
-    exprs' <- mapM funE exprs
-    dynamic name
-    return $ EInvokeVirtual expr' name exprs'
-  -- Object creation
-  ENewObj typ -> do
-    static typ
-    return $ ENewObj typ
-  ENewArr typ expr -> do
-    static typ
-    expr' <- funE expr
-    return $ ENewArr typ expr'
-  -- Operations
-  EUnary _ op expr -> do
-    expr' <- funE expr
-    return $ EUnary TUnknown op expr'
-  EBinary _ op expr1 expr2 -> do
-    expr1' <- funE expr1
-    expr2' <- funE expr2
-    return $ EBinary TUnknown op expr1' expr2'
-  _ -> return x
-  -- These expressions will be replaced with ones caring more context in subsequent phases
-  T_EVar name -> varOrField name (\num -> ELoad num) (\fname -> EGetField ELoadThis fname)
+instance Scopeable Expr where
+  scope x = case x of
+    -- Literals
+    ENull -> return x
+    ELitTrue -> return x
+    ELitFalse -> return x
+    ELitChar _ -> return x
+    ELitString _ -> return x
+    ELitInt _ -> return x
+    -- Memory access
+    ELoad _ -> undefined
+    ELoadThis -> return ELoadThis
+    EArrayLoad expr1 expr2 -> do
+      expr1' <- scope expr1
+      expr2' <- scope expr2
+      return $ EArrayLoad expr1' expr2'
+    EGetField expr field -> do
+      expr' <- scope expr
+      -- The field name we see here cannot be verified without type information
+      return $ EGetField expr' field
+    -- Method calls
+    -- We replace all calls that actually refer to instance method, we also give precedence to
+    -- instance methods over static ones.
+    EInvokeStatic name exprs -> do
+      exprs' <- mapM scope exprs
+      stat <- isStatic name
+      case stat of
+        True -> static name >> return (EInvokeStatic name exprs')
+        False -> dynamic name >> return (EInvokeVirtual ELoadThis name exprs')
+    EInvokeVirtual expr name exprs -> do
+      expr' <- scope expr
+      exprs' <- mapM scope exprs
+      -- The method name we see here cannot be verified without type information
+      return $ EInvokeVirtual expr' name exprs'
+    -- Object creation
+    ENewObj typ -> do
+      static typ
+      return $ ENewObj typ
+    ENewArr typ expr -> do
+      static typ
+      expr' <- scope expr
+      return $ ENewArr typ expr'
+    -- Operations
+    EUnary _ op expr -> do
+      expr' <- scope expr
+      return $ EUnary TUnknown op expr'
+    EBinary _ op expr1 expr2 -> do
+      expr1' <- scope expr1
+      expr2' <- scope expr2
+      return $ EBinary TUnknown op expr1' expr2'
+    -- These expressions will be replaced with ones caring more context in subsequent phases
+    T_EVar name -> varOrField name (\num -> ELoad num) (\field -> EGetField ELoadThis field)
 
 -- HELPERS --
 -------------
@@ -346,8 +357,7 @@ varOrField name ifVar ifField = do
   case field of
     False -> current name >>= (return . ifVar)
     True -> do
-      current name
-      let fname = fieldFromVariable name
-      dynamic fname
-      return $ ifField fname
+      let field = fieldFromVariable name
+      dynamic field
+      return $ ifField field
 

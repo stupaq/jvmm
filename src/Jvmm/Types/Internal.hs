@@ -115,7 +115,6 @@ class Typeable a where
   typeof :: a -> TypeM Type
 
 instance Typeable VariableNum where
-  typeof variablenum0 = this
   typeof num = (asks typeenvSymbols >>= lookupM (SVariable num)) `rethrow` Err.unknownSymbolType num
 
 instance Typeable MethodName where
@@ -176,9 +175,9 @@ this = asks typeenvThis >>= \x -> case x of
 super :: Type -> TypeM Type
 super typ = (asks typeenvSuper >>= lookupM typ) `rethrow` Err.noSuperType typ
 
-enterFunction, enterClass :: Type -> TypeM a -> TypeM a
+enterFunction, enterInstance :: Type -> TypeM a -> TypeM a
 enterFunction x = local $ \env -> env { typeenvFunction = Just x }
-enterClass x = local $ \env -> env { typeenvThis = Just x }
+enterInstance x = local $ \env -> env { typeenvThis = Just x }
 
 invoke :: Type -> [Type] -> TypeM Type
 invoke ftyp@(TFunc ret args excepts) etypes = do
@@ -243,15 +242,16 @@ intWithinBounds n =
 ---------------------
 funH :: ClassHierarchy -> TypeM ClassHierarchy
 funH = Traversable.mapM $ \clazz@Class { classType = typ, classLocation = loc } ->
-  Err.withLocation loc . enterClass typ $ do
-    fields' <- mapM funF $ classFields clazz
-    methods' <- mapM funM $ classMethods clazz
+  Err.withLocation loc $ do
     staticMethods' <- mapM funMS $ classStaticMethods clazz
-    return $ clazz {
-          classMethods = methods'
-        , classFields = fields'
-        , classStaticMethods = staticMethods'
-      }
+    enterInstance typ $ do
+      fields' <- mapM funF $ classFields clazz
+      methods' <- mapM funM $ classMethods clazz
+      return $ clazz {
+            classMethods = methods'
+          , classFields = fields'
+          , classStaticMethods = staticMethods'
+        }
 
 funF :: Field -> TypeM Field
 funF field@Field { fieldType = typ, fieldName = id } = do
@@ -344,11 +344,11 @@ funS x = case x of
   -- Metainformation carriers
   SMetaLocation loc stmts -> stmtMetaLocation loc $ mapM funS stmts
   -- These statements will be replaced with ones caring more context in subsequent phases
-  T_SDeclVar _ _ -> undefined
-  T_SAssign _ _ -> undefined
-  T_SAssignArr _ _ _ -> undefined
-  T_SAssignFld _ _ _ -> undefined
-  T_STryCatch _ _ _ _ -> undefined
+  T_SDeclVar _ _ -> error $ Err.unusedBranch x
+  T_SAssign _ _ -> error $ Err.unusedBranch x
+  T_SAssignArr _ _ _ -> error $ Err.unusedBranch x
+  T_SAssignFld _ _ _ -> error $ Err.unusedBranch x
+  T_STryCatch _ _ _ _ -> error $ Err.unusedBranch x
 
 funE :: Expr -> TypeM (Expr, Type)
 funE x = case x of
@@ -426,5 +426,5 @@ funE x = case x of
           _ -> return TInt
     return (EBinary rett opbin expr1' expr2', rett)
   -- These expressions will be replaced with ones caring more context in subsequent phases
-  T_EVar _ -> undefined
+  T_EVar _ -> error $ Err.unusedBranch x
 
