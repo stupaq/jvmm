@@ -32,13 +32,11 @@ isBuiltinType TObject = False
 isBuiltinType (TArray _) = True
 
 builtinFieldType typ uid = case (typ, uid) of
-  (TArray _, FieldName "length") -> TInt
-  (TString, FieldName "length") -> TInt
-  _ -> TUnknown
+  (TArray _, FieldName "length") -> return $ toType TInt
+  (TString, FieldName "length") -> return $ toType TInt
+  _ -> throwError noMsg
 
 builtinMethodType typ uid = case (typ, uid) of
-  (TString, MethodName "charAt") -> TypeMethod TChar [TInt] []
-  _ -> TUnknown
-
-primitiveTypes = [TVoid, TInt, TChar, TBool]
+  (TString, MethodName "charAt") -> return $ toType $ TypeMethod (TPrimitive TChar) [TPrimitive TInt] []
+  _ -> throwError noMsg
 

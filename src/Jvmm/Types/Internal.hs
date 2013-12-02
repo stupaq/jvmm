@@ -41,22 +41,22 @@ data Member =
 type Members = Map.Map Member Type
 members0 = Map.empty
 
-type MemberTypes = Map.Map Type Members
+type MemberTypes = Map.Map TypeComposed Members
 membertypes0 = Map.empty
 
 data TypeEnv = TypeEnv {
     -- Type of a function currently executed
-    typeenvFunction :: Maybe Type
+    typeenvFunction :: Maybe TypeMethod
     -- This type
-  , typeenvThis :: Maybe Type
+  , typeenvThis :: Maybe TypeComposed
     -- Set of exceptions that are caught when throw in current context
-  , typeenvExceptions :: Set.Set Type
+  , typeenvExceptions :: Set.Set TypeComposed
     -- Types of symbols
   , typeenvSymbols :: Types
     -- Definitions of types
   , typeenvTypes :: MemberTypes
     -- Mapping from type to super
-  , typeenvSuper :: Map.Map Type Type
+  , typeenvSuper :: Map.Map TypeComposed TypeComposed
 } deriving (Show)
 
 typeenv0 = TypeEnv {
@@ -71,7 +71,7 @@ typeenv0 = TypeEnv {
 typeenvNewSymbol :: Symbol -> Type -> TypeEnv -> TypeEnv
 typeenvNewSymbol sym typ env = env { typeenvSymbols = Map.insert sym typ (typeenvSymbols env) }
 
-typeenvNewType :: Type -> Members -> TypeEnv -> TypeEnv
+typeenvNewType :: TypeComposed -> Members -> TypeEnv -> TypeEnv
 typeenvNewType typ mem env = env { typeenvTypes = Map.insert typ mem (typeenvTypes env) }
 
 -- BUILDING TYPE ENVIRONMENT --
@@ -89,10 +89,10 @@ collectTypes classes = fmap snd $ runStateT (Traversable.mapM decClass classes) 
         , typeenvSymbols = Map.fromList staticMethods
       }
       where
-        fields = List.map (\x -> (SField $ fieldName x, fieldType x)) $ classFields clazz
-        methods = List.map (\x -> (SMethod $ methodName x, methodType x)) $ classMethods clazz
+        fields = List.map (\x -> (SField $ fieldName x, toType $ fieldType x)) $ classFields clazz
+        methods = List.map (\x -> (SMethod $ methodName x, toType $ methodType x)) $ classMethods clazz
         typeDef = Map.fromList $ fields ++ methods
-        staticMethods = List.map (\x -> (SFunction $ methodName x, methodType x)) $ classStaticMethods clazz
+        staticMethods = List.map (\x -> (SFunction $ methodName x, toType $ methodType x)) $ classStaticMethods clazz
 
 -- Typing is fully static. TObject type is a superclass of every non-primitive.
 -- Note that after scope resolution we can't throw undeclared errors (also for
@@ -121,17 +121,17 @@ instance Typeable MethodName where
   typeof name = (asks typeenvSymbols >>= lookupM (SFunction name)) `rethrow` Err.unknownSymbolType name
 
 class ComposedTypeable b where
-  typeof' :: Type -> b -> TypeM Type
+  typeof' :: TypeComposed -> b -> TypeM Type
 
 instance ComposedTypeable MethodName where
-  typeof' typ name = case builtinMethodType typ name of
-    TUnknown -> (asks typeenvTypes >>= lookupM typ >>= lookupM (SMethod name)) `rethrow` Err.unknownMemberType typ name
-    typ -> return typ
+  typeof' typ name = builtinMethodType typ name
+    `mplus` (asks typeenvTypes >>= lookupM typ >>= lookupM (SMethod name))
+    `rethrow` Err.unknownMemberType typ name
 
 instance ComposedTypeable FieldName where
-  typeof' typ name = case builtinFieldType typ name of
-    TUnknown -> (asks typeenvTypes >>= lookupM typ >>= lookupM (SField name)) `rethrow` Err.unknownMemberType typ name
-    typ -> return typ
+  typeof' typ name = builtinFieldType typ name
+    `mplus` (asks typeenvTypes >>= lookupM typ >>= lookupM (SField name))
+    `rethrow` Err.unknownMemberType typ name
 
 -- TYPE ALTERNATION PRIMITIVES --
 ---------------------------------
@@ -142,19 +142,21 @@ class Declarable a where
 
 instance Declarable Variable where
   declare (Variable typ num _) action = do
-    notAVoid typ `rethrow` Err.voidNotIgnored
-    local (typeenvNewSymbol (SVariable num) typ) action
+    notAVoid typ' `rethrow` Err.voidNotIgnored
+    local (typeenvNewSymbol (SVariable num) typ') action
+    where
+      typ' = toType typ
 
 -- TYPE ASSERTIONS --
 ---------------------
-throws :: Type -> TypeM ()
+throws :: TypeComposed -> TypeM ()
 throws typ = do
   excepts <- asks typeenvExceptions
   unless (Set.member typ excepts) $ throwError $ Err.uncaughtException typ
 
-called :: Type -> [Variable] -> [Variable] -> TypeM a -> TypeM a
-called typ@(TFunc returnType argumentTypes exceptions) arguments localVariables action = do
-  forM_ argumentTypes $ \argt -> notAVoid argt `rethrow` Err.voidArg
+called :: TypeMethod -> [Variable] -> [Variable] -> TypeM a -> TypeM a
+called typ@(TypeMethod returnType argumentTypes exceptions) arguments localVariables action = do
+  forM_ argumentTypes $ \argt -> notAVoid (toType argt) `rethrow` Err.voidArg
   catches exceptions . declareAll arguments . declareAll localVariables . enterFunction typ $ action
 called x _ _ _ = error $ Err.unusedBranch "attempt to call not a functional type"
 
@@ -167,7 +169,7 @@ returns :: Type -> TypeM ()
 returns typ = do
   ftyp <- asks typeenvFunction
   case ftyp of
-    Just (TFunc rett _ _) -> rett =| typ >> return ()
+    Just (TMethod rett _ _) -> rett =| typ >> return ()
     Nothing -> throwError Err.danglingReturn
     _ -> error $ Err.unusedBranch "typeenvFunction was not of functional type"
 
@@ -183,14 +185,19 @@ enterFunction, enterInstance :: Type -> TypeM a -> TypeM a
 enterFunction x = local $ \env -> env { typeenvFunction = Just x }
 enterInstance x = local (\env -> env { typeenvThis = Just x }) . declare (Variable x variablenumThis variablename0)
 
-invoke :: Type -> [Type] -> TypeM Type
-invoke ftyp@(TFunc ret args excepts) etypes = do
+invoke :: TypeMethod -> [Type] -> TypeM Type
+invoke ftyp@(TMethod ret args excepts) etypes = do
     forM excepts throws
-    (ftyp =| TFunc ret etypes []) `rethrow` Err.argumentsNotMatch args etypes
+    (ftyp =| TypeMethod ret etypes []) `rethrow` Err.argumentsNotMatch args etypes
     return ret
 
 notAVoid :: Type -> TypeM ()
-notAVoid typ = when (typ == TVoid) $ throwError noMsg
+notAVoid typ = when (typ == toType TVoid) $ throwError noMsg
+
+notAPrimitive :: TypeBasic -> TypeM ()
+notAPrimitive x = case x of
+      TPrimitive _ -> throwError (Err.referencedPrimitive x)
+      TComposed _ -> return ()
 
 intWithinBounds :: Integer -> TypeM ()
 intWithinBounds n =
@@ -213,7 +220,7 @@ intWithinBounds n =
   let bad = throwError (Err.unexpectedType typ1 typ2)
       ok = return typ1
   case (typ1, typ2) of
-    (TFunc _ argt1 _, TFunc _ argt2 _) -> do
+    (TypeMethod _ argt1 _, TypeMethod _ argt2 _) -> do
       unless (length argt1 == length argt2) $ throwError noMsg
       zipWithM_ (=|) argt1 argt2
       ok
@@ -333,11 +340,11 @@ funS x = case x of
     return $ SWhile expr' stmt'
   SThrow expr -> do
     (expr', etyp) <- funE expr
-    when (etyp `elem` primitiveTypes) $ throwError (Err.referencedPrimitive etyp)
+    -- We cannot throw primitive type
+    notAPrimitive etyp
     throws etyp
     return $ SThrow expr'
   STryCatch stmt1 typ num stmt2 -> do
-    when (typ `elem` primitiveTypes) $ throwError (Err.referencedPrimitive typ)
     stmt2' <- funS stmt2
     catches [typ] $ do
       stmt1' <- funS stmt1
@@ -392,8 +399,8 @@ funE x = case x of
     return (EInvokeVirtual expr' id exprs', rett)
   -- Object creation
   ENewObj typ -> do
-    -- Referenced type cannot be primitive
-    when (typ `elem` primitiveTypes) $ throwError (Err.referencedPrimitive typ)
+    -- We cannot allocate a primitive on the heap
+    notAPrimitive typ
     return (ENewObj typ, typ)
   ENewArr typ expr -> do
     notAVoid typ `rethrow` Err.voidNotIgnored

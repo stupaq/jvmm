@@ -42,8 +42,8 @@ probeReturned action = do
   setReturned curr
   return (res, returned)
 
-checkReturned :: Type -> VerifierM a -> VerifierM a
-checkReturned TVoid action = action
+checkReturned :: TypeBasic -> VerifierM a -> VerifierM a
+checkReturned (TPrimitive TVoid) action = action
 checkReturned _ action = do
   (res, returned) <- probeReturned action
   guard returned `rethrow` Err.missingReturn
@@ -74,7 +74,7 @@ funH classes = do
 funM, funSM :: Method -> VerifierM ()
 funM method@Method { methodBody = stmt, methodType = typ , methodLocation = loc } =
   Err.withLocation loc $ do
-    let TFunc rett _ _ = typ
+    let TypeMethod rett _ _ = typ
     checkReturned rett $ funS stmt
 funSM method@Method { methodLocation = loc} = Err.withLocation loc $ do
     checkEntrypoint method
