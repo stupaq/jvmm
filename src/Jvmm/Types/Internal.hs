@@ -141,7 +141,9 @@ class Declarable a where
   declareAll = List.foldl (flip (.)) Prelude.id . List.map declare
 
 instance Declarable Variable where
-  declare (Variable typ num _) = local $ typeenvNewSymbol (SVariable num) typ
+  declare (Variable typ num _) action = do
+    notAVoid typ `rethrow` Err.voidNotIgnored
+    local (typeenvNewSymbol (SVariable num) typ) action
 
 -- TYPE ASSERTIONS --
 ---------------------
@@ -177,7 +179,7 @@ super typ = (asks typeenvSuper >>= lookupM typ) `rethrow` Err.noSuperType typ
 
 enterFunction, enterInstance :: Type -> TypeM a -> TypeM a
 enterFunction x = local $ \env -> env { typeenvFunction = Just x }
-enterInstance x = local $ \env -> env { typeenvThis = Just x }
+enterInstance x = local (\env -> env { typeenvThis = Just x }) . declare (Variable x variablenum0 variablename0)
 
 invoke :: Type -> [Type] -> TypeM Type
 invoke ftyp@(TFunc ret args excepts) etypes = do

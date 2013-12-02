@@ -285,7 +285,7 @@ instance Scopeable Stmt where
     T_SAssignFld name field expr2 -> do
       expr2' <- scope expr2
       num <- current name
-      static field
+      -- The field name we see here cannot be verified without type information
       return $ SPutField num field expr2'
     T_STryCatch stmt1 typ name stmt2 -> do
       stmt1' <- newLocalScope (scope stmt1)
