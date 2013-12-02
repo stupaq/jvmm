@@ -81,11 +81,11 @@ collectTypes :: ClassHierarchy -> ErrorInfoT Identity TypeEnv
 collectTypes classes = fmap snd $ runStateT (Traversable.mapM decClass classes) typeenv0
   where
     decClass :: Class -> StateT TypeEnv (ErrorInfoT Identity) ()
-    decClass clazz@Class { className = name, classSuper = super } = do
-      when (isBuiltinType name) $ throwError (Err.redeclaredType name)
+    decClass clazz@Class { classType = typ, classSuper = super } = do
+      when (isBuiltinType typ) $ throwError (Err.redeclaredType typ)
       modify $ \env -> env {
-          typeenvTypes = Map.insert (TUser name) typeDef (typeenvTypes env)
-        , typeenvSuper = Map.insert (TUser name) super (typeenvSuper env)
+          typeenvTypes = Map.insert typ typeDef (typeenvTypes env)
+        , typeenvSuper = Map.insert typ super (typeenvSuper env)
         , typeenvSymbols = Map.fromList staticMethods
       }
       where
@@ -242,8 +242,8 @@ intWithinBounds n =
 -- TRAVERSING TREE --
 ---------------------
 funH :: ClassHierarchy -> TypeM ClassHierarchy
-funH = Traversable.mapM $ \clazz@Class { className = name, classLocation = loc } ->
-  Err.withLocation loc . enterClass (TUser name) $ do
+funH = Traversable.mapM $ \clazz@Class { classType = typ, classLocation = loc } ->
+  Err.withLocation loc . enterClass typ $ do
     fields' <- mapM funF $ classFields clazz
     methods' <- mapM funM $ classMethods clazz
     staticMethods' <- mapM funMS $ classStaticMethods clazz

@@ -17,21 +17,13 @@ import Jvmm.Errors (ErrorInfo, ErrorInfoT, runErrorInfoM, withLocation, Location
 -- CLASS --
 -----------
 data Class = Class {
-    className :: ClassName
+    classType :: Type
   , classSuper :: Type
   , classFields :: [Field]
   , classMethods :: [Method]
   , classStaticMethods :: [Method]
   , classLocation :: Location
 } deriving (Eq, Ord, Show)
-
-classType :: Class -> Type
-classType = TUser . className
-
-newtype ClassName = ClassName String
-  deriving (Show, Eq, Ord)
-classname0 = ClassName "unknown-class-name"
-classnameObject = ClassName "Object"
 
 data Field = Field {
     fieldType :: Type
@@ -119,6 +111,9 @@ data Type =
   | TArray Type
   deriving (Eq,Ord,Show)
 
+newtype ClassName = ClassName String
+  deriving (Show, Eq, Ord)
+
 -- EXPRESSIONS --
 -----------------
 data Expr =
@@ -191,7 +186,7 @@ type ClassDiff = Class -> ErrorInfoT Identity Class
 
 instance Show ClassDiff where
   show diff = show $ runErrorInfoM $ diff Class {
-        className = classname0
+        classType = TUnknown
       , classSuper = TUnknown
       , classFields = []
       , classMethods = []

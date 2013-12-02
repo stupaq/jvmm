@@ -22,7 +22,7 @@ import Jvmm.Hierarchy.Output
 data Symbol =
     SField FieldName
   | SMethod MethodName
-  | SType ClassName
+  | SType Type
   deriving (Show, Eq, Ord)
 
 type Scope = Set.Set Symbol
@@ -100,7 +100,7 @@ enterMethod method@Method { methodArgs = args, methodName = name } action = do
 
 enterHierarchy :: ClassHierarchy -> ScopeM a -> ScopeM a
 enterHierarchy hierarchy = do
-  let classes = execWriter $ Traversable.mapM (\x -> tell [SType $ className x]) hierarchy
+  let classes = execWriter $ Traversable.mapM (\x -> tell [SType $ classType x]) hierarchy
   local (\env -> env { scopeenvStatic = Set.fromList classes })
 
 -- SCOPE QUERING --
@@ -121,11 +121,8 @@ instance Resolvable MethodName where
 instance Resolvable FieldName where
   dynamic name = asks scopeenvInstance >>= containsM (SField name)
 
-instance Resolvable ClassName where
-  static name = asks scopeenvStatic >>= containsM (SType name)
-
 instance Resolvable Type where
-  static (TUser name) = static name
+  static typ@(TUser _) = asks scopeenvStatic >>= containsM (SType typ)
   static _ = return ()
 
 checkRedeclaration :: VariableName -> ScopeM ()
@@ -221,6 +218,10 @@ funS x = case x of
   -- Memory access
   SStore _ _ -> undefined
   SStoreArray _ _ _ -> undefined
+  SPutField variablenum0 field expr -> do
+    expr' <- funE expr
+    dynamic field
+    return $ SPutField variablenum0 field expr'
   SPutField _ _ _ -> undefined
   -- Control statements
   SReturn expr -> do
@@ -295,7 +296,7 @@ funE x = case x of
   ELitInt _ -> return x
   -- Memory access
   ELoad _ -> undefined
-  ELoadThis -> undefined
+  ELoadThis -> return ELoadThis
   EArrayLoad expr1 expr2 -> do
     expr1' <- funE expr1
     expr2' <- funE expr2

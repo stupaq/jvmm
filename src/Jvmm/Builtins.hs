@@ -27,7 +27,8 @@ entrypointType = TFunc TInt [] []
 
 -- TYPES --
 -----------
-isBuiltinType (ClassName str) = str `elem` ["int", "char", "boolean", "string"]
+isBuiltinType (TUser (ClassName str)) = str `elem` ["int", "char", "boolean", "string"]
+isBuiltinType _ = True
 
 builtinFieldType typ uid = case (typ, uid) of
   (TArray _, FieldName "length$0") -> TInt

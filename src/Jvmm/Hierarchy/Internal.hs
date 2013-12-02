@@ -43,7 +43,7 @@ methodsClosure clazz superOrig = do
 ---------------------
 objectSuperClass :: Class
 objectSuperClass = Class {
-    className = classname0
+    classType = TUnknown
   , classSuper = TUnknown
   , classFields = []
   , classMethods = []

@@ -15,7 +15,7 @@ import Jvmm.Trans.Output
 -- Prepares class diff, a function which returns full class description (inclluding superclass
 -- members) when provided with superclass description.
 prepareClassDiff :: Err.Location -> Class -> ClassDiff
-prepareClassDiff loc clazz super = Err.withLocation loc $ do
+prepareClassDiff loc clazz@(Class { classType = typ }) super = Err.withLocation loc $ do
     guard (classType super == classSuper clazz)
     guard (clashing == []) `rethrow` Err.staticNonStaticConflict (head clashing)
     fields' <- fieldsClosure fields (classFields super)
@@ -53,7 +53,7 @@ objectClassDiff functions = do
   guard (repeated == []) `rethrow` Err.repeatedDeclaration (head repeated)
   guard (redefined == []) `rethrow` Err.redefinedBuiltin (head redefined)
   return $ prepareClassDiff Err.Unknown Class {
-        className = classname0
+        classType = TObject
       , classSuper = TUnknown
       , classFields = []
       , classMethods = []
