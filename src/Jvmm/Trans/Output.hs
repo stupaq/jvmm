@@ -30,6 +30,8 @@ classType = TUser . className
 
 newtype ClassName = ClassName String
   deriving (Show, Eq, Ord)
+classname0 = ClassName "unknown-class-name"
+classnameObject = ClassName "Object"
 
 data Field = Field {
     fieldType :: Type
@@ -68,16 +70,18 @@ variablenumNone = -1 :: VariableNum
 
 newtype VariableName = VariableName String
   deriving (Show, Eq, Ord)
+variablename0 = VariableName "unknown-variable-name"
 
 -- STATEMENTS --
 ----------------
 data Stmt =
     SEmpty
+  | SBlock [Stmt]
+  | SExpr Expr
+  -- Memory access
   | SStore VariableNum Expr
   | SStoreArray VariableNum Expr Expr
   | SPutField VariableNum FieldName Expr
-  | SExpr Expr
-  | SBlock [Stmt]
   -- Control statements
   | SReturn Expr
   | SReturnV
@@ -118,22 +122,27 @@ data Type =
 -- EXPRESSIONS --
 -----------------
 data Expr =
+  -- Literals
     ENull
-  | ELoad VariableNum
-  | ELoadThis
-  | EArrayLoad Expr Expr
-  | EGetField Expr FieldName
-  | EInvokeStatic MethodName [Expr]
-  | EInvokeVirtual Expr MethodName [Expr]
   | ELitTrue
   | ELitFalse
   | ELitChar Char
   | ELitString String
   | ELitInt Integer
+  -- Memory access
+  | ELoad VariableNum
+  | ELoadThis
+  | EArrayLoad Expr Expr
+  | EGetField Expr FieldName
+  -- Method calls
+  | EInvokeStatic MethodName [Expr]
+  | EInvokeVirtual Expr MethodName [Expr]
+  -- Object creation
   | ENewObj Type
   | ENewArr Type Expr
-  | EBinary Type OpBin Expr Expr
+  -- Operations
   | EUnary Type OpUn Expr
+  | EBinary Type OpBin Expr Expr
   -- These expressions will be replaced with ones caring more context in subsequent phases
   | T_EVar VariableName
   deriving (Eq,Ord,Show)
@@ -182,7 +191,7 @@ type ClassDiff = Class -> ErrorInfoT Identity Class
 
 instance Show ClassDiff where
   show diff = show $ runErrorInfoM $ diff Class {
-        className = ClassName ""
+        className = classname0
       , classSuper = TUnknown
       , classFields = []
       , classMethods = []

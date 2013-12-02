@@ -1,4 +1,3 @@
-{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 module Jvmm.Scope.Internal where
 
@@ -174,7 +173,7 @@ instance Redeclarable VariableName where
 -- SCOPE COMPUTATION --
 -----------------------
 funH :: ClassHierarchy -> ScopeM ClassHierarchy
-funH = Traversable.mapM $ \clazz@(Class typ super fields methods staticMethods loc) -> 
+funH = Traversable.mapM $ \clazz@(Class typ super fields methods staticMethods loc) ->
   Err.withLocation loc $ do
     static typ
     static super
@@ -215,12 +214,19 @@ funMS method@(Method typ name _ stmt origin loc []) =
 
 funS :: Stmt -> ScopeM Stmt
 funS x = case x of
+  SEmpty -> return SEmpty
   SBlock stmts -> do
     stmts' <- newLocalScope (mapM funS stmts)
     return $ SBlock stmts'
+  -- Memory access
+  SStore _ _ -> undefined
+  SStoreArray _ _ _ -> undefined
+  SPutField _ _ _ -> undefined
+  -- Control statements
   SReturn expr -> do
     expr' <- funE expr
     return $ SReturn expr'
+  SReturnV -> return SReturnV
   SIf expr stmt -> do
     stmt' <- funS stmt
     expr' <- funE expr
@@ -234,17 +240,25 @@ funS x = case x of
     expr' <- funE expr
     stmt' <- funS stmt
     return $ SWhile expr' stmt'
-  SExpr expr -> do
-    expr' <- funE expr
-    return $ SExpr expr'
   SThrow expr -> do
     expr' <- funE expr
     return $ SThrow expr'
-  SReturnV -> return SReturnV
-  SEmpty -> return SEmpty
+  STryCatch _ _ _ _ -> undefined
+  -- Special function bodies
   SBuiltin -> return SBuiltin
   SInherited -> return SInherited
+  SExpr expr -> do
+    expr' <- funE expr
+    return $ SExpr expr'
+  -- Metainformation carriers
   SMetaLocation loc stmts -> stmtMetaLocation loc $ mapM funS stmts
+  -- These statements will be replaced with ones caring more context in subsequent phases
+  T_SDeclVar typ name -> do
+    declare name
+    static typ
+    num <- current name
+    tell [Variable typ num name]
+    return SEmpty
   -- We replace all assignments that actually refer to instance fields but give precedence to local
   -- variables (like in Java), to referencee hidden field self.<field_name> construct can be used
   T_SAssign name expr -> do
@@ -260,12 +274,6 @@ funS x = case x of
     num <- current name1
     dynamic name2
     return $ SPutField num name2 expr2'
-  T_SDeclVar typ name -> do
-    declare name
-    static typ
-    num <- current name
-    tell [Variable typ num name]
-    return SEmpty
   T_STryCatch stmt1 typ name stmt2 -> do
     stmt1' <- newLocalScope (funS stmt1)
     newLocalScope $ do
@@ -278,12 +286,26 @@ funS x = case x of
 
 funE :: Expr -> ScopeM Expr
 funE x = case x of
-  T_EVar name -> varOrField name (\num -> ELoad num) (\fname -> EGetField ELoadThis fname)
+  -- Literals
+  ENull -> return x
+  ELitTrue -> return x
+  ELitFalse -> return x
+  ELitChar _ -> return x
+  ELitString _ -> return x
+  ELitInt _ -> return x
+  -- Memory access
+  ELoad _ -> undefined
+  ELoadThis -> undefined
   EArrayLoad expr1 expr2 -> do
     expr1' <- funE expr1
     expr2' <- funE expr2
     return $ EArrayLoad expr1' expr2'
-  -- We replace all assignments that actually refer to instance method, we also give precedence to
+  EGetField expr name -> do
+    expr' <- funE expr
+    dynamic name
+    return $ EGetField expr' name
+  -- Method calls
+  -- We replace all calls that actually refer to instance method, we also give precedence to
   -- instance methods over static ones.
   EInvokeStatic name exprs -> do
     exprs' <- mapM funE exprs
@@ -296,17 +318,15 @@ funE x = case x of
     exprs' <- mapM funE exprs
     dynamic name
     return $ EInvokeVirtual expr' name exprs'
-  EGetField expr name -> do
-    expr' <- funE expr
-    dynamic name
-    return $ EGetField expr' name
+  -- Object creation
+  ENewObj typ -> do
+    static typ
+    return $ ENewObj typ
   ENewArr typ expr -> do
     static typ
     expr' <- funE expr
     return $ ENewArr typ expr'
-  ENewObj typ -> do
-    static typ
-    return $ ENewObj typ
+  -- Operations
   EUnary _ op expr -> do
     expr' <- funE expr
     return $ EUnary TUnknown op expr'
@@ -315,6 +335,8 @@ funE x = case x of
     expr2' <- funE expr2
     return $ EBinary TUnknown op expr1' expr2'
   _ -> return x
+  -- These expressions will be replaced with ones caring more context in subsequent phases
+  T_EVar name -> varOrField name (\num -> ELoad num) (\fname -> EGetField ELoadThis fname)
 
 -- HELPERS --
 -------------

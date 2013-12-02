@@ -9,7 +9,6 @@ import Control.Monad.Error
 import Control.Monad.Identity
 import Control.Monad.Reader
 import Control.Monad.IO.Class
-import qualified Text.Show.Pretty as Pretty
 
 import Syntax.AbsJvmm (Program)
 import Syntax.ParJvmm (myLexer, pProgram)

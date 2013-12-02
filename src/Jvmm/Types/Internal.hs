@@ -1,3 +1,4 @@
+{-# LANGUAGE TypeSynonymInstances #-}
 module Jvmm.Types.Internal where
 
 import Control.Monad.Identity
@@ -25,43 +26,53 @@ foldF f = Prelude.foldl (flip (.)) Prelude.id . map f
 -- TYPE REPRESENTATION --
 -------------------------
 data Symbol =
-    SField FieldName
-  | SMethod MethodName
+    SFunction MethodName
   | SVariable VariableNum
   deriving (Show, Eq, Ord)
 
 type Types = Map.Map Symbol Type
 types0 = Map.empty
 
-type MemberTypes = Map.Map Type Types
+data Member =
+    SMethod MethodName
+  | SField FieldName
+  deriving (Show, Eq, Ord)
+
+type Members = Map.Map Member Type
+members0 = Map.empty
+
+type MemberTypes = Map.Map Type Members
 membertypes0 = Map.empty
 
 data TypeEnv = TypeEnv {
     -- Type of a function currently executed
     typeenvFunction :: Maybe Type
-    -- Set of exceptions that are caught when throw in current context
-  , typeenvExceptions :: Set.Set Type
-    -- Types of identifiers
-  , typeenvIdents :: Types
-    -- Definitions of types
-  , typeenvTypes :: MemberTypes
     -- This type
   , typeenvThis :: Maybe Type
+    -- Set of exceptions that are caught when throw in current context
+  , typeenvExceptions :: Set.Set Type
+    -- Types of symbols
+  , typeenvSymbols :: Types
+    -- Definitions of types
+  , typeenvTypes :: MemberTypes
     -- Mapping from type to super
   , typeenvSuper :: Map.Map Type Type
-    -- Static identifiers
-  , typeenvStatic :: Types
 } deriving (Show)
 
 typeenv0 = TypeEnv {
     typeenvFunction = Nothing
-  , typeenvExceptions = Set.empty
-  , typeenvIdents = types0
-  , typeenvTypes = membertypes0
   , typeenvThis = Nothing
+  , typeenvExceptions = Set.empty
+  , typeenvSymbols = types0
+  , typeenvTypes = membertypes0
   , typeenvSuper = Map.empty
-  , typeenvStatic = types0
 }
+
+typeenvNewSymbol :: Symbol -> Type -> TypeEnv -> TypeEnv
+typeenvNewSymbol sym typ env = env { typeenvSymbols = Map.insert sym typ (typeenvSymbols env) }
+
+typeenvNewType :: Type -> Members -> TypeEnv -> TypeEnv
+typeenvNewType typ mem env = env { typeenvTypes = Map.insert typ mem (typeenvTypes env) }
 
 -- BUILDING TYPE ENVIRONMENT --
 -------------------------------
@@ -70,18 +81,18 @@ collectTypes :: ClassHierarchy -> ErrorInfoT Identity TypeEnv
 collectTypes classes = fmap snd $ runStateT (Traversable.mapM decClass classes) typeenv0
   where
     decClass :: Class -> StateT TypeEnv (ErrorInfoT Identity) ()
-    decClass clazz@Class { classType = typ, classSuper = super } = do
-      when (isBuiltinType typ) $ throwError (Err.redeclaredType typ)
+    decClass clazz@Class { className = name, classSuper = super } = do
+      when (isBuiltinType name) $ throwError (Err.redeclaredType name)
       modify $ \env -> env {
-          typeenvTypes = Map.insert typ types (typeenvTypes env)
-        , typeenvSuper = Map.insert typ super (typeenvSuper env)
-        , typeenvStatic = Map.fromList staticMethods
+          typeenvTypes = Map.insert (TUser name) typeDef (typeenvTypes env)
+        , typeenvSuper = Map.insert (TUser name) super (typeenvSuper env)
+        , typeenvSymbols = Map.fromList staticMethods
       }
       where
-        fields = List.map (\x -> (fieldName x, fieldType x)) $ classFields clazz
-        methods = List.map (\x -> (methodName x, methodType x)) $ classMethods clazz
-        staticMethods = List.map (\x -> (methodName x, methodType x)) $ classStaticMethods clazz
-        types = Map.fromList $ fields ++ methods
+        fields = List.map (\x -> (SField $ fieldName x, fieldType x)) $ classFields clazz
+        methods = List.map (\x -> (SMethod $ methodName x, methodType x)) $ classMethods clazz
+        typeDef = Map.fromList $ fields ++ methods
+        staticMethods = List.map (\x -> (SFunction $ methodName x, methodType x)) $ classStaticMethods clazz
 
 -- Typing is fully static. TObject type is a superclass of every non-primitive.
 -- Note that after scope resolution we can't throw undeclared errors (also for
@@ -94,35 +105,56 @@ runTypeM :: TypeEnv -> TypeM a -> ErrorInfoT Identity a
 runTypeM env m = runReaderT m env
 
 lookupM :: (Ord a) => a -> Map.Map a b -> TypeM b
-lookupM key map = lift $ case Map.lookup key map of
+lookupM key map = case Map.lookup key map of
   Just val -> return val
   Nothing -> throwError noMsg
 
-typeof :: VariableName -> TypeM Type
-typeof IThis = this
-typeof uid = (asks typeenvIdents >>= lookupM uid) `rethrow` Err.unknownSymbolType uid
+-- TYPE RESOLUTION PRIMITIVES --
+--------------------------------
+class Typeable a where
+  typeof :: a -> TypeM Type
 
-typeof' :: Type -> FieldName -> TypeM Type
-typeof' typ uid = case builtinMemberType typ uid of
-  TUnknown -> (asks typeenvTypes >>= lookupM typ >>= lookupM uid) `rethrow` Err.unknownMemberType typ uid
-  typ -> return typ
+instance Typeable VariableNum where
+  typeof variablenum0 = this
+  typeof num = (asks typeenvSymbols >>= lookupM (SVariable num)) `rethrow` Err.unknownSymbolType num
 
-typeof'' :: MethodName -> TypeM Type
-typeof'' uid = (asks typeenvStatic >>= lookupM uid) `rethrow` Err.unknownSymbolType uid
+instance Typeable MethodName where
+  typeof name = (asks typeenvSymbols >>= lookupM (SFunction name)) `rethrow` Err.unknownSymbolType name
 
+class ComposedTypeable b where
+  typeof' :: Type -> b -> TypeM Type
+
+instance ComposedTypeable MethodName where
+  typeof' typ name = case builtinMethodType typ name of
+    TUnknown -> (asks typeenvTypes >>= lookupM typ >>= lookupM (SMethod name)) `rethrow` Err.unknownMemberType typ name
+    typ -> return typ
+
+instance ComposedTypeable FieldName where
+  typeof' typ name = case builtinFieldType typ name of
+    TUnknown -> (asks typeenvTypes >>= lookupM typ >>= lookupM (SField name)) `rethrow` Err.unknownMemberType typ name
+    typ -> return typ
+
+-- TYPE ALTERNATION PRIMITIVES --
+---------------------------------
+class Declarable a where
+  declare :: a -> TypeM b -> TypeM b
+  declareAll :: [a] -> TypeM b -> TypeM b
+  declareAll = List.foldl (flip (.)) Prelude.id . List.map declare
+
+instance Declarable Variable where
+  declare (Variable typ num _) = local $ typeenvNewSymbol (SVariable num) typ
+
+-- TYPE ASSERTIONS --
+---------------------
 throws :: Type -> TypeM ()
 throws typ = do
   excepts <- asks typeenvExceptions
   unless (Set.member typ excepts) $ throwError $ Err.uncaughtException typ
 
-called :: Type -> [VariableName] -> [Variable] -> TypeM a -> TypeM a
-called typ@(TFunc returnType argumentTypes exceptions) argumentIdents localVariables action = do
+called :: Type -> [Variable] -> [Variable] -> TypeM a -> TypeM a
+called typ@(TFunc returnType argumentTypes exceptions) arguments localVariables action = do
   forM_ argumentTypes $ \argt -> notAVoid argt `rethrow` Err.voidArg
-  catches exceptions . argumentsEnv . variablesEnv . enterFunction typ $ action
-  where
-    argumentsEnv, variablesEnv :: TypeM a -> TypeM a
-    argumentsEnv = foldF (uncurry $ flip declare) $ List.zip argumentTypes argumentIdents
-    variablesEnv = argumentsEnv . foldF (\(Variable typ _ (VariableName id)) -> declare (VIdent id) typ) localVariables
+  catches exceptions . declareAll arguments . declareAll localVariables . enterFunction typ $ action
 called x _ _ _ = error $ Err.unusedBranch "attempt to call not a functional type"
 
 catches :: [Type] -> TypeM a -> TypeM a
@@ -130,16 +162,11 @@ catches types = local (\env -> env { typeenvExceptions = List.foldl (flip Set.in
 
 returns :: Type -> TypeM ()
 returns typ = do
-  ftyp <- asks typeenvFunction 
+  ftyp <- asks typeenvFunction
   case ftyp of
     Just (TFunc rett _ _) -> rett =| typ >> return ()
     Nothing -> throwError Err.danglingReturn
     _ -> error $ Err.unusedBranch "typeenvFunction was not of functional type"
-
-declare :: Symbol -> Type -> TypeM a -> TypeM a
-declare uid typ action = do
-  notAVoid typ `rethrow` Err.voidVar uid
-  local (\env -> env { typeenvIdents = Map.insert uid typ (typeenvIdents env) }) action
 
 this :: TypeM Type
 this = asks typeenvThis >>= \x -> case x of
@@ -159,8 +186,6 @@ invoke ftyp@(TFunc ret args excepts) etypes = do
     (ftyp =| TFunc ret etypes []) `rethrow` Err.argumentsNotMatch args etypes
     return ret
 
--- COMMON ASSERTIONS --
------------------------
 notAVoid :: Type -> TypeM ()
 notAVoid typ = when (typ == TVoid) $ throwError noMsg
 
@@ -173,7 +198,7 @@ intWithinBounds n =
 -- We say that t <- t1 =||= t2 when t2 and t1 are subtypes of t, and no other
 -- type t' such that t =| t' has this property
 (=||=) :: Type -> Type -> TypeM Type
-(=||=) typ1 typ2 = 
+(=||=) typ1 typ2 =
   (typ1 =| typ2) `mplus`
   (typ1 |= typ2) `mplus`
   (super typ1 >>= (=||= typ2)) `mplus`
@@ -217,8 +242,8 @@ intWithinBounds n =
 -- TRAVERSING TREE --
 ---------------------
 funH :: ClassHierarchy -> TypeM ClassHierarchy
-funH = Traversable.mapM $ \clazz@Class { classType = typ, classLocation = loc } ->
-  Err.withLocation loc . enterClass typ $ do
+funH = Traversable.mapM $ \clazz@Class { className = name, classLocation = loc } ->
+  Err.withLocation loc . enterClass (TUser name) $ do
     fields' <- mapM funF $ classFields clazz
     methods' <- mapM funM $ classMethods clazz
     staticMethods' <- mapM funMS $ classStaticMethods clazz
@@ -251,14 +276,41 @@ funMS method = do
 
 funS :: Stmt -> TypeM Stmt
 funS x = case x of
+  SEmpty -> return x
   SBlock stmts -> do
     stmts' <- mapM funS stmts
     return $ SBlock stmts'
+  SExpr expr -> do
+    (expr', _) <- funE expr
+    return $ SExpr expr'
+  -- Memory access
+  SStore num expr -> do
+    (expr', etyp) <- funE expr
+    vtyp <- typeof num
+    vtyp =| etyp
+    return $ SStore num expr'
+  SStoreArray num expr1 expr2 -> do
+    (expr1', etyp1) <- funE expr1
+    (expr2', etyp2) <- funE expr2
+    TInt =| etyp1 `rethrow` Err.indexType
+    atyp <- typeof num
+    atyp =| TArray etyp2
+    return $ SStoreArray num expr1' expr2'
+  SPutField num name expr -> do
+    (expr', etyp) <- funE expr
+    vtyp <- typeof num
+    ftyp <- typeof' vtyp name
+    ftyp =| etyp
+    return $ SPutField num name expr'
+  -- Control statements
   SReturn expr -> do
     (expr', etyp) <- funE expr
     notAVoid etyp `rethrow` Err.voidNotIgnored
     returns etyp
     return $ SReturn expr'
+  SReturnV -> do
+    returns TVoid
+    return x
   SIf expr stmt -> do
     (expr', etyp) <- funE expr
     TBool =| etyp
@@ -275,57 +327,43 @@ funS x = case x of
     TBool =| etyp
     stmt' <- funS stmt
     return $ SWhile expr' stmt'
-  SExpr expr -> do
-    (expr', _) <- funE expr
-    return $ SExpr expr'
   SThrow expr -> do
     (expr', etyp) <- funE expr
     when (etyp `elem` primitiveTypes) $ throwError (Err.referencedPrimitive etyp)
     throws etyp
     return $ SThrow expr'
-  STryCatch stmt1 typ id stmt2 -> do
+  STryCatch stmt1 typ num stmt2 -> do
     when (typ `elem` primitiveTypes) $ throwError (Err.referencedPrimitive typ)
-    stmt2' <- declare id typ $ funS stmt2
+    stmt2' <- funS stmt2
     catches [typ] $ do
       stmt1' <- funS stmt1
-      return $ STryCatch stmt1' typ id stmt2'
-  SReturnV -> do
-    returns TVoid
-    return x
-  SEmpty -> return x
+      return $ STryCatch stmt1' typ num stmt2'
+  -- Special function bodies
   SBuiltin -> return x
   SInherited -> return x
+  -- Metainformation carriers
   SMetaLocation loc stmts -> stmtMetaLocation loc $ mapM funS stmts
-  T_SAssign id expr -> do
-    (expr', etyp) <- funE expr
-    vtyp <- typeof id
-    vtyp =| etyp
-    return $ T_SAssign id expr'
-  T_SAssignArr id expr1 expr2 -> do
-    (expr1', etyp1) <- funE expr1
-    (expr2', etyp2) <- funE expr2
-    TInt =| etyp1 `rethrow` Err.indexType
-    atyp <- typeof id
-    atyp =| TArray etyp2
-    return $ T_SAssignArr id expr1' expr2'
-  T_SAssignFld ido idf expr -> do
-    (expr', etyp) <- funE expr
-    otyp <- typeof ido
-    ftyp <- typeof' otyp idf
-    ftyp =| etyp
-    return $ T_SAssignFld ido idf expr'
-  T_SDeclVar _ _ -> error $ Err.unusedBranch x
+  -- These statements will be replaced with ones caring more context in subsequent phases
+  T_SDeclVar _ _ -> undefined
+  T_SAssign _ _ -> undefined
+  T_SAssignArr _ _ _ -> undefined
+  T_SAssignFld _ _ _ -> undefined
+  T_STryCatch _ _ _ _ -> undefined
 
 funE :: Expr -> TypeM (Expr, Type)
 funE x = case x of
+  -- Literals
+  ENull -> return (x, TNull)
+  ELitTrue -> return (x, TBool)
+  ELitFalse -> return (x, TBool)
+  ELitChar c -> return (x, TChar)
+  ELitString str -> return (x, TString)
   ELitInt n -> do
     intWithinBounds n `rethrow` Err.intValueOutOfBounds n
     return (x, TInt)
-  ELitTrue -> return (x, TBool)
-  ELitFalse -> return (x, TBool)
-  ELitString str -> return (x, TString)
-  ELitChar c -> return (x, TChar)
-  ENull -> return (x, TNull)
+  -- Memory access
+  ELoad num -> fmap ((,) $ ELoad num) $ typeof num
+  ELoadThis -> fmap ((,) ELoadThis) $ this
   EArrayLoad expr1 expr2 -> do
     (expr1', etyp1) <- funE expr1
     (expr2', etyp2) <- funE expr2
@@ -333,30 +371,33 @@ funE x = case x of
     case etyp1 of
       TArray typ -> return (EArrayLoad expr1' expr2', typ)
       _ -> throwError Err.subscriptNonArray
-  ECall id exprs -> do
-    (exprs', etypes) <- mapAndUnzipM funE exprs
-    ftyp <- typeof'' id
-    rett <- invoke ftyp etypes
-    return (ECall id exprs', rett)
-  EAccessFn expr id exprs -> do
-    (expr', etyp) <- funE expr
-    (exprs', etypes) <- mapAndUnzipM funE exprs
-    ftyp <- typeof' etyp id
-    rett <- invoke ftyp etypes
-    return (EAccessFn expr' id exprs', rett)
   EGetField expr id -> do
     (expr', etyp) <- funE expr
     typ <- typeof' etyp id
     return (EGetField expr' id, typ)
+  -- Method calls
+  EInvokeStatic id exprs -> do
+    (exprs', etypes) <- mapAndUnzipM funE exprs
+    ftyp <- typeof id
+    rett <- invoke ftyp etypes
+    return (EInvokeStatic id exprs', rett)
+  EInvokeVirtual expr id exprs -> do
+    (expr', etyp) <- funE expr
+    (exprs', etypes) <- mapAndUnzipM funE exprs
+    ftyp <- typeof' etyp id
+    rett <- invoke ftyp etypes
+    return (EInvokeVirtual expr' id exprs', rett)
+  -- Object creation
+  ENewObj typ -> do
+    -- Referenced type cannot be primitive
+    when (typ `elem` primitiveTypes) $ throwError (Err.referencedPrimitive typ)
+    return (ENewObj typ, typ)
   ENewArr typ expr -> do
     notAVoid typ `rethrow` Err.voidNotIgnored
     (expr', etyp) <- funE expr
     TInt =| etyp `rethrow` Err.indexType
     return (ENewArr typ expr', TArray typ)
-  ENewObj typ -> do
-    -- Referenced type cannot be primitive
-    when (typ `elem` primitiveTypes) $ throwError (Err.referencedPrimitive typ)
-    return (ENewObj typ, typ)
+  -- Operations
   EUnary _ op expr -> do
     (expr', etyp) <- funE expr
     case op of
@@ -384,8 +425,6 @@ funE x = case x of
           ObGEQ -> return TBool
           _ -> return TInt
     return (EBinary rett opbin expr1' expr2', rett)
-  ELoadThis -> this >>= \typ -> return (ELoadThis, typ)
-  T_EVar id -> do
-    typ <- typeof id
-    return (x, typ)
+  -- These expressions will be replaced with ones caring more context in subsequent phases
+  T_EVar _ -> undefined
 

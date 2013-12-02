@@ -15,7 +15,7 @@ import Jvmm.Trans.Output
 -- Prepares class diff, a function which returns full class description (inclluding superclass
 -- members) when provided with superclass description.
 prepareClassDiff :: Err.Location -> Class -> ClassDiff
-prepareClassDiff loc clazz@(Class { classType = typ }) super = Err.withLocation loc $ do
+prepareClassDiff loc clazz super = Err.withLocation loc $ do
     guard (classType super == classSuper clazz)
     guard (clashing == []) `rethrow` Err.staticNonStaticConflict (head clashing)
     fields' <- fieldsClosure fields (classFields super)
@@ -28,8 +28,8 @@ prepareClassDiff loc clazz@(Class { classType = typ }) super = Err.withLocation 
       , classLocation = loc
     }
   where
-    clashing :: [UIdent]
-    clashing = (List.map methodIdent methods) `intersect` (List.map methodIdent staticMethods)
+    clashing :: [MethodName]
+    clashing = (List.map methodName methods) `intersect` (List.map methodName staticMethods)
     fields :: [Field]
     fields = [ field { fieldOrigin = typ } | field <- classFields clazz]
     methodsWithOrigin :: (Class -> [Method]) -> [Method]
@@ -53,7 +53,7 @@ objectClassDiff functions = do
   guard (repeated == []) `rethrow` Err.repeatedDeclaration (head repeated)
   guard (redefined == []) `rethrow` Err.redefinedBuiltin (head redefined)
   return $ prepareClassDiff Err.Unknown Class {
-        classType = TObject
+        className = classname0
       , classSuper = TUnknown
       , classFields = []
       , classMethods = []
@@ -61,9 +61,9 @@ objectClassDiff functions = do
       , classLocation = Err.Unknown
     }
   where
-    repeated, idents, redefined :: [UIdent]
+    repeated, idents, redefined :: [MethodName]
     repeated = idents \\ (nub idents)  -- This can be done faster but not funnier
-    idents = List.map methodIdent functions
-    redefined = let builtinIdents = List.map methodIdent builtinFunctions
+    idents = List.map methodName functions
+    redefined = let builtinIdents = List.map methodName builtinFunctions
       in builtinIdents `intersect` idents
 
