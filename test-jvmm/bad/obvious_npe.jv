@@ -1,0 +1,9 @@
+int main() {
+  Bar b;
+  (null).foo;
+  return 0;
+}
+
+class Bar {
+  int foo;
+}
