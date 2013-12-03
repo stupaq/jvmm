@@ -17,16 +17,16 @@ data Definition =
   deriving (Eq,Ord,Show)
 
 data Function =
-   Function Type Ident [Argument] Exceptions LeftBrace [Stmt] RightBrace
+   Function TypeBasic Ident [Argument] Exceptions LeftBrace [Stmt] RightBrace
   deriving (Eq,Ord,Show)
 
 data Argument =
-   Argument Type Ident
+   Argument TypeBasic Ident
   deriving (Eq,Ord,Show)
 
 data Exceptions =
    NoExceptions
- | Exceptions [Type]
+ | Exceptions [TypeComposed]
   deriving (Eq,Ord,Show)
 
 data Class =
@@ -34,7 +34,7 @@ data Class =
   deriving (Eq,Ord,Show)
 
 data Member =
-   FieldsList Type [Field] Semicolon
+   FieldsList TypeBasic [Field] Semicolon
  | Method Function
   deriving (Eq,Ord,Show)
 
@@ -43,27 +43,35 @@ data Field =
   deriving (Eq,Ord,Show)
 
 data Extends =
-   SuperClass Type
+   SuperClass TypeComposed
  | SuperObject
   deriving (Eq,Ord,Show)
 
-data Type =
+data TypeBasic =
+   TComposed TypeComposed
+ | TPrimitive TypePrimitive
+  deriving (Eq,Ord,Show)
+
+data TypeComposed =
    TObject
  | TUser Ident
- | TArray Type
- | TChar
- | TInt
+ | TArray TypeBasic
  | TString
+  deriving (Eq,Ord,Show)
+
+data TypePrimitive =
+   TInt
+ | TChar
  | TBool
  | TVoid
   deriving (Eq,Ord,Show)
 
 data Stmt =
    SThrow Expr Semicolon
- | STryCatch Stmt Type Ident Stmt
+ | STryCatch Stmt TypeComposed Ident Stmt
  | SBlock LeftBrace [Stmt] RightBrace
  | SEmpty Semicolon
- | SDeclVar Type [Item] Semicolon
+ | SDeclVar TypeBasic [Item] Semicolon
  | SAssign Ident Expr Semicolon
  | SAssignArr Ident Expr Expr Semicolon
  | SAssignFld Ident Ident Expr Semicolon
@@ -79,7 +87,7 @@ data Stmt =
  | SIf Expr Stmt
  | SIfElse Expr Stmt Stmt
  | SWhile Expr Stmt
- | SForeach Type Ident Expr Stmt
+ | SForeach TypeBasic Ident Expr Stmt
  | SExpr Expr Semicolon
   deriving (Eq,Ord,Show)
 
@@ -95,12 +103,12 @@ data Expr =
  | EArrayI Ident Expr
  | EMethodI Ident Ident [Expr]
  | EFieldI Ident Ident
- | ENewObject Type
- | ENewArray Type Expr
+ | ENewObject TypeComposed
+ | ENewArray TypeBasic Expr
  | EMethodIT Ident [Expr]
  | EFieldIT Ident
  | EThis
- | ENullT Type
+ | ENullT TypeComposed
  | ENull
  | ELitChar Char
  | EVar Ident

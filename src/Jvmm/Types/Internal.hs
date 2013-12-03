@@ -474,9 +474,7 @@ funE x = case x of
     return (EInvokeVirtual expr' id exprs', rett)
   -- Object creation
   ENewObj typ -> do
-    -- We cannot allocate a primitive on the heap
-    etyp <- notAPrimitive typ
-    return (ENewObj typ, typ)
+    return (ENewObj typ, TComposed typ)
   ENewArr typ expr -> do
     notAVoid typ
     (expr', etyp) <- funE expr

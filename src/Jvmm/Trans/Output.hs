@@ -160,7 +160,7 @@ data Expr =
   | EInvokeStatic MethodName [Expr]
   | EInvokeVirtual Expr MethodName [Expr]
   -- Object creation
-  | ENewObj TypeBasic
+  | ENewObj TypeComposed
   | ENewArr TypeBasic Expr
   -- Operations
   | EUnary TypeBasic OpUn Expr

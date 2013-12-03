@@ -42,18 +42,18 @@ transDefinition x = case x of
 
 transFunction :: Function -> Result
 transFunction x = case x of
-  Function type' id arguments exceptions leftbrace stmts rightbrace  -> failure x
+  Function typebasic id arguments exceptions leftbrace stmts rightbrace  -> failure x
 
 
 transArgument :: Argument -> Result
 transArgument x = case x of
-  Argument type' id  -> failure x
+  Argument typebasic id  -> failure x
 
 
 transExceptions :: Exceptions -> Result
 transExceptions x = case x of
   NoExceptions  -> failure x
-  Exceptions types  -> failure x
+  Exceptions typecomposeds  -> failure x
 
 
 transClass :: Class -> Result
@@ -63,7 +63,7 @@ transClass x = case x of
 
 transMember :: Member -> Result
 transMember x = case x of
-  FieldsList type' fields semicolon  -> failure x
+  FieldsList typebasic fields semicolon  -> failure x
   Method function  -> failure x
 
 
@@ -74,18 +74,28 @@ transField x = case x of
 
 transExtends :: Extends -> Result
 transExtends x = case x of
-  SuperClass type'  -> failure x
+  SuperClass typecomposed  -> failure x
   SuperObject  -> failure x
 
 
-transType :: Type -> Result
-transType x = case x of
+transTypeBasic :: TypeBasic -> Result
+transTypeBasic x = case x of
+  TComposed typecomposed  -> failure x
+  TPrimitive typeprimitive  -> failure x
+
+
+transTypeComposed :: TypeComposed -> Result
+transTypeComposed x = case x of
   TObject  -> failure x
   TUser id  -> failure x
-  TArray type'  -> failure x
-  TChar  -> failure x
-  TInt  -> failure x
+  TArray typebasic  -> failure x
   TString  -> failure x
+
+
+transTypePrimitive :: TypePrimitive -> Result
+transTypePrimitive x = case x of
+  TInt  -> failure x
+  TChar  -> failure x
   TBool  -> failure x
   TVoid  -> failure x
 
@@ -93,10 +103,10 @@ transType x = case x of
 transStmt :: Stmt -> Result
 transStmt x = case x of
   SThrow expr semicolon  -> failure x
-  STryCatch stmt1 type'2 id3 stmt4  -> failure x
+  STryCatch stmt1 typecomposed2 id3 stmt4  -> failure x
   SBlock leftbrace stmts rightbrace  -> failure x
   SEmpty semicolon  -> failure x
-  SDeclVar type' items semicolon  -> failure x
+  SDeclVar typebasic items semicolon  -> failure x
   SAssign id expr semicolon  -> failure x
   SAssignArr id expr1 expr2 semicolon3  -> failure x
   SAssignFld id1 id2 expr3 semicolon4  -> failure x
@@ -112,7 +122,7 @@ transStmt x = case x of
   SIf expr stmt  -> failure x
   SIfElse expr stmt1 stmt2  -> failure x
   SWhile expr stmt  -> failure x
-  SForeach type' id expr stmt  -> failure x
+  SForeach typebasic id expr stmt  -> failure x
   SExpr expr semicolon  -> failure x
 
 
@@ -130,12 +140,12 @@ transExpr x = case x of
   EArrayI id expr  -> failure x
   EMethodI id1 id2 exprs3  -> failure x
   EFieldI id1 id2  -> failure x
-  ENewObject type'  -> failure x
-  ENewArray type' expr  -> failure x
+  ENewObject typecomposed  -> failure x
+  ENewArray typebasic expr  -> failure x
   EMethodIT id exprs  -> failure x
   EFieldIT id  -> failure x
   EThis  -> failure x
-  ENullT type'  -> failure x
+  ENullT typecomposed  -> failure x
   ENull  -> failure x
   ELitChar c  -> failure x
   EVar id  -> failure x

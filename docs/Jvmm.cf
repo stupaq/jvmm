@@ -17,9 +17,9 @@ separator nonempty Definition "";
 -- FUNCTION --
 --------------
 
-Function.     Function ::= Type Ident "(" [Argument] ")" Exceptions LeftBrace [Stmt] RightBrace;
+Function.     Function ::= TypeBasic Ident "(" [Argument] ")" Exceptions LeftBrace [Stmt] RightBrace;
 
-Argument.     Argument ::= Type Ident;
+Argument.     Argument ::= TypeBasic Ident;
 
 separator Argument ",";
 
@@ -27,7 +27,7 @@ NoExceptions. Exceptions ::= ;
 
 -- EXTENSIONS/
 -- This extension is termporarily disabled
-internal Exceptions.   Exceptions ::= "throws" [Type];
+internal Exceptions.   Exceptions ::= "throws" [TypeComposed];
 -- /EXTENSIONS
 
 -- CLASS --
@@ -35,7 +35,7 @@ internal Exceptions.   Exceptions ::= "throws" [Type];
 
 Class.        Class ::= "class" Ident Extends LeftBrace [Member] RightBrace;
 
-FieldsList.   Member ::= Type [Field] Semicolon;
+FieldsList.   Member ::= TypeBasic [Field] Semicolon;
 
 Field.        Field ::= Ident;
 
@@ -45,32 +45,40 @@ Method.       Member ::= Function;
 
 terminator nonempty Member "";
 
-SuperClass.   Extends ::= "extends" Type;
+SuperClass.   Extends ::= "extends" TypeComposed;
 
 SuperObject.  Extends ::= ;
 
 -- TYPES --
 -----------
 
+TComposed.  TypeBasic ::= TypeComposed;
+
+TPrimitive. TypeBasic ::= TypePrimitive;
+
+separator nonempty TypeBasic ",";
+
 -- EXTENSIONS/
-TObject.    Type ::= "Object";
+TObject.    TypeComposed ::= "Object";
 
-TUser.      Type ::= Ident;
+TUser.      TypeComposed ::= Ident;
 
-TArray.     Type ::= Type "[]";
+TArray.     TypeComposed ::= TypeBasic "[]";
 
-TChar.      Type ::= "char";
+TString.    TypeComposed ::= "string";
+
+separator nonempty TypeComposed ",";
 -- /EXTENSIONS
 
-TInt.       Type ::= "int";
+TInt.       TypePrimitive ::= "int";
 
-TString.    Type ::= "string";
+TChar.      TypePrimitive ::= "char";
 
-TBool.      Type ::= "boolean";
+TBool.      TypePrimitive ::= "boolean";
 
-TVoid.      Type ::= "void";
+TVoid.      TypePrimitive ::= "void";
 
-separator nonempty Type ",";
+separator nonempty TypePrimitive ",";
 
 -- STATEMENTS --
 ----------------
@@ -79,14 +87,14 @@ separator nonempty Type ",";
 -- This extension is termporarily disabled
 internal SThrow.         Stmt ::= "throw" Expr Semicolon;
 
-internal STryCatch.      Stmt ::= "try" Stmt "catch" "(" Type Ident ")" Stmt;
+internal STryCatch.      Stmt ::= "try" Stmt "catch" "(" TypeComposed Ident ")" Stmt;
 -- /EXTENSIONS
 
 SBlock.         Stmt ::= LeftBrace [Stmt] RightBrace;
 
 SEmpty.         Stmt ::= Semicolon;
 
-SDeclVar.       Stmt ::= Type [Item] Semicolon;
+SDeclVar.       Stmt ::= TypeBasic [Item] Semicolon;
 
 separator Stmt "";
 
@@ -132,7 +140,7 @@ SIfElse.        Stmt ::= "if" "(" Expr ")" Stmt "else" Stmt;
 
 SWhile.         Stmt ::= "while" "(" Expr ")" Stmt;
 
-SForeach.       Stmt ::= "for" "(" Type Ident ":" Expr ")" Stmt;
+SForeach.       Stmt ::= "for" "(" TypeBasic Ident ":" Expr ")" Stmt;
 
 SExpr.          Stmt ::= Expr Semicolon;
 
@@ -152,9 +160,9 @@ EMethodI.   Expr6 ::= Ident "." Ident "(" [Expr] ")";
 
 EFieldI.    Expr6 ::= Ident "." Ident;
 
-ENewObject. Expr6 ::= "new" Type;
+ENewObject. Expr6 ::= "new" TypeComposed;
 
-ENewArray.  Expr6 ::= "new" Type "[" Expr "]";
+ENewArray.  Expr6 ::= "new" TypeBasic "[" Expr "]";
 
 EMethodIT.  Expr6 ::= "self" "." Ident "(" [Expr] ")";
 
@@ -162,7 +170,7 @@ EFieldIT.   Expr6 ::= "self" "." Ident;
 
 EThis.      Expr6 ::= "self";
 
-ENullT.     Expr6 ::= "(" Type ")null";
+ENullT.     Expr6 ::= "(" TypeComposed ")null";
 
 ENull.      Expr6 ::= "null";
 

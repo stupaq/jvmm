@@ -111,12 +111,12 @@ instance Print Definition where
 
 instance Print Function where
   prt i e = case e of
-   Function type' id arguments exceptions leftbrace stmts rightbrace -> prPrec i 0 (concatD [prt 0 type' , prt 0 id , doc (showString "(") , prt 0 arguments , doc (showString ")") , prt 0 exceptions , prt 0 leftbrace , prt 0 stmts , prt 0 rightbrace])
+   Function typebasic id arguments exceptions leftbrace stmts rightbrace -> prPrec i 0 (concatD [prt 0 typebasic , prt 0 id , doc (showString "(") , prt 0 arguments , doc (showString ")") , prt 0 exceptions , prt 0 leftbrace , prt 0 stmts , prt 0 rightbrace])
 
 
 instance Print Argument where
   prt i e = case e of
-   Argument type' id -> prPrec i 0 (concatD [prt 0 type' , prt 0 id])
+   Argument typebasic id -> prPrec i 0 (concatD [prt 0 typebasic , prt 0 id])
 
   prtList es = case es of
    [] -> (concatD [])
@@ -126,7 +126,7 @@ instance Print Argument where
 instance Print Exceptions where
   prt i e = case e of
    NoExceptions  -> prPrec i 0 (concatD [])
-   Exceptions types -> prPrec i 0 (concatD [doc (showString "throws") , prt 0 types])
+   Exceptions typecomposeds -> prPrec i 0 (concatD [doc (showString "throws") , prt 0 typecomposeds])
 
 
 instance Print Class where
@@ -136,7 +136,7 @@ instance Print Class where
 
 instance Print Member where
   prt i e = case e of
-   FieldsList type' fields semicolon -> prPrec i 0 (concatD [prt 0 type' , prt 0 fields , prt 0 semicolon])
+   FieldsList typebasic fields semicolon -> prPrec i 0 (concatD [prt 0 typebasic , prt 0 fields , prt 0 semicolon])
    Method function -> prPrec i 0 (concatD [prt 0 function])
 
   prtList es = case es of
@@ -153,33 +153,49 @@ instance Print Field where
 
 instance Print Extends where
   prt i e = case e of
-   SuperClass type' -> prPrec i 0 (concatD [doc (showString "extends") , prt 0 type'])
+   SuperClass typecomposed -> prPrec i 0 (concatD [doc (showString "extends") , prt 0 typecomposed])
    SuperObject  -> prPrec i 0 (concatD [])
 
 
-instance Print Type where
+instance Print TypeBasic where
   prt i e = case e of
-   TObject  -> prPrec i 0 (concatD [doc (showString "Object")])
-   TUser id -> prPrec i 0 (concatD [prt 0 id])
-   TArray type' -> prPrec i 0 (concatD [prt 0 type' , doc (showString "[]")])
-   TChar  -> prPrec i 0 (concatD [doc (showString "char")])
-   TInt  -> prPrec i 0 (concatD [doc (showString "int")])
-   TString  -> prPrec i 0 (concatD [doc (showString "string")])
-   TBool  -> prPrec i 0 (concatD [doc (showString "boolean")])
-   TVoid  -> prPrec i 0 (concatD [doc (showString "void")])
+   TComposed typecomposed -> prPrec i 0 (concatD [prt 0 typecomposed])
+   TPrimitive typeprimitive -> prPrec i 0 (concatD [prt 0 typeprimitive])
 
   prtList es = case es of
    [] -> (concatD [doc (showString "")])
    [x] -> (concatD [prt 0 x])
    x:xs -> (concatD [prt 0 x , doc (showString ",") , prt 0 xs])
 
+instance Print TypeComposed where
+  prt i e = case e of
+   TObject  -> prPrec i 0 (concatD [doc (showString "Object")])
+   TUser id -> prPrec i 0 (concatD [prt 0 id])
+   TArray typebasic -> prPrec i 0 (concatD [prt 0 typebasic , doc (showString "[]")])
+   TString  -> prPrec i 0 (concatD [doc (showString "string")])
+
+  prtList es = case es of
+   [x] -> (concatD [prt 0 x])
+   x:xs -> (concatD [prt 0 x , doc (showString ",") , prt 0 xs])
+
+instance Print TypePrimitive where
+  prt i e = case e of
+   TInt  -> prPrec i 0 (concatD [doc (showString "int")])
+   TChar  -> prPrec i 0 (concatD [doc (showString "char")])
+   TBool  -> prPrec i 0 (concatD [doc (showString "boolean")])
+   TVoid  -> prPrec i 0 (concatD [doc (showString "void")])
+
+  prtList es = case es of
+   [x] -> (concatD [prt 0 x])
+   x:xs -> (concatD [prt 0 x , doc (showString ",") , prt 0 xs])
+
 instance Print Stmt where
   prt i e = case e of
    SThrow expr semicolon -> prPrec i 0 (concatD [doc (showString "throw") , prt 0 expr , prt 0 semicolon])
-   STryCatch stmt0 type' id stmt -> prPrec i 0 (concatD [doc (showString "try") , prt 0 stmt0 , doc (showString "catch") , doc (showString "(") , prt 0 type' , prt 0 id , doc (showString ")") , prt 0 stmt])
+   STryCatch stmt0 typecomposed id stmt -> prPrec i 0 (concatD [doc (showString "try") , prt 0 stmt0 , doc (showString "catch") , doc (showString "(") , prt 0 typecomposed , prt 0 id , doc (showString ")") , prt 0 stmt])
    SBlock leftbrace stmts rightbrace -> prPrec i 0 (concatD [prt 0 leftbrace , prt 0 stmts , prt 0 rightbrace])
    SEmpty semicolon -> prPrec i 0 (concatD [prt 0 semicolon])
-   SDeclVar type' items semicolon -> prPrec i 0 (concatD [prt 0 type' , prt 0 items , prt 0 semicolon])
+   SDeclVar typebasic items semicolon -> prPrec i 0 (concatD [prt 0 typebasic , prt 0 items , prt 0 semicolon])
    SAssign id expr semicolon -> prPrec i 0 (concatD [prt 0 id , doc (showString "=") , prt 0 expr , prt 0 semicolon])
    SAssignArr id expr0 expr semicolon -> prPrec i 0 (concatD [prt 0 id , doc (showString "[") , prt 0 expr0 , doc (showString "]") , doc (showString "=") , prt 0 expr , prt 0 semicolon])
    SAssignFld id0 id expr semicolon -> prPrec i 0 (concatD [prt 0 id0 , doc (showString ".") , prt 0 id , doc (showString "=") , prt 0 expr , prt 0 semicolon])
@@ -195,7 +211,7 @@ instance Print Stmt where
    SIf expr stmt -> prPrec i 0 (concatD [doc (showString "if") , doc (showString "(") , prt 0 expr , doc (showString ")") , prt 0 stmt])
    SIfElse expr stmt0 stmt -> prPrec i 0 (concatD [doc (showString "if") , doc (showString "(") , prt 0 expr , doc (showString ")") , prt 0 stmt0 , doc (showString "else") , prt 0 stmt])
    SWhile expr stmt -> prPrec i 0 (concatD [doc (showString "while") , doc (showString "(") , prt 0 expr , doc (showString ")") , prt 0 stmt])
-   SForeach type' id expr stmt -> prPrec i 0 (concatD [doc (showString "for") , doc (showString "(") , prt 0 type' , prt 0 id , doc (showString ":") , prt 0 expr , doc (showString ")") , prt 0 stmt])
+   SForeach typebasic id expr stmt -> prPrec i 0 (concatD [doc (showString "for") , doc (showString "(") , prt 0 typebasic , prt 0 id , doc (showString ":") , prt 0 expr , doc (showString ")") , prt 0 stmt])
    SExpr expr semicolon -> prPrec i 0 (concatD [prt 0 expr , prt 0 semicolon])
 
   prtList es = case es of
@@ -219,12 +235,12 @@ instance Print Expr where
    EArrayI id expr -> prPrec i 6 (concatD [prt 0 id , doc (showString "[") , prt 0 expr , doc (showString "]")])
    EMethodI id0 id exprs -> prPrec i 6 (concatD [prt 0 id0 , doc (showString ".") , prt 0 id , doc (showString "(") , prt 0 exprs , doc (showString ")")])
    EFieldI id0 id -> prPrec i 6 (concatD [prt 0 id0 , doc (showString ".") , prt 0 id])
-   ENewObject type' -> prPrec i 6 (concatD [doc (showString "new") , prt 0 type'])
-   ENewArray type' expr -> prPrec i 6 (concatD [doc (showString "new") , prt 0 type' , doc (showString "[") , prt 0 expr , doc (showString "]")])
+   ENewObject typecomposed -> prPrec i 6 (concatD [doc (showString "new") , prt 0 typecomposed])
+   ENewArray typebasic expr -> prPrec i 6 (concatD [doc (showString "new") , prt 0 typebasic , doc (showString "[") , prt 0 expr , doc (showString "]")])
    EMethodIT id exprs -> prPrec i 6 (concatD [doc (showString "self") , doc (showString ".") , prt 0 id , doc (showString "(") , prt 0 exprs , doc (showString ")")])
    EFieldIT id -> prPrec i 6 (concatD [doc (showString "self") , doc (showString ".") , prt 0 id])
    EThis  -> prPrec i 6 (concatD [doc (showString "self")])
-   ENullT type' -> prPrec i 6 (concatD [doc (showString "(") , prt 0 type' , doc (showString ")null")])
+   ENullT typecomposed -> prPrec i 6 (concatD [doc (showString "(") , prt 0 typecomposed , doc (showString ")null")])
    ENull  -> prPrec i 6 (concatD [doc (showString "null")])
    ELitChar c -> prPrec i 6 (concatD [prt 0 c])
    EVar id -> prPrec i 6 (concatD [prt 0 id])
