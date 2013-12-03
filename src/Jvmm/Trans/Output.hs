@@ -60,13 +60,13 @@ data Variable = Variable {
   , variableName :: VariableName
 } deriving (Eq, Ord, Show)
 
-type VariableNum = Int
-variablenumThis = 0 :: VariableNum
-variablenumNone = -1 :: VariableNum
+data VariableNum =
+    VariableNum Int
+  | VariableThis
+  deriving (Show, Eq, Ord)
 
 newtype VariableName = VariableName String
   deriving (Show, Eq, Ord)
-variablename0 = VariableName "unknown-variable-name"
 
 -- STATEMENTS --
 ----------------

@@ -128,7 +128,8 @@ class Typeable a b where
   typeof :: a -> TypeM b
 
 instance Typeable VariableNum TypeBasic where
-  typeof num = doOrThrow (Err.unknownSymbolType num) $ do
+  typeof VariableThis = liftM TComposed this
+  typeof num@(VariableNum _) = doOrThrow (Err.unknownSymbolType num) $ do
     TBasic typ <- lookupS (SVariable num)
     return typ
 
@@ -138,8 +139,9 @@ instance Typeable MethodName TypeMethod where
     return typ
 
 instance Typeable VariableNum TypeComposed where
-  typeof name = do
-    typ <- typeof name
+  typeof VariableThis = this
+  typeof num = do
+    typ <- typeof num
     notAPrimitive typ `rethrow` Err.notAComposedType typ
 
 class ComposedTypeable a b c where
@@ -223,7 +225,7 @@ enterClass x = local (\env -> env { typeenvStaticOrigin = x })
 
 enterInstance :: TypeComposed -> TypeM a -> TypeM a
 enterInstance x =
-  local (\env -> env { typeenvThis = Just x }) . declare (Variable (TComposed x) variablenumThis variablename0)
+  local (\env -> env { typeenvThis = Just x })
 
 invoke :: TypeMethod -> [TypeBasic] -> TypeM TypeBasic
 invoke ftyp@(TypeMethod ret args excepts) etypes = do
@@ -493,8 +495,8 @@ funE x = case x of
   ENull -> return (x, TComposed TNull)
   ELitTrue -> return (x, TPrimitive TBool)
   ELitFalse -> return (x, TPrimitive TBool)
-  ELitChar c -> return (x, TPrimitive TChar)
-  ELitString str -> return (x, TComposed TString)
+  ELitChar _ -> return (x, TPrimitive TChar)
+  ELitString _ -> return (x, TComposed TString)
   ELitInt n -> do
     intWithinBounds n `rethrow` Err.intValueOutOfBounds n
     return (x, TPrimitive TInt)

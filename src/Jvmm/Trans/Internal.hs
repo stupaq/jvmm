@@ -58,7 +58,7 @@ tFunction (I.Function typ id args exceptions lbr stmts rbr) =
     , O.methodVariables = []
   }
   where
-    arguments = map (\(I.Argument typ id) -> O.Variable (tTBasic typ) O.variablenumNone (tVIdent id))  args
+    arguments = map (\(I.Argument typ id) -> O.Variable (tTBasic typ) undefined (tVIdent id))  args
     argTypes = map (\(I.Argument typ id) -> tTBasic typ) args
     funType = O.TypeMethod (tTBasic typ) argTypes exceptionTypes
     exceptionTypes = case exceptions of
@@ -77,7 +77,7 @@ tStmt x = case x of
   I.SAssignOpFld id1 id2 opassign3 expr4 s -> tSem s $ return $
     O.T_SAssignFld (tVIdent id1) (tFIdent id2) $ tExpr $ tAssignOp opassign3 (I.EFieldE (I.EVar id1) id2) expr4
   I.SAssignOpThis id2 opassign3 expr4 s -> tSem s $ return $
-    O.SPutField O.variablenumThis (tFIdent id2) (tExpr $ tAssignOp opassign3 (I.EFieldE I.EThis id2) expr4) undefined
+    O.SPutField O.VariableThis (tFIdent id2) (tExpr $ tAssignOp opassign3 (I.EFieldE I.EThis id2) expr4) undefined
   I.SPostInc id s -> tStmt $ I.SAssignOp id I.APlus (I.ELitInt 1) s
   I.SPostDec id s -> tStmt $ I.SAssignOp id I.AMinus (I.ELitInt 1) s
   I.SEmpty s -> tSem s $ return O.SEmpty
@@ -85,7 +85,7 @@ tStmt x = case x of
   I.SAssignArr id expr1 expr2 s -> tSem s $  return $ O.T_SAssignArr (tVIdent id) (tExpr expr1) (tExpr expr2)
   I.SAssignFld id1 id2 expr3 s -> tSem s $ return $ O.T_SAssignFld (tVIdent id1) (tFIdent id2) (tExpr expr3)
   I.SAssignThis id2 expr3 s -> tSem s $ return $
-    O.SPutField O.variablenumThis (tFIdent id2) (tExpr expr3) undefined
+    O.SPutField O.VariableThis (tFIdent id2) (tExpr expr3) undefined
   I.SReturn expr s -> tSem s $ return $ O.SReturn (tExpr expr) undefined
   I.SReturnV s -> tSem s $ return O.SReturnV
   I.SIf expr stmt -> return $ O.SIf (tExpr expr) (O.SBlock $ tStmt stmt)
@@ -169,9 +169,9 @@ tExpr x = case x of
     O.EInvokeVirtual (tExpr $ I.EVar ide) (tMIdent id) (map tExpr exprs) -- GRAMMAR IRREGULARITY
   I.EFieldI ide id ->
     O.EGetField (tExpr $ I.EVar ide) (tFIdent id)  undefined -- GRAMMAR IRREGULARITY
-  I.EFieldIT id -> O.EGetField (O.ELoad O.variablenumThis undefined) (tFIdent id) undefined
+  I.EFieldIT id -> O.EGetField (O.ELoad O.VariableThis undefined) (tFIdent id) undefined
   I.EMethodIT id exprs ->
-    O.EInvokeVirtual (O.ELoad O.variablenumThis undefined) (tMIdent id) (map tExpr exprs)
+    O.EInvokeVirtual (O.ELoad O.VariableThis undefined) (tMIdent id) (map tExpr exprs)
   I.EApp id exprs -> O.EInvokeStatic (tMIdent id) (map tExpr exprs)
   I.ENewArray typ expr -> O.ENewArr (tTBasic typ) (tExpr expr)
   I.ENewObject typ -> O.ENewObj $ tTComposed typ
@@ -182,7 +182,7 @@ tExpr x = case x of
   I.ERel expr1 opbin2 expr3 -> O.EBinary (tRelOp opbin2) (tExpr expr1) (tExpr expr3) undefined
   I.EAnd expr1 expr3 -> O.EBinary O.ObAnd (tExpr expr1) (tExpr expr3) undefined
   I.EOr expr1 expr3 -> O.EBinary O.ObOr (tExpr expr1) (tExpr expr3) undefined
-  I.EThis -> O.ELoad O.variablenumThis undefined
+  I.EThis -> O.ELoad O.VariableThis undefined
 
 tMulOp :: I.MulOp -> O.OpBin
 tMulOp x = case x of

@@ -31,11 +31,12 @@ scope0 = Set.empty
 
 -- SCOPE STATE --
 -----------------
-type Variables = Map.Map VariableName VariableNum
+type Variables = Map.Map VariableName DeclarationId
 variables0 = Map.empty
 
-type DeclarationId = VariableNum
-declarationid0 = variablenumThis
+type DeclarationId = Int
+declarationid0 = 0
+variablenum0 = VariableNum declarationid0
 
 data ScopeState = ScopeState {
     scopestateVariables :: Variables
@@ -136,8 +137,8 @@ instance Resolvable TypeComposed where
 
 checkRedeclaration :: VariableName -> ScopeM ()
 checkRedeclaration name = do
-  upper <- current name `orReturn` variablenumNone
-  current <- parent name `orReturn` variablenumNone
+  upper <- current name `orReturn` VariableThis
+  current <- parent name `orReturn` VariableThis
   unless (upper == current) $ throwError (Err.redeclaredSymbol name)
 
 isField :: VariableName -> ScopeM Bool
@@ -157,9 +158,9 @@ isStatic name = do
 -- SCOPE UPDATING --
 --------------------
 class Redeclarable a where
-  declare :: a -> ScopeM DeclarationId
-  current :: a -> ScopeM DeclarationId
-  parent :: a -> ScopeM DeclarationId
+  declare :: a -> ScopeM VariableNum
+  current :: a -> ScopeM VariableNum
+  parent :: a -> ScopeM VariableNum
   tryCurrent, tryParent :: a -> ScopeM Bool
   tryCurrent x = (current x >> return True) `orReturn` False
   tryParent x = (parent x >> return True) `orReturn` False
@@ -173,8 +174,8 @@ instance Redeclarable VariableName where
         , scopestateNextId = free + 1
       })
     current name
-  current name = gets scopestateVariables >>= lookupM name
-  parent name = asks scopeenvParent >>= lookupM name
+  current name = liftM VariableNum $ gets scopestateVariables >>= lookupM name
+  parent name = liftM VariableNum $ asks scopeenvParent >>= lookupM name
 
 -- SCOPE COMPUTATION --
 -----------------------
@@ -206,7 +207,7 @@ scopeInstance :: Method -> ScopeM Method
 scopeInstance method@Method { methodName = name, methodLocation = loc } =
   Err.withLocation loc . newLocalScope $ do
     num <- declare (VariableName "self")
-    assert (num == variablenumThis) (return ())
+    assert (num == variablenum0) $ return ()
     dynamic name
     scope method
 
@@ -243,10 +244,10 @@ instance Scopeable Stmt where
     -- Memory access
     SStore _ _ _ -> error $ Err.unusedBranch x
     SStoreArray _ _ _ _ -> error $ Err.unusedBranch x
-    SPutField variablenumThis field expr _ -> do
+    SPutField VariableThis field expr _ -> do
       expr' <- scope expr
       dynamic field
-      return $ SPutField variablenumThis field expr' undefined
+      return $ SPutField VariableThis field expr' undefined
     SPutField _ _ _ _ -> error $ Err.unusedBranch x
     -- Control statements
     SReturn expr _ -> do
@@ -291,7 +292,7 @@ instance Scopeable Stmt where
       expr' <- scope expr
       varOrField name
         (\num -> SStore num expr' undefined)
-        (\name' -> SPutField variablenumThis name' expr' undefined)
+        (\name' -> SPutField VariableThis name' expr' undefined)
     T_SAssignArr name expr1 expr2 -> do
       expr1' <- scope expr1
       expr2' <- scope expr2
@@ -322,7 +323,7 @@ instance Scopeable Expr where
     ELitString _ -> return x
     ELitInt _ -> return x
     -- Memory access
-    ELoad variablenumThis undefined -> return x
+    ELoad VariableThis _ -> return x
     ELoad _ _ -> error $ Err.unusedBranch x
     EArrayLoad expr1 expr2 _ -> do
       expr1' <- scope expr1
@@ -342,7 +343,7 @@ instance Scopeable Expr where
         True -> static name >>
             return (EInvokeStatic name exprs')
         False -> dynamic name >>
-            return (EInvokeVirtual (ELoad variablenumThis undefined) name exprs')
+            return (EInvokeVirtual (ELoad VariableThis undefined) name exprs')
     EInvokeVirtual expr name exprs -> do
       expr' <- scope expr
       exprs' <- mapM scope exprs
@@ -368,7 +369,7 @@ instance Scopeable Expr where
     T_EVar name ->
       varOrField name
         (\num -> ELoad num undefined)
-        (\field -> EGetField (ELoad variablenumThis undefined) field undefined)
+        (\field -> EGetField (ELoad VariableThis undefined) field undefined)
 
 -- HELPERS --
 -------------
