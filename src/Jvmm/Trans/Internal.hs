@@ -19,13 +19,13 @@ tProgram :: I.Program -> ErrorInfoT Identity O.CompilationUnit
 tProgram (I.Program defs) = do
   objectDiff <- objectClassDiff [ tFunction x | I.DFunction x <- defs ]
   let userClasses = [ x | I.DClass x <- defs ]
-  return $ O.CompilationUnit $ (O.TUnknown, objectDiff):map tClass userClasses
+  return $ O.CompilationUnit $ (undefined, objectDiff):map tClass userClasses
 
-tClass :: I.Class -> (O.Type, O.ClassDiff)
+tClass :: I.Class -> (O.TypeComposed, O.ClassDiff)
 tClass (I.Class id extends lbr members rbr) =
   let clazzTyp = O.TUser (tTIdent id)
       super = tExtends extends
-  in (O.TBasic $ O.TComposed super, prepareClassDiff (brToLoc lbr rbr) $ O.Class {
+  in (super, prepareClassDiff (brToLoc lbr rbr) $ O.Class {
         O.classType = clazzTyp
       , O.classSuper = super
       , O.classFields = [ tField typ x | I.FieldsList typ fields _ <- members, x <- fields ]

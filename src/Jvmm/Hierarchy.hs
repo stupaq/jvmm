@@ -43,8 +43,8 @@ prepareClassDiff loc clazz@(Class { classType = typ }) super = Err.withLocation 
 ---------------------
 hierarchy :: CompilationUnit -> ErrorInfoT Identity ClassHierarchy
 hierarchy (CompilationUnit allClasses) = case allClasses of
-  (TUnknown, objectDiff):classes -> visit objectSuperClass classes objectDiff
-  _ -> error $ Err.unusedBranch "no TObject diff"
+  (_, objectDiff):classes -> visit objectSuperClass classes objectDiff
+  _ -> error $ Err.unusedBranch "no primary object diff"
 
 -- OBJECT CLASS --
 ------------------
@@ -53,6 +53,7 @@ objectClassDiff functions = do
   guard (repeated == []) `rethrow` Err.repeatedDeclaration (head repeated)
   guard (redefined == []) `rethrow` Err.redefinedBuiltin (head redefined)
   return $ prepareClassDiff Err.Unknown Class {
+      -- Object is its own supertype
         classType = TObject
       , classSuper = TObject
       , classFields = []

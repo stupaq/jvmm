@@ -38,12 +38,19 @@ type ErrorInfoM = Either ErrorInfo
 runErrorInfoM = runIdentity . runErrorT
 
 -- Discards error and throws provided one
+rethrow :: (MonadError e m) => m a -> e -> m a
 action `rethrow` err = action `catchError` (\_ -> throwError err)
 
+-- Discards error and throws provided one
+doOrThrow :: (MonadError e m) => e -> m a -> m a
+doOrThrow = flip (rethrow)
+
 -- Discards error and returns provided value
+orReturn :: (MonadError e m) => m a -> a -> m a
 action `orReturn` value = action `catchError` (\_ -> return value)
 
 -- Executes second action in all circumstances (and only once)
+finally :: (MonadError e m) => m a -> m () -> m a
 action `finally` always = do
   res <- action `catchError` (\err -> always >> throwError err)
   always

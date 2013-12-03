@@ -98,8 +98,7 @@ data Stmt =
 -- TYPES --
 -----------
 data Type =
-    TUnknown
-  | TMethod TypeMethod
+    TMethod TypeMethod
   | TBasic TypeBasic
   deriving (Show, Eq, Ord)
 
@@ -206,14 +205,15 @@ stmtMetaLocation loc action = do
 data CompilationUnit =
   -- Type is a superclass,
   -- ClassDiff maps superclass into class
-  CompilationUnit [(Type, ClassDiff)]
+  CompilationUnit [(TypeComposed, ClassDiff)]
   deriving (Show)
 
 type ClassDiff = Class -> ErrorInfoT Identity Class
 
--- TODO this is for debug purpouses only, discard when no longer needed
 instance Show ClassDiff where
   show diff = show $ runErrorInfoM $ diff Class {
+      -- Since we are way before resolving inheritance hierarchy here,
+      -- we are not aware of some class' traits.
         classType = TObject
       , classSuper = TObject
       , classFields = []

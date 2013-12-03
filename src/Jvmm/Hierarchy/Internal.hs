@@ -43,18 +43,19 @@ methodsClosure clazz superOrig = do
 ---------------------
 objectSuperClass :: Class
 objectSuperClass = Class {
+  -- Object is its own supertype
     classType = TObject
-  , classSuper = TObject
+  , classSuper = undefined
   , classFields = []
   , classMethods = []
   , classStaticMethods = []
   , classLocation = Err.Unknown
 }
 
-visit :: Class -> [(Type, ClassDiff)] -> ClassDiff -> HierarchyM ClassHierarchy
+visit :: Class -> [(TypeComposed, ClassDiff)] -> ClassDiff -> HierarchyM ClassHierarchy
 visit super classes diff = do
   current@Class {} <- diff super
   children <- mapM (visit current classes)
-      [ diff | (typ, diff) <- classes, typ == toType (classType current) ]
+      [ diff | (typ, diff) <- classes, typ == classType current ]
   return $ Node current children
 

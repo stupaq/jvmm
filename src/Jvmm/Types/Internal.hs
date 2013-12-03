@@ -15,7 +15,7 @@ import qualified Data.List as List
 import qualified Data.Traversable as Traversable
 
 import qualified Jvmm.Errors as Err
-import Jvmm.Errors (rethrow, ErrorInfoT)
+import Jvmm.Errors (doOrThrow, rethrow, ErrorInfoT)
 import Jvmm.Builtins
 import Jvmm.Trans.Output
 import Jvmm.Hierarchy.Output
@@ -113,19 +113,25 @@ lookupM key map = case Map.lookup key map of
   Just val -> return val
   Nothing -> throwError noMsg
 
+lookupS :: Symbol -> TypeM Type
+lookupS sym = asks typeenvSymbols >>= lookupM sym
+
+lookupC :: TypeComposed -> Member -> TypeM Type
+lookupC typ sym = asks typeenvTypes >>= lookupM typ >>= lookupM sym
+
 -- TYPE RESOLUTION PRIMITIVES --
 --------------------------------
 class Typeable a b where
   typeof :: a -> TypeM b
 
 instance Typeable VariableNum TypeBasic where
-  typeof num = do
-    TBasic typ <- (asks typeenvSymbols >>= lookupM (SVariable num)) `rethrow` Err.unknownSymbolType num
+  typeof num = doOrThrow (Err.unknownSymbolType num) $ do
+    TBasic typ <- lookupS (SVariable num)
     return typ
 
 instance Typeable MethodName TypeMethod where
-  typeof name = do
-    TMethod typ <- (asks typeenvSymbols >>= lookupM (SFunction name)) `rethrow` Err.unknownSymbolType name
+  typeof name = doOrThrow (Err.unknownSymbolType name) $ do
+    TMethod typ <- lookupS (SFunction name)
     return typ
 
 instance Typeable VariableNum TypeComposed where
@@ -137,17 +143,13 @@ class ComposedTypeable a b c where
   typeof' :: a -> b -> TypeM c
 
 instance ComposedTypeable TypeComposed MethodName TypeMethod where
-  typeof' typ name = do
-    TMethod mtyp <- builtinMethodType typ name
-      `mplus` (asks typeenvTypes >>= lookupM typ >>= lookupM (SMethod name))
-      `rethrow` Err.unknownMemberType typ name
+  typeof' typ name = doOrThrow (Err.unknownMemberType typ name) $ do
+    TMethod mtyp <- builtinMethodType typ name `mplus` lookupC typ (SMethod name)
     return mtyp
 
 instance ComposedTypeable TypeComposed FieldName TypeBasic where
-  typeof' typ name = do
-    TBasic ftyp <- builtinFieldType typ name
-      `mplus` (asks typeenvTypes >>= lookupM typ >>= lookupM (SField name))
-      `rethrow` Err.unknownMemberType typ name
+  typeof' typ name = doOrThrow (Err.unknownMemberType typ name) $ do
+    TBasic ftyp <- builtinFieldType typ name `mplus` lookupC typ (SField name)
     return ftyp
 
 instance ComposedTypeable TypeBasic FieldName TypeBasic where

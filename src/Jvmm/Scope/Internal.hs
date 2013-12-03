@@ -117,7 +117,6 @@ instance Resolvable FieldName where
 instance Resolvable Type where
   static (TMethod typ) = static typ
   static (TBasic typ) = static typ
-  static TUnknown = return ()
 
 instance Resolvable TypeMethod where
   static (TypeMethod rett argst excepts) = do
