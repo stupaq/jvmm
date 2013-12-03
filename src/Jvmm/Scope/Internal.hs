@@ -307,7 +307,7 @@ instance Scopeable Stmt where
         -- Catch body can hide exception variable
         declare name
         num <- current name
-        tell [Variable typ num name]
+        tell [Variable (TComposed typ) num name]
         stmt2' <- newLocalScope (scope stmt2)
         return $ STryCatch stmt1' typ num stmt2'
 
@@ -356,11 +356,11 @@ instance Scopeable Expr where
     -- Operations
     EUnary _ op expr -> do
       expr' <- scope expr
-      return $ EUnary TUnknown op expr'
+      return $ EUnary undefined op expr'
     EBinary _ op expr1 expr2 -> do
       expr1' <- scope expr1
       expr2' <- scope expr2
-      return $ EBinary TUnknown op expr1' expr2'
+      return $ EBinary undefined op expr1' expr2'
     -- These expressions will be replaced with ones caring more context in subsequent phases
     T_EVar name ->
       varOrField name

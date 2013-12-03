@@ -160,11 +160,11 @@ data Expr =
   | EInvokeStatic MethodName [Expr]
   | EInvokeVirtual Expr MethodName [Expr]
   -- Object creation
-  | ENewObj Type
-  | ENewArr Type Expr
+  | ENewObj TypeBasic
+  | ENewArr TypeBasic Expr
   -- Operations
-  | EUnary Type OpUn Expr
-  | EBinary Type OpBin Expr Expr
+  | EUnary TypeBasic OpUn Expr
+  | EBinary TypeBasic OpBin Expr Expr
   -- These expressions will be replaced with ones caring more context in subsequent phases
   | T_EVar VariableName
   deriving (Eq,Ord,Show)

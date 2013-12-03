@@ -54,7 +54,7 @@ objectClassDiff functions = do
   guard (redefined == []) `rethrow` Err.redefinedBuiltin (head redefined)
   return $ prepareClassDiff Err.Unknown Class {
         classType = TObject
-      , classSuper = TUnknown
+      , classSuper = TObject
       , classFields = []
       , classMethods = []
       , classStaticMethods = builtinFunctions ++ functions

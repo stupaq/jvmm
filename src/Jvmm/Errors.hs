@@ -49,6 +49,9 @@ action `finally` always = do
   always
   return res
 
+-- Returns true is given action executed without error
+succeeded action = (action >> return True) `catchError` const (return False)
+
 -- Tags error with location information
 withLocation :: (MonadError ErrorInfo m) => Location -> m a -> m a
 withLocation loc action = action `catchError` handler
@@ -72,6 +75,7 @@ repeatedDeclaration id = Dangling $ "repeated declaration for: " ++ (show id)
 redefinedBuiltin id = Dangling $ "redefined built-in method: " ++ (show id)
 
 -- Type resolution errors
+notAComposedType typ = Dangling $ concat ["expected composeed type, got ", show typ]
 unknownMemberType typ id = Dangling $ concat ["unknown member type: ", show typ, " . ", show id]
 unknownSymbolType id = Dangling $ "unknown symbol type: " ++ (show id)
 subscriptNonArray = Dangling $ "not an array subscripted"

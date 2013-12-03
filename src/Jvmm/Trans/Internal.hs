@@ -60,7 +60,7 @@ tFunction (I.Function typ id args exceptions lbr stmts rbr) =
   where
     arguments = map (\(I.Argument typ id) -> O.Variable (tType typ) O.variablenumNone (tVIdent id))  args
     argTypes = map (\(I.Argument typ id) -> tType typ) args
-    funType = O.TFunc (tType typ) argTypes exceptionTypes
+    funType = O.TypeMethod (tType typ) argTypes exceptionTypes
     exceptionTypes = case exceptions of
       I.Exceptions elist -> map tType elist
       _ -> []

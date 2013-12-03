@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Jvmm.Types.Internal where
 
 import Control.Monad.Identity
@@ -119,13 +120,18 @@ class Typeable a b where
 
 instance Typeable VariableNum TypeBasic where
   typeof num = do
-    TBasic typ <- asks typeenvSymbols >>= lookupM (SVariable num) `rethrow` Err.unknownSymbolType num
+    TBasic typ <- (asks typeenvSymbols >>= lookupM (SVariable num)) `rethrow` Err.unknownSymbolType num
     return typ
 
 instance Typeable MethodName TypeMethod where
   typeof name = do
-    TMethod typ <- asks typeenvSymbols >>= lookupM (SFunction name) `rethrow` Err.unknownSymbolType name
+    TMethod typ <- (asks typeenvSymbols >>= lookupM (SFunction name)) `rethrow` Err.unknownSymbolType name
     return typ
+
+instance Typeable VariableNum TypeComposed where
+  typeof name = do
+    typ <- typeof name
+    notAPrimitive typ `rethrow` Err.notAComposedType typ
 
 class ComposedTypeable a b c where
   typeof' :: a -> b -> TypeM c
@@ -148,8 +154,15 @@ instance ComposedTypeable TypeBasic FieldName TypeBasic where
   typeof' (TComposed typ) name = typeof' typ name
   typeof' typ name = throwError $ Err.unknownMemberType typ name
 
-instance ComposedTypeable TypeBasic MethodName TypeBasic where
+instance ComposedTypeable TypeBasic MethodName TypeMethod where
   typeof' (TComposed typ) name = typeof' typ name
+  typeof' typ name = throwError $ Err.unknownMemberType typ name
+
+-- Completely wrong queries
+instance ComposedTypeable TypeBasic MethodName TypeBasic where
+  typeof' typ name = throwError $ Err.unknownMemberType typ name
+
+instance ComposedTypeable TypeComposed MethodName TypeBasic where
   typeof' typ name = throwError $ Err.unknownMemberType typ name
 
 -- TYPE ALTERNATION PRIMITIVES --
@@ -161,7 +174,7 @@ class Declarable a where
 
 instance Declarable Variable where
   declare (Variable typ num _) action = do
-    notAVoid typ' `rethrow` Err.voidNotIgnored
+    notAVoid typ'
     local (typeenvNewSymbol (SVariable num) typ') action
     where
       typ' = toType typ
@@ -216,12 +229,12 @@ class (Show a, InheritsType a) => Assertable a where
   notAVoid :: a -> TypeM ()
 
 instance (Show a, InheritsType a) => Assertable a where
-  notAVoid typ = when (toType typ == toType TVoid) $ throwError noMsg
+  notAVoid typ = when (toType typ == toType TVoid) $ throwError Err.voidNotIgnored
 
 notAPrimitive :: TypeBasic -> TypeM TypeComposed
 notAPrimitive x = case x of
-      TPrimitive _ -> throwError (Err.referencedPrimitive x)
-      TComposed typ -> return typ
+  TPrimitive _ -> throwError (Err.referencedPrimitive x)
+  TComposed typ -> return typ
 
 intWithinBounds :: Integer -> TypeM ()
 intWithinBounds n =
@@ -246,7 +259,6 @@ class (Show a) => Arithmetizable a where
 instance Arithmetizable Type where
   (=|) typ1 typ2 = do
     let bad = throwError (Err.unexpectedType typ1 typ2)
-        ok = return typ1
     case (typ1, typ2) of
       (TMethod typ1', TMethod typ2') -> liftM TMethod $ typ1' =| typ2'
       (TBasic typ1', TBasic typ2') -> liftM TBasic $ typ1' =| typ2'
@@ -261,11 +273,11 @@ instance Arithmetizable TypeMethod where
         unless (length argt1 == length argt2) $ throwError noMsg
         zipWithM_ (=|) argt1 argt2
         ok
+      _ -> bad
 
 instance Arithmetizable TypeBasic where
   (=|) typ1 typ2 = do
     let bad = throwError (Err.unexpectedType typ1 typ2)
-        ok = return typ1
     case (typ1, typ2) of
       (TPrimitive typ1, TPrimitive typ2) -> liftM TPrimitive $ typ1 =| typ2
       (TComposed typ1, TComposed typ2) -> liftM TComposed $ typ1 =| typ2
@@ -307,9 +319,9 @@ instance Arithmetizable TypeComposed where
       _ -> bad
   super typ = (asks typeenvSuper >>= lookupM typ)
 
-(=?) :: (InheritsType a, InheritsType b) => a -> b -> TypeM Type
-(=?) typ1 typ2 = toType typ1 =| toType typ2
-(?=) :: (InheritsType a, InheritsType b) => a -> b -> TypeM Type
+(=?) :: (InheritsType a, InheritsType b) => a -> b -> TypeM a
+(=?) typ1 typ2 = toType typ1 =| toType typ2 >> return typ1
+(?=) :: (InheritsType a, InheritsType b) => a -> b -> TypeM b
 (?=) = flip (=?)
 
 -- TRAVERSING TREE --
@@ -372,7 +384,7 @@ funS x = case x of
     return $ SStoreArray num expr1' expr2'
   SPutField num name expr -> do
     (expr', etyp) <- funE expr
-    vtyp <- typeof num
+    vtyp :: TypeComposed <- typeof num
     ftyp <- typeof' vtyp name
     ftyp =| etyp
     return $ SPutField num name expr'
@@ -466,10 +478,10 @@ funE x = case x of
     etyp <- notAPrimitive typ
     return (ENewObj typ, typ)
   ENewArr typ expr -> do
-    notAVoid typ `rethrow` Err.voidNotIgnored
+    notAVoid typ
     (expr', etyp) <- funE expr
     TInt =? etyp `rethrow` Err.indexType
-    return (ENewArr typ expr', TArray typ)
+    return (ENewArr typ expr', TComposed (TArray typ))
   -- Operations
   EUnary _ op expr -> do
     (expr', etyp) <- funE expr
@@ -481,23 +493,27 @@ funE x = case x of
     (expr1', etyp1) <- funE expr1
     (expr2', etyp2) <- funE expr2
     typ <- etyp1 =||= etyp2
-    rett <- case opbin of
-      ObPlus -> (TInt =? typ) `mplus` (TString =| typ) `rethrow` Err.badArithType
-      ObAnd -> TBool =? typ
-      ObOr -> TBool =? typ
-      -- For primitives we have natural ==, for others we compare 'adresses'
-      ObEQU -> return TBool
-      ObNEQ -> return TBool
-      -- TInt-only operations: Times Div Mod Minus LTH LEQ GTH GEQ
-      _ -> do
-        TInt =| typ
-        case opbin of
-          ObLTH -> return TBool
-          ObLEQ -> return TBool
-          ObGTH -> return TBool
-          ObGEQ -> return TBool
-          _ -> return TInt
-    return (EBinary rett opbin expr1' expr2', rett)
+    isString <- Err.succeeded (TString =? typ)
+    case isString of
+      True -> let rett = TComposed TString in return (EBinary rett opbin expr1' expr2', rett)
+      False -> do
+        rett <- liftM TPrimitive $ case opbin of
+          ObPlus -> TInt =? typ
+          ObAnd -> TBool =? typ
+          ObOr -> TBool =? typ
+          -- For primitives we have natural ==, for others we compare 'adresses'
+          ObEQU -> return TBool
+          ObNEQ -> return TBool
+          -- TInt-only operations: Times Div Mod Minus LTH LEQ GTH GEQ
+          _ -> do
+            TInt =? typ
+            case opbin of
+              ObLTH -> return TBool
+              ObLEQ -> return TBool
+              ObGTH -> return TBool
+              ObGEQ -> return TBool
+              _ -> return TInt
+        return (EBinary rett opbin expr1' expr2', rett)
   -- These expressions will be replaced with ones caring more context in subsequent phases
   T_EVar _ -> error $ Err.unusedBranch x
 
