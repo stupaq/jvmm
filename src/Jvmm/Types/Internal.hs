@@ -500,11 +500,10 @@ funE x = case x of
     (expr2', etyp2) <- funE expr2
     typ <- etyp1 =||= etyp2
     isString <- Err.succeeded (TString =? typ)
-    case isString of
-      True -> case opbin of
-        ObPlus -> let rett = TComposed TString in return (EBinary rett opbin expr1' expr2', rett)
-        _ -> throwError Err.badArithType
-      False -> do
+    case (isString, opbin) of
+      (True, ObPlus) ->
+        let rett = TComposed TString in return (EBinary rett opbin expr1' expr2', rett)
+      _ -> do
         rett <- liftM TPrimitive $ case opbin of
           ObPlus -> TInt =? typ
           ObAnd -> TBool =? typ
