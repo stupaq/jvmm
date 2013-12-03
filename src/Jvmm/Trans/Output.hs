@@ -71,11 +71,11 @@ data Stmt =
   | SBlock [Stmt]
   | SExpr Expr
   -- Memory access
-  | SStore VariableNum Expr
-  | SStoreArray VariableNum Expr Expr
-  | SPutField VariableNum FieldName Expr
+  | SStore VariableNum Expr TypeBasic
+  | SStoreArray VariableNum Expr Expr TypeBasic
+  | SPutField VariableNum FieldName Expr TypeBasic
   -- Control statements
-  | SReturn Expr
+  | SReturn Expr TypeBasic
   | SReturnV
   | SIf Expr Stmt
   | SIfElse Expr Stmt Stmt
@@ -152,9 +152,9 @@ data Expr =
   | ELitString String
   | ELitInt Integer
   -- Memory access
-  | ELoad VariableNum
-  | EArrayLoad Expr Expr
-  | EGetField Expr FieldName
+  | ELoad VariableNum TypeBasic
+  | EArrayLoad Expr Expr TypeBasic
+  | EGetField Expr FieldName TypeBasic
   -- Method calls
   | EInvokeStatic MethodName [Expr]
   | EInvokeVirtual Expr MethodName [Expr]
@@ -162,8 +162,8 @@ data Expr =
   | ENewObj TypeComposed
   | ENewArr TypeBasic Expr
   -- Operations
-  | EUnary TypeBasic OpUn Expr
-  | EBinary TypeBasic OpBin Expr Expr
+  | EUnary OpUn Expr TypeBasic
+  | EBinary OpBin Expr Expr TypeBasic
   -- These expressions will be replaced with ones caring more context in subsequent phases
   | T_EVar VariableName
   deriving (Eq,Ord,Show)

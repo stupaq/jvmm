@@ -241,17 +241,17 @@ instance Scopeable Stmt where
       stmts' <- newLocalScope (mapM scope stmts)
       return $ SBlock stmts'
     -- Memory access
-    SStore _ _ -> error $ Err.unusedBranch x
-    SStoreArray _ _ _ -> error $ Err.unusedBranch x
-    SPutField variablenumThis field expr -> do
+    SStore _ _ _ -> error $ Err.unusedBranch x
+    SStoreArray _ _ _ _ -> error $ Err.unusedBranch x
+    SPutField variablenumThis field expr _ -> do
       expr' <- scope expr
       dynamic field
-      return $ SPutField variablenumThis field expr'
-    SPutField _ _ _ -> error $ Err.unusedBranch x
+      return $ SPutField variablenumThis field expr' undefined
+    SPutField _ _ _ _ -> error $ Err.unusedBranch x
     -- Control statements
-    SReturn expr -> do
+    SReturn expr _ -> do
       expr' <- scope expr
-      return $ SReturn expr'
+      return $ SReturn expr' undefined
     SReturnV -> return SReturnV
     SIf expr stmt -> do
       stmt' <- scope stmt
@@ -289,17 +289,19 @@ instance Scopeable Stmt where
     -- variables (like in Java), to referencee hidden field self.<field_name> construct can be used
     T_SAssign name expr -> do
       expr' <- scope expr
-      varOrField name (\num -> SStore num expr') (\name' -> SPutField variablenumThis name' expr')
+      varOrField name
+        (\num -> SStore num expr' undefined)
+        (\name' -> SPutField variablenumThis name' expr' undefined)
     T_SAssignArr name expr1 expr2 -> do
       expr1' <- scope expr1
       expr2' <- scope expr2
       num <- current name
-      return $ SStoreArray num expr1' expr2'
+      return $ SStoreArray num expr1' expr2' undefined
     T_SAssignFld name field expr2 -> do
       expr2' <- scope expr2
       num <- current name
       -- The field name we see here cannot be verified without type information
-      return $ SPutField num field expr2'
+      return $ SPutField num field expr2' undefined
     T_STryCatch stmt1 typ name stmt2 -> do
       stmt1' <- newLocalScope (scope stmt1)
       newLocalScope $ do
@@ -320,16 +322,16 @@ instance Scopeable Expr where
     ELitString _ -> return x
     ELitInt _ -> return x
     -- Memory access
-    ELoad variablenumThis -> return x
-    ELoad _ -> error $ Err.unusedBranch x
-    EArrayLoad expr1 expr2 -> do
+    ELoad variablenumThis undefined -> return x
+    ELoad _ _ -> error $ Err.unusedBranch x
+    EArrayLoad expr1 expr2 _ -> do
       expr1' <- scope expr1
       expr2' <- scope expr2
-      return $ EArrayLoad expr1' expr2'
-    EGetField expr field -> do
+      return $ EArrayLoad expr1' expr2' undefined
+    EGetField expr field _ -> do
       expr' <- scope expr
       -- The field name we see here cannot be verified without type information
-      return $ EGetField expr' field
+      return $ EGetField expr' field undefined
     -- Method calls
     -- We replace all calls that actually refer to instance method, we also give precedence to
     -- instance methods over static ones.
@@ -337,8 +339,10 @@ instance Scopeable Expr where
       exprs' <- mapM scope exprs
       stat <- isStatic name
       case stat of
-        True -> static name >> return (EInvokeStatic name exprs')
-        False -> dynamic name >> return (EInvokeVirtual (ELoad variablenumThis) name exprs')
+        True -> static name >>
+            return (EInvokeStatic name exprs')
+        False -> dynamic name >>
+            return (EInvokeVirtual (ELoad variablenumThis undefined) name exprs')
     EInvokeVirtual expr name exprs -> do
       expr' <- scope expr
       exprs' <- mapM scope exprs
@@ -353,18 +357,18 @@ instance Scopeable Expr where
       expr' <- scope expr
       return $ ENewArr typ expr'
     -- Operations
-    EUnary _ op expr -> do
+    EUnary op expr _ -> do
       expr' <- scope expr
-      return $ EUnary undefined op expr'
-    EBinary _ op expr1 expr2 -> do
+      return $ EUnary op expr' undefined
+    EBinary op expr1 expr2 _ -> do
       expr1' <- scope expr1
       expr2' <- scope expr2
-      return $ EBinary undefined op expr1' expr2'
+      return $ EBinary op expr1' expr2' undefined
     -- These expressions will be replaced with ones caring more context in subsequent phases
     T_EVar name ->
       varOrField name
-        (\num -> ELoad num)
-        (\field -> EGetField (ELoad variablenumThis) field)
+        (\num -> ELoad num undefined)
+        (\field -> EGetField (ELoad variablenumThis undefined) field undefined)
 
 -- HELPERS --
 -------------

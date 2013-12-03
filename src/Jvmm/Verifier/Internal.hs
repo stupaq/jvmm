@@ -83,7 +83,7 @@ funSM method@Method { methodLocation = loc} = Err.withLocation loc $ do
 funS :: Stmt -> VerifierM ()
 funS x = case x of
   SBlock stmts -> mapM_ funS stmts
-  SReturn _ -> setReturned True
+  SReturn _ _ -> setReturned True
   SIf ELitTrue stmt -> funS stmt -- TODO analyser should resolve this
   SIf _ stmt ->
     -- Whether this statement was executed depends on runtime evaluation of expression

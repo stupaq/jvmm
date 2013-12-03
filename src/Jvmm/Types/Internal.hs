@@ -3,6 +3,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
 module Jvmm.Types.Internal where
 
 import Control.Monad.Identity
@@ -380,30 +381,31 @@ funS x = case x of
     (expr', _) <- funE expr
     return $ SExpr expr'
   -- Memory access
-  SStore num expr -> do
+  SStore num expr _ -> do
     (expr', etyp) <- funE expr
     vtyp <- typeof num
     vtyp =| etyp
-    return $ SStore num expr'
-  SStoreArray num expr1 expr2 -> do
+    return $ SStore num expr' vtyp
+  SStoreArray num expr1 expr2 _ -> do
     (expr1', etyp1) <- funE expr1
     (expr2', etyp2) <- funE expr2
     TPrimitive TInt =| etyp1 `rethrow` Err.indexType
     atyp <- typeof num
     atyp =| (TArray etyp2)
-    return $ SStoreArray num expr1' expr2'
-  SPutField num name expr -> do
+    let (TArray eltyp) = atyp
+    return $ SStoreArray num expr1' expr2' eltyp
+  SPutField num name expr _ -> do
     (expr', etyp) <- funE expr
     vtyp :: TypeComposed <- typeof num
     ftyp <- typeof' vtyp name
     ftyp =| etyp
-    return $ SPutField num name expr'
+    return $ SPutField num name expr' ftyp
   -- Control statements
-  SReturn expr -> do
+  SReturn expr _ -> do
     (expr', etyp) <- funE expr
     notAVoid etyp `rethrow` Err.voidNotIgnored
     returns etyp
-    return $ SReturn expr'
+    return $ SReturn expr' etyp
   SReturnV -> do
     returns $ TPrimitive TVoid
     return x
@@ -458,18 +460,20 @@ funE x = case x of
     intWithinBounds n `rethrow` Err.intValueOutOfBounds n
     return (x, TPrimitive TInt)
   -- Memory access
-  ELoad num -> fmap ((,) $ ELoad num) $ typeof num
-  EArrayLoad expr1 expr2 -> do
+  ELoad num _ -> do
+    typ <- typeof num
+    return (ELoad num typ, typ)
+  EArrayLoad expr1 expr2 _ -> do
     (expr1', etyp1) <- funE expr1
     (expr2', etyp2) <- funE expr2
     TInt =? etyp2 `rethrow` Err.indexType
     case etyp1 of
-      TComposed (TArray typ) -> return (EArrayLoad expr1' expr2', typ)
+      TComposed (TArray typ) -> return (EArrayLoad expr1' expr2' typ, typ)
       _ -> throwError Err.subscriptNonArray
-  EGetField expr id -> do
+  EGetField expr id _ -> do
     (expr', etyp) <- funE expr
     typ <- typeof' etyp id
-    return (EGetField expr' id, typ)
+    return (EGetField expr' id typ, typ)
   -- Method calls
   EInvokeStatic id exprs -> do
     (exprs', etypes) <- mapAndUnzipM funE exprs
@@ -491,20 +495,20 @@ funE x = case x of
     TInt =? etyp `rethrow` Err.indexType
     return (ENewArr typ expr', TComposed (TArray typ))
   -- Operations
-  EUnary _ op expr -> do
+  EUnary op expr _ -> do
     (expr', etyp) <- funE expr
     case op of
       OuNot -> TBool =? etyp
       OuNeg -> TInt =? etyp
-    return (EUnary etyp op expr', etyp)
-  EBinary _ opbin expr1 expr2 -> do
+    return (EUnary op expr' etyp, etyp)
+  EBinary opbin expr1 expr2 _ -> do
     (expr1', etyp1) <- funE expr1
     (expr2', etyp2) <- funE expr2
     typ <- etyp1 =||= etyp2
     isString <- Err.succeeded (TString =? typ)
     case (isString, opbin) of
       (True, ObPlus) ->
-        let rett = TComposed TString in return (EBinary rett opbin expr1' expr2', rett)
+        let rett = TComposed TString in return (EBinary opbin expr1' expr2' rett, rett)
       _ -> do
         rett <- liftM TPrimitive $ case opbin of
           ObPlus -> TInt =? typ
@@ -522,7 +526,7 @@ funE x = case x of
               ObGTH -> return TBool
               ObGEQ -> return TBool
               _ -> return TInt
-        return (EBinary rett opbin expr1' expr2', rett)
+        return (EBinary opbin expr1' expr2' rett, rett)
   -- These expressions will be replaced with ones caring more context in subsequent phases
   T_EVar _ -> error $ Err.unusedBranch x
 

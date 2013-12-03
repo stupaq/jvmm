@@ -56,7 +56,7 @@ descript :: Type -> UIdent -> VirtualsM Descriptor
 descript typ uid = case (typ, uid) of
   (TUnknown, FIdent method) -> return $ descriptorDelimiter:method
   (TUser (TIdent origin), FIdent method) -> return $ origin ++ (descriptorDelimiter:method)
-  _ -> throwError $ Err.unusedBranch (typ, uid)
+  _ -> error $ Err.unusedBranch (typ, uid)
 
 -- VIRTUALS MONAD --
 --------------------
