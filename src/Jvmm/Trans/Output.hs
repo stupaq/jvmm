@@ -81,7 +81,7 @@ data Stmt =
   | SIfElse Expr Stmt Stmt
   | SWhile Expr Stmt
   | SThrow Expr
-  | STryCatch Stmt TypeBasic VariableNum Stmt
+  | STryCatch Stmt TypeComposed VariableNum Stmt
   -- Special function bodies
   | SBuiltin
   | SInherited
@@ -92,7 +92,7 @@ data Stmt =
   | T_SAssign VariableName Expr
   | T_SAssignArr VariableName Expr Expr
   | T_SAssignFld VariableName FieldName Expr
-  | T_STryCatch Stmt TypeBasic VariableName Stmt
+  | T_STryCatch Stmt TypeComposed VariableName Stmt
   deriving (Eq, Ord, Show)
 
 -- TYPES --

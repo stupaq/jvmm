@@ -127,22 +127,30 @@ instance Typeable MethodName TypeMethod where
     TMethod typ <- asks typeenvSymbols >>= lookupM (SFunction name) `rethrow` Err.unknownSymbolType name
     return typ
 
-class ComposedTypeable a b where
-  typeof' :: TypeComposed -> a -> TypeM b
+class ComposedTypeable a b c where
+  typeof' :: a -> b -> TypeM c
 
-instance ComposedTypeable MethodName TypeMethod where
+instance ComposedTypeable TypeComposed MethodName TypeMethod where
   typeof' typ name = do
     TMethod mtyp <- builtinMethodType typ name
       `mplus` (asks typeenvTypes >>= lookupM typ >>= lookupM (SMethod name))
       `rethrow` Err.unknownMemberType typ name
     return mtyp
 
-instance ComposedTypeable FieldName TypeBasic where
+instance ComposedTypeable TypeComposed FieldName TypeBasic where
   typeof' typ name = do
     TBasic ftyp <- builtinFieldType typ name
       `mplus` (asks typeenvTypes >>= lookupM typ >>= lookupM (SField name))
       `rethrow` Err.unknownMemberType typ name
     return ftyp
+
+instance ComposedTypeable TypeBasic FieldName TypeBasic where
+  typeof' (TComposed typ) name = typeof' typ name
+  typeof' typ name = throwError $ Err.unknownMemberType typ name
+
+instance ComposedTypeable TypeBasic MethodName TypeBasic where
+  typeof' (TComposed typ) name = typeof' typ name
+  typeof' typ name = throwError $ Err.unknownMemberType typ name
 
 -- TYPE ALTERNATION PRIMITIVES --
 ---------------------------------
@@ -299,6 +307,11 @@ instance Arithmetizable TypeComposed where
       _ -> bad
   super typ = (asks typeenvSuper >>= lookupM typ)
 
+(=?) :: (InheritsType a, InheritsType b) => a -> b -> TypeM Type
+(=?) typ1 typ2 = toType typ1 =| toType typ2
+(?=) :: (InheritsType a, InheritsType b) => a -> b -> TypeM Type
+(?=) = flip (=?)
+
 -- TRAVERSING TREE --
 ---------------------
 funH :: ClassHierarchy -> TypeM ClassHierarchy
@@ -374,18 +387,18 @@ funS x = case x of
     return x
   SIf expr stmt -> do
     (expr', etyp) <- funE expr
-    TBool =| etyp
+    TBool =? etyp
     stmt' <- funS stmt
     return $ SIf expr' stmt'
   SIfElse expr stmt1 stmt2 -> do
     (expr', etyp) <- funE expr
-    TBool =| etyp
+    TBool =? etyp
     stmt1' <- funS stmt1
     stmt2' <- funS stmt2
     return $ SIfElse expr' stmt1' stmt2'
   SWhile expr stmt -> do
     (expr', etyp) <- funE expr
-    TBool =| etyp
+    TBool =? etyp
     stmt' <- funS stmt
     return $ SWhile expr' stmt'
   SThrow expr -> do
@@ -414,22 +427,22 @@ funS x = case x of
 funE :: Expr -> TypeM (Expr, TypeBasic)
 funE x = case x of
   -- Literals
-  ENull -> return (x, TNull)
-  ELitTrue -> return (x, TBool)
-  ELitFalse -> return (x, TBool)
-  ELitChar c -> return (x, TChar)
-  ELitString str -> return (x, TString)
+  ENull -> return (x, TComposed TNull)
+  ELitTrue -> return (x, TPrimitive TBool)
+  ELitFalse -> return (x, TPrimitive TBool)
+  ELitChar c -> return (x, TPrimitive TChar)
+  ELitString str -> return (x, TComposed TString)
   ELitInt n -> do
     intWithinBounds n `rethrow` Err.intValueOutOfBounds n
-    return (x, TInt)
+    return (x, TPrimitive TInt)
   -- Memory access
   ELoad num -> fmap ((,) $ ELoad num) $ typeof num
   EArrayLoad expr1 expr2 -> do
     (expr1', etyp1) <- funE expr1
     (expr2', etyp2) <- funE expr2
-    TInt =| etyp2 `rethrow` Err.indexType
+    TInt =? etyp2 `rethrow` Err.indexType
     case etyp1 of
-      TArray typ -> return (EArrayLoad expr1' expr2', typ)
+      TComposed (TArray typ) -> return (EArrayLoad expr1' expr2', typ)
       _ -> throwError Err.subscriptNonArray
   EGetField expr id -> do
     (expr', etyp) <- funE expr
@@ -455,23 +468,23 @@ funE x = case x of
   ENewArr typ expr -> do
     notAVoid typ `rethrow` Err.voidNotIgnored
     (expr', etyp) <- funE expr
-    TInt =| etyp `rethrow` Err.indexType
+    TInt =? etyp `rethrow` Err.indexType
     return (ENewArr typ expr', TArray typ)
   -- Operations
   EUnary _ op expr -> do
     (expr', etyp) <- funE expr
     case op of
-      OuNot -> TBool =| etyp
-      OuNeg -> TInt =| etyp
+      OuNot -> TBool =? etyp
+      OuNeg -> TInt =? etyp
     return (EUnary etyp op expr', etyp)
   EBinary _ opbin expr1 expr2 -> do
     (expr1', etyp1) <- funE expr1
     (expr2', etyp2) <- funE expr2
     typ <- etyp1 =||= etyp2
     rett <- case opbin of
-      ObPlus -> (TInt =| typ) `mplus` (TString =| typ) `rethrow` Err.badArithType
-      ObAnd -> TBool =| typ
-      ObOr -> TBool =| typ
+      ObPlus -> (TInt =? typ) `mplus` (TString =| typ) `rethrow` Err.badArithType
+      ObAnd -> TBool =? typ
+      ObOr -> TBool =? typ
       -- For primitives we have natural ==, for others we compare 'adresses'
       ObEQU -> return TBool
       ObNEQ -> return TBool
