@@ -1,4 +1,6 @@
 {-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE UndecidableInstances #-}
 module Jvmm.Types.Internal where
 
 import Control.Monad.Identity
@@ -173,7 +175,7 @@ returns typ = do
     Nothing -> throwError Err.danglingReturn
     _ -> error $ Err.unusedBranch "typeenvFunction was not of functional type"
 
-this :: TypeM Type
+this :: TypeM TypeComposed
 this = asks typeenvThis >>= \x -> case x of
   Just typ -> return typ
   Nothing -> throwError Err.danglingThis
@@ -185,14 +187,19 @@ enterInstance :: TypeComposed -> TypeM a -> TypeM a
 enterInstance x =
   local (\env -> env { typeenvThis = Just x }) . declare (Variable (TComposed x) variablenumThis variablename0)
 
-invoke :: TypeMethod -> [Type] -> TypeM Type
+invoke :: TypeMethod -> [TypeBasic] -> TypeM TypeBasic
 invoke ftyp@(TypeMethod ret args excepts) etypes = do
     forM excepts throws
     (ftyp =| TypeMethod ret etypes []) `rethrow` Err.argumentsNotMatch args etypes
     return ret
 
-notAVoid :: Type -> TypeM ()
-notAVoid typ = when (typ == toType TVoid) $ throwError noMsg
+-- TYPE ASSERTIONS --
+---------------------
+class (Show a, InheritsType a) => Assertable a where
+  notAVoid :: a -> TypeM ()
+
+instance (Show a, InheritsType a) => Assertable a where
+  notAVoid typ = when (toType typ == toType TVoid) $ throwError noMsg
 
 notAPrimitive :: TypeBasic -> TypeM ()
 notAPrimitive x = case x of
@@ -205,7 +212,7 @@ intWithinBounds n =
 
 -- TYPE ARITHMETIC --
 ---------------------
-class Arithmetizable a where
+class (Show a) => Arithmetizable a where
   -- We say that t <- t1 =||= t2 when t2 and t1 are subtypes of t, and no other
   -- type t' such that t =| t' has this property
   (=||=) :: a -> a -> TypeM a
@@ -224,8 +231,8 @@ instance Arithmetizable Type where
     let bad = throwError (Err.unexpectedType typ1 typ2)
         ok = return typ1
     case (typ1, typ2) of
-      (TMethod typ1', TMethod typ2') -> typ1' =| typ2'
-      (TBasic typ1', TBasic typ2') -> typ1' =| typ2'
+      (TMethod typ1', TMethod typ2') -> liftM TMethod $ typ1' =| typ2'
+      (TBasic typ1', TBasic typ2') -> liftM TBasic $ typ1' =| typ2'
       _ -> bad
 
 instance Arithmetizable TypeMethod where
@@ -243,8 +250,8 @@ instance Arithmetizable TypeBasic where
     let bad = throwError (Err.unexpectedType typ1 typ2)
         ok = return typ1
     case (typ1, typ2) of
-      (TPrimitive typ1, TPrimitive typ2) -> typ1 =| typ2
-      (TComposed typ1, TComposed typ2) -> typ1 =| typ2
+      (TPrimitive typ1, TPrimitive typ2) -> liftM TPrimitive $ typ1 =| typ2
+      (TComposed typ1, TComposed typ2) -> liftM TComposed $ typ1 =| typ2
       _ -> bad
 
 instance Arithmetizable TypePrimitive where
@@ -266,7 +273,7 @@ instance Arithmetizable TypeComposed where
       (TNull, TNull) -> ok
       (TArray _, TNull) -> ok
       -- Different people say different things about this
-      (TArray etyp1, TArray etyp2) -> etyp1 =| etyp2
+      (TArray etyp1, TArray etyp2) -> liftM TArray $ etyp1 =| etyp2
       (TString, TNull) -> ok
       (TString, TString) -> ok
       (TObject, TNull) -> ok
@@ -332,20 +339,20 @@ funS x = case x of
   SStore num expr -> do
     (expr', etyp) <- funE expr
     vtyp <- typeof num
-    vtyp =| etyp
+    vtyp =| toType etyp
     return $ SStore num expr'
   SStoreArray num expr1 expr2 -> do
     (expr1', etyp1) <- funE expr1
     (expr2', etyp2) <- funE expr2
-    TInt =| etyp1 `rethrow` Err.indexType
+    TPrimitive TInt =| etyp1 `rethrow` Err.indexType
     atyp <- typeof num
-    atyp =| TArray etyp2
+    atyp =| toType (TArray etyp2)
     return $ SStoreArray num expr1' expr2'
   SPutField num name expr -> do
     (expr', etyp) <- funE expr
     vtyp <- typeof num
     ftyp <- typeof' vtyp name
-    ftyp =| etyp
+    ftyp =| toType etyp
     return $ SPutField num name expr'
   -- Control statements
   SReturn expr -> do
@@ -395,7 +402,7 @@ funS x = case x of
   T_SAssignFld _ _ _ -> error $ Err.unusedBranch x
   T_STryCatch _ _ _ _ -> error $ Err.unusedBranch x
 
-funE :: Expr -> TypeM (Expr, Type)
+funE :: Expr -> TypeM (Expr, TypeBasic)
 funE x = case x of
   -- Literals
   ENull -> return (x, TNull)
