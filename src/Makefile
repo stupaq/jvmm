@@ -2,7 +2,9 @@ BNFC := $(wildcard ../docs/*.cf)
 MAIN := Interpreter/Main
 
 PDFLATEX := pdflatex -interaction=batchmode
-GHCMAKE := ghc --make -outputdir ghc-make -w #-rtsopts -prof
+GHCWARN := -W -Wall -fno-warn-unused-do-bind
+GHCPROF := #-rtsopts -prof
+GHCMAKE := ghc --make -outputdir ghc-make $(GHCWARN) $(GHCPROF)
 
 all: $(MAIN)
 

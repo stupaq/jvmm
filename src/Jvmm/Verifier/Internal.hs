@@ -10,6 +10,7 @@ import qualified Jvmm.Errors as Err
 import Jvmm.Errors (rethrow, ErrorInfoT)
 import Jvmm.Trans.Output
 import Jvmm.Hierarchy.Output
+import qualified Jvmm.Types.Internal as Types
 
 -- This layer performs static checks that do not alter Abstract Program Tree.
 
@@ -58,7 +59,8 @@ orReturned b = gets verifierstateReturned >>= (setReturned . (|| b))
 
 checkEntrypoint :: Method -> VerifierM ()
 checkEntrypoint Method { methodName = name, methodOrigin = TObject }
-  | name  == entrypointIdent = modify (\st -> st { verifierstateMain = True })
+  | name  == Types.resolve TObject entrypointIdent =
+      modify (\st -> st { verifierstateMain = True })
 checkEntrypoint _ = return ()
 
 -- TRAVERSING TREE --

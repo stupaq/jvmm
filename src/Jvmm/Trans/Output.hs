@@ -31,7 +31,9 @@ data Field = Field {
   , fieldOrigin :: TypeComposed
 } deriving (Show, Eq, Ord)
 
-newtype FieldName = FieldName String
+data FieldName =
+    FieldName String
+  | FieldDescriptor String
   deriving (Show, Eq, Ord)
 
 fieldFromVariable :: VariableName -> FieldName
@@ -47,7 +49,9 @@ data Method = Method {
   , methodVariables :: [Variable]
 } deriving (Eq, Ord, Show)
 
-newtype MethodName = MethodName String
+data MethodName =
+    MethodName String
+  | MethodDescriptor String
   deriving (Show, Eq, Ord)
 
 data Variable = Variable {

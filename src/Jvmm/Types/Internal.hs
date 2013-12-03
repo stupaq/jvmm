@@ -62,6 +62,8 @@ data TypeEnv = TypeEnv {
   , typeenvTypes :: MemberTypes
     -- Mapping from type to super
   , typeenvSuper :: Map.Map TypeComposed TypeComposed
+    -- Origin of visible static methods
+  , typeenvStaticOrigin :: TypeComposed
 } deriving (Show)
 
 typeenv0 = TypeEnv {
@@ -182,8 +184,8 @@ instance Declarable Variable where
     where
       typ' = toType typ
 
--- TYPE ASSERTIONS --
----------------------
+-- TYPE CHECKING AND CHANGING HELPERS --
+----------------------------------------
 throws :: TypeComposed -> TypeM ()
 throws typ = do
   excepts <- asks typeenvExceptions
@@ -215,6 +217,9 @@ this = asks typeenvThis >>= \x -> case x of
 
 enterFunction :: TypeMethod -> TypeM a -> TypeM a
 enterFunction x = local $ \env -> env { typeenvFunction = Just x }
+
+enterClass :: TypeComposed -> TypeM a -> TypeM a
+enterClass x = local (\env -> env { typeenvStaticOrigin = x })
 
 enterInstance :: TypeComposed -> TypeM a -> TypeM a
 enterInstance x =
@@ -335,31 +340,65 @@ instance Arithmetizable TypeComposed where
 (?=) :: (InheritsType a, InheritsType b) => a -> b -> TypeM b
 (?=) = flip (=?)
 
+-- DESCRIPTOR RESOLUTION --
+---------------------------
+class Resolvable a b where
+  resolve :: a -> b -> b
+
+resolveComposed :: TypeComposed -> String
+resolveComposed (TUser (ClassName typ)) = typ ++ "/"
+resolveComposed TString = "java/lang/String/"
+resolveComposed TObject = "JvmmObject/"
+
+instance Resolvable TypeComposed MethodName where
+  resolve typ (MethodName name) = MethodDescriptor $ resolveComposed typ ++ name
+
+instance Resolvable TypeComposed FieldName where
+  resolve typ (FieldName name) = FieldDescriptor $ resolveComposed typ ++ name
+
+instance Resolvable TypeBasic MethodName where
+  resolve (TComposed typ) name = resolve typ name
+
+instance Resolvable TypeBasic FieldName where
+  resolve (TComposed typ) name = resolve typ name
+
+class Resolvable' a where
+  resolve' :: a -> a
+
+instance Resolvable' Field where
+  resolve' field@Field { fieldName = name, fieldOrigin = origin } =
+    field { fieldName = resolve origin name }
+
+instance Resolvable' Method where
+  resolve' method@Method { methodName = name, methodOrigin = origin } =
+    method { methodName = resolve origin name }
+
 -- TRAVERSING TREE --
 ---------------------
 funH :: ClassHierarchy -> TypeM ClassHierarchy
 funH = Traversable.mapM $ \clazz@Class { classType = typ, classLocation = loc } ->
   Err.withLocation loc $ do
-    staticMethods' <- mapM funMS $ classStaticMethods clazz
-    enterInstance typ $ do
-      fields' <- mapM funF $ classFields clazz
-      methods' <- mapM funM $ classMethods clazz
-      return $ clazz {
-            classMethods = methods'
-          , classFields = fields'
-          , classStaticMethods = staticMethods'
-        }
+    enterClass typ $ do
+      staticMethods' <- mapM funMS $ classStaticMethods clazz
+      enterInstance typ $ do
+        fields' <- mapM funF $ classFields clazz
+        methods' <- mapM funM $ classMethods clazz
+        return $ clazz {
+              classMethods = methods'
+            , classFields = fields'
+            , classStaticMethods = staticMethods'
+          }
 
 funF :: Field -> TypeM Field
-funF field@Field { fieldType = typ, fieldName = id } = do
-  notAVoid typ `rethrow` Err.voidField id
-  return field
+funF field@Field { fieldType = typ, fieldName = name } = do
+  notAVoid typ `rethrow` Err.voidField name
+  return $ resolve' field
 
 funM :: Method -> TypeM Method
 funM method@Method { methodType = typ, methodBody = stmt, methodArgs = args, methodVariables = vars } = do
   Err.withLocation (methodLocation method) . called typ args vars $ do
     stmt' <- funS stmt
-    return $ method { methodBody = stmt' }
+    return $ resolve' $ method { methodBody = stmt' }
 
 funMS :: Method -> TypeM Method
 funMS method = do
@@ -399,7 +438,7 @@ funS x = case x of
     vtyp :: TypeComposed <- typeof num
     ftyp <- typeof' vtyp name
     ftyp =| etyp
-    return $ SPutField num name expr' ftyp
+    return $ SPutField num (resolve vtyp name) expr' ftyp
   -- Control statements
   SReturn expr _ -> do
     (expr', etyp) <- funE expr
@@ -470,22 +509,23 @@ funE x = case x of
     case etyp1 of
       TComposed (TArray typ) -> return (EArrayLoad expr1' expr2' typ, typ)
       _ -> throwError Err.subscriptNonArray
-  EGetField expr id _ -> do
+  EGetField expr name _ -> do
     (expr', etyp) <- funE expr
-    typ <- typeof' etyp id
-    return (EGetField expr' id typ, typ)
+    typ <- typeof' etyp name
+    return (EGetField expr' (resolve etyp name) typ, typ)
   -- Method calls
-  EInvokeStatic id exprs -> do
+  EInvokeStatic name exprs -> do
     (exprs', etypes) <- mapAndUnzipM funE exprs
-    ftyp <- typeof id
-    rett <- invoke ftyp etypes
-    return (EInvokeStatic id exprs', rett)
-  EInvokeVirtual expr id exprs -> do
+    ftyp <- typeof name
+    rtyp <- invoke ftyp etypes
+    styp <- asks typeenvStaticOrigin
+    return (EInvokeStatic (resolve styp name) exprs', rtyp)
+  EInvokeVirtual expr name exprs -> do
     (expr', etyp) <- funE expr
     (exprs', etypes) <- mapAndUnzipM funE exprs
-    ftyp <- typeof' etyp id
-    rett <- invoke ftyp etypes
-    return (EInvokeVirtual expr' id exprs', rett)
+    ftyp <- typeof' etyp name
+    rtyp <- invoke ftyp etypes
+    return (EInvokeVirtual expr' (resolve etyp name) exprs', rtyp)
   -- Object creation
   ENewObj typ -> do
     return (ENewObj typ, TComposed typ)

@@ -6,6 +6,8 @@ import Control.Monad.Identity
 import Jvmm.Errors (ErrorInfoT)
 import Jvmm.Hierarchy.Output
 
+import Text.Show.Pretty (ppShow)
+
 -- MAIN --
 ----------
 verify :: ClassHierarchy -> ErrorInfoT Identity ClassHierarchy
