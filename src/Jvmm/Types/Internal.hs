@@ -263,6 +263,8 @@ instance Arithmetizable Type where
       (TMethod typ1', TMethod typ2') -> liftM TMethod $ typ1' =| typ2'
       (TBasic typ1', TBasic typ2') -> liftM TBasic $ typ1' =| typ2'
       _ -> bad
+  super (TBasic typ) = liftM TBasic $ super typ
+  super typ = throwError $ Err.notAComposedType typ
 
 instance Arithmetizable TypeMethod where
   (=|) typ1 typ2 = do
@@ -282,6 +284,8 @@ instance Arithmetizable TypeBasic where
       (TPrimitive typ1, TPrimitive typ2) -> liftM TPrimitive $ typ1 =| typ2
       (TComposed typ1, TComposed typ2) -> liftM TComposed $ typ1 =| typ2
       _ -> bad
+  super (TComposed typ) = liftM TComposed $ super typ
+  super typ = throwError $ Err.notAComposedType typ
 
 instance Arithmetizable TypePrimitive where
   (=|) typ1 typ2 = do
@@ -313,11 +317,15 @@ instance Arithmetizable TypeComposed where
       (TUser _, TNull) -> ok
       (TUser _, TUser _)
         | typ1 == typ2 -> ok
-        | otherwise ->
-          -- We will figure this out in the rule for =||=
-          bad
+        | otherwise -> do
+          typ2' <- super typ2 `catchError` const bad
+          typ1 =| typ2'
+          ok
       _ -> bad
-  super typ = (asks typeenvSuper >>= lookupM typ)
+  super typ = do
+    styp <- asks typeenvSuper >>= lookupM typ
+    guard (styp /= typ)
+    return styp
 
 (=?) :: (InheritsType a, InheritsType b) => a -> b -> TypeM a
 (=?) typ1 typ2 = toType typ1 =| toType typ2 >> return typ1
@@ -493,7 +501,9 @@ funE x = case x of
     typ <- etyp1 =||= etyp2
     isString <- Err.succeeded (TString =? typ)
     case isString of
-      True -> let rett = TComposed TString in return (EBinary rett opbin expr1' expr2', rett)
+      True -> case opbin of
+        ObPlus -> let rett = TComposed TString in return (EBinary rett opbin expr1' expr2', rett)
+        _ -> throwError Err.badArithType
       False -> do
         rett <- liftM TPrimitive $ case opbin of
           ObPlus -> TInt =? typ
