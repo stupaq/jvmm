@@ -1,6 +1,7 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 module Jvmm.Types.Internal where
 
 import Control.Monad.Identity
@@ -113,27 +114,35 @@ lookupM key map = case Map.lookup key map of
 
 -- TYPE RESOLUTION PRIMITIVES --
 --------------------------------
-class Typeable a where
-  typeof :: a -> TypeM Type
+class Typeable a b where
+  typeof :: a -> TypeM b
 
-instance Typeable VariableNum where
-  typeof num = (asks typeenvSymbols >>= lookupM (SVariable num)) `rethrow` Err.unknownSymbolType num
+instance Typeable VariableNum TypeBasic where
+  typeof num = do
+    TBasic typ <- asks typeenvSymbols >>= lookupM (SVariable num) `rethrow` Err.unknownSymbolType num
+    return typ
 
-instance Typeable MethodName where
-  typeof name = (asks typeenvSymbols >>= lookupM (SFunction name)) `rethrow` Err.unknownSymbolType name
+instance Typeable MethodName TypeMethod where
+  typeof name = do
+    TMethod typ <- asks typeenvSymbols >>= lookupM (SFunction name) `rethrow` Err.unknownSymbolType name
+    return typ
 
-class ComposedTypeable b where
-  typeof' :: TypeComposed -> b -> TypeM Type
+class ComposedTypeable a b where
+  typeof' :: TypeComposed -> a -> TypeM b
 
-instance ComposedTypeable MethodName where
-  typeof' typ name = builtinMethodType typ name
-    `mplus` (asks typeenvTypes >>= lookupM typ >>= lookupM (SMethod name))
-    `rethrow` Err.unknownMemberType typ name
+instance ComposedTypeable MethodName TypeMethod where
+  typeof' typ name = do
+    TMethod mtyp <- builtinMethodType typ name
+      `mplus` (asks typeenvTypes >>= lookupM typ >>= lookupM (SMethod name))
+      `rethrow` Err.unknownMemberType typ name
+    return mtyp
 
-instance ComposedTypeable FieldName where
-  typeof' typ name = builtinFieldType typ name
-    `mplus` (asks typeenvTypes >>= lookupM typ >>= lookupM (SField name))
-    `rethrow` Err.unknownMemberType typ name
+instance ComposedTypeable FieldName TypeBasic where
+  typeof' typ name = do
+    TBasic ftyp <- builtinFieldType typ name
+      `mplus` (asks typeenvTypes >>= lookupM typ >>= lookupM (SField name))
+      `rethrow` Err.unknownMemberType typ name
+    return ftyp
 
 -- TYPE ALTERNATION PRIMITIVES --
 ---------------------------------
@@ -201,10 +210,10 @@ class (Show a, InheritsType a) => Assertable a where
 instance (Show a, InheritsType a) => Assertable a where
   notAVoid typ = when (toType typ == toType TVoid) $ throwError noMsg
 
-notAPrimitive :: TypeBasic -> TypeM ()
+notAPrimitive :: TypeBasic -> TypeM TypeComposed
 notAPrimitive x = case x of
       TPrimitive _ -> throwError (Err.referencedPrimitive x)
-      TComposed _ -> return ()
+      TComposed typ -> return typ
 
 intWithinBounds :: Integer -> TypeM ()
 intWithinBounds n =
@@ -339,20 +348,20 @@ funS x = case x of
   SStore num expr -> do
     (expr', etyp) <- funE expr
     vtyp <- typeof num
-    vtyp =| toType etyp
+    vtyp =| etyp
     return $ SStore num expr'
   SStoreArray num expr1 expr2 -> do
     (expr1', etyp1) <- funE expr1
     (expr2', etyp2) <- funE expr2
     TPrimitive TInt =| etyp1 `rethrow` Err.indexType
     atyp <- typeof num
-    atyp =| toType (TArray etyp2)
+    atyp =| (TArray etyp2)
     return $ SStoreArray num expr1' expr2'
   SPutField num name expr -> do
     (expr', etyp) <- funE expr
     vtyp <- typeof num
     ftyp <- typeof' vtyp name
-    ftyp =| toType etyp
+    ftyp =| etyp
     return $ SPutField num name expr'
   -- Control statements
   SReturn expr -> do
@@ -361,7 +370,7 @@ funS x = case x of
     returns etyp
     return $ SReturn expr'
   SReturnV -> do
-    returns TVoid
+    returns $ TPrimitive TVoid
     return x
   SIf expr stmt -> do
     (expr', etyp) <- funE expr
@@ -382,7 +391,7 @@ funS x = case x of
   SThrow expr -> do
     (expr', etyp) <- funE expr
     -- We cannot throw primitive type
-    notAPrimitive etyp
+    etyp <- notAPrimitive etyp
     throws etyp
     return $ SThrow expr'
   STryCatch stmt1 typ num stmt2 -> do
@@ -441,7 +450,7 @@ funE x = case x of
   -- Object creation
   ENewObj typ -> do
     -- We cannot allocate a primitive on the heap
-    notAPrimitive typ
+    etyp <- notAPrimitive typ
     return (ENewObj typ, typ)
   ENewArr typ expr -> do
     notAVoid typ `rethrow` Err.voidNotIgnored
