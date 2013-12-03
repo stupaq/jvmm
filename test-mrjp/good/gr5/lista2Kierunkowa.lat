@@ -27,7 +27,7 @@ void listaTest(int dlugoscListy){
 	if (dlugoscListy >= 5){
 		Lista drugi = lista.nastepny;
 		printString("po spacerku wartosc drugiego elementu:");
-		printInt(lista.nastepny.wartosc);
+		printInt((lista.nastepny).wartosc);
 	} else {
 		return;
 	}

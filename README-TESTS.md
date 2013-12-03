@@ -13,8 +13,5 @@ Test cases that MUST FAIL in current implementation:
   - exceptions001
   - exceptions002
   - gchiddenstack
-+ test-mrjp (the following tests fail due to different member access syntax)
-  - polymorphism
-  - lista2Kierunkowa
 
 All other test cases MUST PASS with current implementation.

@@ -57,7 +57,7 @@ int main(){
     tab[1] = new D;
     tab[2] = new D;
     for (B elem : tab) {
-        fun2(elem).print();
+        (fun2(elem)).print();
     }
 
     // Porownywanie z podtypem.
