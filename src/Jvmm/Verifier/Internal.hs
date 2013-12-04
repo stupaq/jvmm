@@ -74,7 +74,7 @@ funH classes = do
   (gets verifierstateMain >>= guard) `rethrow` Err.missingMain
 
 funM, funSM :: Method -> VerifierM ()
-funM method@Method { methodBody = stmt, methodType = typ , methodLocation = loc } =
+funM Method { methodBody = stmt, methodType = typ , methodLocation = loc } =
   Err.withLocation loc $ do
     let TypeMethod rett _ _ = typ
     checkReturned rett $ funS stmt
@@ -85,13 +85,16 @@ funSM method@Method { methodLocation = loc} = Err.withLocation loc $ do
 funS :: Stmt -> VerifierM ()
 funS x = case x of
   SBlock stmts -> mapM_ funS stmts
+  -- Memory access
+  -- Control statements
   SReturn _ _ -> setReturned True
+  SReturnV -> setReturned True
   SIf ELitTrue stmt -> funS stmt -- TODO analyser should resolve this
   SIf _ stmt ->
     -- Whether this statement was executed depends on runtime evaluation of expression
     clearReturned $ funS stmt
-  SIfElse ELitTrue stmt1 stmt2 -> funS stmt1 -- TODO analyser should resolve this
-  SIfElse ELitFalse stmt1 stmt2 -> funS stmt2 -- TODO analyser should resolve this
+  SIfElse ELitTrue stmt1 _ -> funS stmt1 -- TODO analyser should resolve this
+  SIfElse ELitFalse _ stmt2 -> funS stmt2 -- TODO analyser should resolve this
   SIfElse _ stmt1 stmt2 -> do
     (_, retd1) <- probeReturned $ funS stmt1
     (_, retd2) <- probeReturned $ funS stmt2
@@ -113,10 +116,13 @@ funS x = case x of
     (_, retd1) <- probeReturned $ funS stmt1
     (_, retd2) <- probeReturned $ funS stmt2
     orReturned (retd1 && retd2)
-  SReturnV -> setReturned True
+  -- Special function bodies
   SBuiltin -> setReturned True
   SInherited -> setReturned True
+  -- Metainformation carriers
   SMetaLocation loc stmts -> Err.withLocation loc (mapM_ funS stmts)
-  T_SDeclVar _ _ -> error $ Err.unusedBranch x
+  -- These statements will be replaced with ones caring more context in subsequent phases
+  T_SDeclVar _ _ -> Err.unreachable x
+  -- Nothing to do here
   _ -> return ()
 

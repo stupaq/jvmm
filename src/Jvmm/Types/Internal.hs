@@ -1,7 +1,7 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
 module Jvmm.Types.Internal where
@@ -16,7 +16,7 @@ import qualified Data.List as List
 import qualified Data.Traversable as Traversable
 
 import qualified Jvmm.Errors as Err
-import Jvmm.Errors (doOrThrow, rethrow, ErrorInfoT)
+import Jvmm.Errors (orThrow, rethrow, ErrorInfoT)
 import Jvmm.Builtins
 import Jvmm.Trans.Output
 import Jvmm.Hierarchy.Output
@@ -129,12 +129,12 @@ class Typeable a b where
 
 instance Typeable VariableNum TypeBasic where
   typeof VariableThis = liftM TComposed this
-  typeof num@(VariableNum _) = doOrThrow (Err.unknownSymbolType num) $ do
+  typeof num@(VariableNum _) = orThrow (Err.unknownSymbolType num) $ do
     TBasic typ <- lookupS (SVariable num)
     return typ
 
 instance Typeable MethodName TypeMethod where
-  typeof name = doOrThrow (Err.unknownSymbolType name) $ do
+  typeof name = orThrow (Err.unknownSymbolType name) $ do
     TMethod typ <- lookupS (SFunction name)
     return typ
 
@@ -148,12 +148,12 @@ class ComposedTypeable a b c where
   typeof' :: a -> b -> TypeM c
 
 instance ComposedTypeable TypeComposed MethodName TypeMethod where
-  typeof' typ name = doOrThrow (Err.unknownMemberType typ name) $ do
+  typeof' typ name = orThrow (Err.unknownMemberType typ name) $ do
     TMethod mtyp <- builtinMethodType typ name `mplus` lookupC typ (SMethod name)
     return mtyp
 
 instance ComposedTypeable TypeComposed FieldName TypeBasic where
-  typeof' typ name = doOrThrow (Err.unknownMemberType typ name) $ do
+  typeof' typ name = orThrow (Err.unknownMemberType typ name) $ do
     TBasic ftyp <- builtinFieldType typ name `mplus` lookupC typ (SField name)
     return ftyp
 
@@ -197,7 +197,7 @@ called :: TypeMethod -> [Variable] -> [Variable] -> TypeM a -> TypeM a
 called typ@(TypeMethod returnType argumentTypes exceptions) arguments localVariables action = do
   forM_ argumentTypes $ \argt -> notAVoid (toType argt) `rethrow` Err.voidArg
   catches exceptions . declareAll arguments . declareAll localVariables . enterFunction typ $ action
-called x _ _ _ = error $ Err.unusedBranch "attempt to call not a functional type"
+called _ _ _ _ = Err.unreachable "attempt to call not a functional type"
 
 catches :: [TypeComposed] -> TypeM a -> TypeM a
 catches types = local (\env -> env {
@@ -210,7 +210,7 @@ returns typ = do
   case ftyp of
     Just (TypeMethod rett _ _) -> rett =| typ >> return ()
     Nothing -> throwError Err.danglingReturn
-    _ -> error $ Err.unusedBranch "typeenvFunction was not of functional type"
+    _ -> Err.unreachable "typeenvFunction was not of functional type"
 
 this :: TypeM TypeComposed
 this = asks typeenvThis >>= \x -> case x of
@@ -235,7 +235,7 @@ invoke ftyp@(TypeMethod ret args excepts) etypes = do
 
 -- TYPE ASSERTIONS --
 ---------------------
-class (Show a, InheritsType a) => Assertable a where
+class Assertable a where
   notAVoid :: a -> TypeM ()
 
 instance (Show a, InheritsType a) => Assertable a where
@@ -483,11 +483,11 @@ funS x = case x of
   -- Metainformation carriers
   SMetaLocation loc stmts -> stmtMetaLocation loc $ mapM funS stmts
   -- These statements will be replaced with ones caring more context in subsequent phases
-  T_SDeclVar _ _ -> error $ Err.unusedBranch x
-  T_SAssign _ _ -> error $ Err.unusedBranch x
-  T_SAssignArr _ _ _ -> error $ Err.unusedBranch x
-  T_SAssignFld _ _ _ -> error $ Err.unusedBranch x
-  T_STryCatch _ _ _ _ -> error $ Err.unusedBranch x
+  T_SDeclVar _ _ -> Err.unreachable x
+  T_SAssign _ _ -> Err.unreachable x
+  T_SAssignArr _ _ _ -> Err.unreachable x
+  T_SAssignFld _ _ _ -> Err.unreachable x
+  T_STryCatch _ _ _ _ -> Err.unreachable x
 
 funE :: Expr -> TypeM (Expr, TypeBasic)
 funE x = case x of
@@ -570,5 +570,5 @@ funE x = case x of
               _ -> return TInt
         return (EBinary opbin expr1' expr2' rett, rett)
   -- These expressions will be replaced with ones caring more context in subsequent phases
-  T_EVar _ -> error $ Err.unusedBranch x
+  T_EVar _ -> Err.unreachable x
 

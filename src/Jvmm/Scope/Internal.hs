@@ -114,24 +114,31 @@ instance Resolvable MethodName where
 
 instance Resolvable FieldName where
   dynamic name = asks scopeenvInstance >>= containsM (SField name)
+  static = Err.unreachable
 
 instance Resolvable Type where
+  dynamic = Err.unreachable
   static (TMethod typ) = static typ
   static (TBasic typ) = static typ
 
 instance Resolvable TypeMethod where
+  dynamic = Err.unreachable
   static (TypeMethod rett argst excepts) = do
     static rett
     forM_ argst static
+    forM_ excepts static
 
 instance Resolvable TypeBasic where
+  dynamic = Err.unreachable
   static (TPrimitive typ) = static typ
   static (TComposed typ) = static typ
 
 instance Resolvable TypePrimitive where
+  dynamic = Err.unreachable
   static _ = return ()
 
 instance Resolvable TypeComposed where
+  dynamic = Err.unreachable
   static typ@(TUser _) = asks scopeenvStatic >>= containsM (SType typ)
   static _ = return ()
 
@@ -218,7 +225,7 @@ scopeStatic method@Method { methodName = name, methodLocation = loc } =
     scope method
 
 instance Scopeable Method where
-  scope method@(Method typ name args stmt origin loc []) = do
+  scope method@(Method typ name args stmt origin loc _) = Err.withLocation loc $ do
     static typ
     static origin
     enterMethod $ do
@@ -242,13 +249,13 @@ instance Scopeable Stmt where
       stmts' <- newLocalScope (mapM scope stmts)
       return $ SBlock stmts'
     -- Memory access
-    SStore _ _ _ -> error $ Err.unusedBranch x
-    SStoreArray _ _ _ _ -> error $ Err.unusedBranch x
+    SStore _ _ _ -> Err.unreachable x
+    SStoreArray _ _ _ _ -> Err.unreachable x
     SPutField VariableThis field expr _ -> do
       expr' <- scope expr
       dynamic field
       return $ SPutField VariableThis field expr' undefined
-    SPutField _ _ _ _ -> error $ Err.unusedBranch x
+    SPutField _ _ _ _ -> Err.unreachable x
     -- Control statements
     SReturn expr _ -> do
       expr' <- scope expr
@@ -270,7 +277,7 @@ instance Scopeable Stmt where
     SThrow expr -> do
       expr' <- scope expr
       return $ SThrow expr'
-    STryCatch _ _ _ _ -> error $ Err.unusedBranch x
+    STryCatch _ _ _ _ -> Err.unreachable x
     -- Special function bodies
     SBuiltin -> return SBuiltin
     SInherited -> return SInherited
@@ -324,7 +331,7 @@ instance Scopeable Expr where
     ELitInt _ -> return x
     -- Memory access
     ELoad VariableThis _ -> return x
-    ELoad _ _ -> error $ Err.unusedBranch x
+    ELoad _ _ -> Err.unreachable x
     EArrayLoad expr1 expr2 _ -> do
       expr1' <- scope expr1
       expr2' <- scope expr2

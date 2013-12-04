@@ -44,7 +44,7 @@ prepareClassDiff loc clazz@(Class { classType = typ }) super = Err.withLocation 
 hierarchy :: CompilationUnit -> ErrorInfoT Identity ClassHierarchy
 hierarchy (CompilationUnit allClasses) = case allClasses of
   (_, objectDiff):classes -> visit objectSuperClass classes objectDiff
-  _ -> error $ Err.unusedBranch "no primary object diff"
+  _ -> Err.unreachable "no primary object diff"
 
 -- OBJECT CLASS --
 ------------------

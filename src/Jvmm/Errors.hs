@@ -42,8 +42,8 @@ rethrow :: (MonadError e m) => m a -> e -> m a
 action `rethrow` err = action `catchError` (\_ -> throwError err)
 
 -- Discards error and throws provided one
-doOrThrow :: (MonadError e m) => e -> m a -> m a
-doOrThrow = flip (rethrow)
+orThrow :: (MonadError e m) => e -> m a -> m a
+orThrow = flip (rethrow)
 
 -- Discards error and returns provided value
 orReturn :: (MonadError e m) => m a -> a -> m a
@@ -126,5 +126,5 @@ fromJustFailure ctx = Dangling $ "fromJust failed in context: " ++ (show ctx)
 
 -- LOGIC ERRORS --
 ------------------
-unusedBranch ctx = "unused pattern branch entered: " ++ (show ctx)
+unreachable ctx = error $ "unused pattern branch entered: " ++ (show ctx)
 
