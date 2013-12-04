@@ -8,8 +8,11 @@ import Jvmm.Errors (ErrorInfoT)
 import Jvmm.Trans.Output
 import Jvmm.Hierarchy.Output
 
+import Text.Show.Pretty (ppShow)
+
 -- MAIN --
 ----------
 emitJvm :: ClassHierarchy -> ErrorInfoT Identity [JasminAsm]
-emitJvm = emitClasses
+emitJvm = error . ppShow
+--emitJvm = emitClasses
 

@@ -49,7 +49,7 @@ compileJvm :: Workflow [JasminAsm]
 compileJvm str = check str >>= emitJvm
 
 -- Defaault workflow
-defaultWorkflow = compileJvm
+defaultWorkflow = check
 
 -- OUTPUT HELPERS --
 --------------------

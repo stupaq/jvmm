@@ -148,13 +148,15 @@ class ComposedTypeable a b c where
   typeof' :: a -> b -> TypeM c
 
 instance ComposedTypeable TypeComposed MethodName TypeMethod where
-  typeof' typ name = orThrow (Err.unknownMemberType typ name) $ do
-    TMethod mtyp <- builtinMethodType typ name `mplus` lookupC typ (SMethod name)
+  typeof' typ name@(MethodName str) = orThrow (Err.unknownMemberType typ name) $ do
+    TMethod mtyp <- builtinMethodType (MethodDescriptor typ str)
+        `mplus` lookupC typ (SMethod name)
     return mtyp
 
 instance ComposedTypeable TypeComposed FieldName TypeBasic where
-  typeof' typ name = orThrow (Err.unknownMemberType typ name) $ do
-    TBasic ftyp <- builtinFieldType typ name `mplus` lookupC typ (SField name)
+  typeof' typ name@(FieldName str) = orThrow (Err.unknownMemberType typ name) $ do
+    TBasic ftyp <- builtinFieldType (FieldDescriptor typ str)
+        `mplus` lookupC typ (SField name)
     return ftyp
 
 instance ComposedTypeable TypeBasic FieldName TypeBasic where
@@ -347,16 +349,11 @@ instance Arithmetizable TypeComposed where
 class Resolvable a b where
   resolve :: a -> b -> b
 
-resolveComposed :: TypeComposed -> String
-resolveComposed (TUser (ClassName typ)) = typ ++ "/"
-resolveComposed TString = "java/lang/String/"
-resolveComposed TObject = "JvmmObject/"
-
 instance Resolvable TypeComposed MethodName where
-  resolve typ (MethodName name) = MethodDescriptor $ resolveComposed typ ++ name
+  resolve typ (MethodName name) = MethodDescriptor typ name
 
 instance Resolvable TypeComposed FieldName where
-  resolve typ (FieldName name) = FieldDescriptor $ resolveComposed typ ++ name
+  resolve typ (FieldName name) = FieldDescriptor typ name
 
 instance Resolvable TypeBasic MethodName where
   resolve (TComposed typ) name = resolve typ name

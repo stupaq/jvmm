@@ -6,6 +6,7 @@
 module Jvmm.JvmEmitter.Internal where
 import Jvmm.JvmEmitter.Output
 
+import Control.Exception
 import Control.Monad.Identity
 import Control.Monad.Error
 import Control.Monad.Reader
@@ -30,11 +31,55 @@ emitClasses = execWriterT . Traversable.mapM processClass
     processClass :: Class -> WriterT [JasminAsm] (ErrorInfoT Identity) ()
     processClass clazz = (tell . (:[])) =<< lift (runEmitterM $ emit clazz)
 
+-- EMITTING STATE --
+--------------------
+data EmitterState = EmitterState {
+    emitterstateStackMax :: Int
+} deriving (Show)
+
+emitterstate0 = EmitterState 0
+
+-- EMITTING STATE --
+--------------------
+data EmitterEnv = EmitterEnv {
+    emitterenvStack :: Int
+} deriving (Show)
+
+emitterenv0 = EmitterEnv 0
+
 -- EMITTER MONAD --
 -------------------
-type EmitterM = (ErrorInfoT Identity)
+type EmitterM = StateT EmitterState (ReaderT EmitterEnv (WriterT [JasminLine] (ErrorInfoT Identity)))
 runEmitterM :: EmitterM a -> ErrorInfoT Identity a
-runEmitterM m = m
+runEmitterM action = do
+  (res, log) <- runWriterT (runReaderT (evalStateT action emitterstate0) emitterenv0)
+  assert (log == []) (return res)
+
+pushes :: EmitterM a -> EmitterM a
+pushes action = do
+  stack <- fmap (+1) $ asks emitterenvStack
+  local (\env -> env { emitterenvStack = stack }) $ do
+    stackMax <- gets emitterstateStackMax
+    modify (\st -> st { emitterstateStackMax = maximum [stack, stackMax] })
+    action
+
+newStack :: EmitterM ()
+newStack = modify (\st -> st { emitterstateStackMax = 0 })
+
+nothing :: EmitterM ()
+nothing = return ()
+
+inss :: [String] -> EmitterM ()
+inss = tell . map JasminInstruction
+
+ins :: String -> EmitterM ()
+ins = inss . return
+
+dir :: String -> EmitterM ()
+dir = tell . return . JasminDirective
+
+com :: String -> EmitterM ()
+com = tell . return . JasminComment
 
 -- TREE TRAVERSING --
 ---------------------
@@ -42,6 +87,11 @@ class Emitable a b where
   emit :: a -> EmitterM b
 
 instance Emitable Class JasminAsm where
+  emit clazz@(Class TObject super fields methods sMethods _) =
+    toJasminClass "TObject" $ do
+      dir ".class public "
+    where
+      toJasminClass name = fmap (JasminAsm name . snd) . listen
 
 instance Emitable Field () where
 
@@ -53,8 +103,8 @@ instance Emitable Method () where
 
 instance Emitable Stmt () where
   emit x = case x of
-    SEmpty -> undefined
-    SBlock stmts -> undefined
+    SEmpty -> nothing
+    SBlock stmts -> mapM_ (emit :: Stmt -> EmitterM ()) stmts
     SExpr expr -> undefined
     -- Memory access
     SStore num expr _ -> undefined

@@ -33,7 +33,7 @@ data Field = Field {
 
 data FieldName =
     FieldName String
-  | FieldDescriptor String
+  | FieldDescriptor TypeComposed String
   deriving (Show, Eq, Ord)
 
 fieldFromVariable :: VariableName -> FieldName
@@ -51,7 +51,7 @@ data Method = Method {
 
 data MethodName =
     MethodName String
-  | MethodDescriptor String
+  | MethodDescriptor TypeComposed String
   deriving (Show, Eq, Ord)
 
 data Variable = Variable {
