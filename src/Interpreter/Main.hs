@@ -24,7 +24,8 @@ import Jvmm.Scope
 import Jvmm.Types
 import Jvmm.Analyser
 import Jvmm.Verifier
---import Semantics.Virtuals
+import Jvmm.JvmEmitter
+import Jvmm.JvmEmitter.Output
 --import Semantics.Runtime
 
 -- WORKFLOWS --
@@ -43,8 +44,12 @@ parse str =
 check :: Workflow ClassHierarchy
 check str = parse str >>= trans >>= hierarchy >>= scope >>= typing >>= analyse >>= verify
 
+-- Performs all static analysis and emits Jasmin assembly
+compileJvm :: Workflow [JasminAsm]
+compileJvm str = check str >>= emitJvm
+
 -- Defaault workflow
-deflt = check
+defaultWorkflow = compileJvm
 
 -- OUTPUT HELPERS --
 --------------------
@@ -78,7 +83,7 @@ main = do
     "-p":f:[] -> runReaderT (processFile parse f) Info
     "-cv":f:[] -> runReaderT (processFile check f) Debug
     "-c":f:[] -> runReaderT (processFile check f) Info
-    "-v":f:[] -> runReaderT (processFile deflt f) Debug
-    f:[] -> runReaderT (processFile deflt f) Info
+    "-v":f:[] -> runReaderT (processFile defaultWorkflow f) Debug
+    f:[] -> runReaderT (processFile defaultWorkflow f) Info
     _ -> hPutStrLn stderr "ERROR\n\nbad options format"
 
