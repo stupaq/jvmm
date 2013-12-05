@@ -1,5 +1,5 @@
 BNFC := $(wildcard ../docs/*.cf)
-MAIN := Interpreter/Main
+MAIN := Jvmm/Main
 
 PDFLATEX := pdflatex -interaction=batchmode
 GHCWARN := -W -fno-warn-unused-do-bind -fno-warn-unused-imports

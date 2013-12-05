@@ -1,5 +1,5 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
-module Main (main) where
+module Jvmm (main) where
 
 import System.IO (stderr, stdout, hPutStrLn)
 import System.Exit (exitSuccess, exitFailure)
