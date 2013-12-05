@@ -5,6 +5,7 @@ import Jvmm.Trans.Output (ClassName(..))
 -- JASMIN ASSEMBLER INPUT --
 ----------------------------
 data JasminAsm = JasminAsm String [JasminLine]
+  deriving (Show)
 
 data JasminLine =
     JasminDirective String

@@ -117,7 +117,7 @@ intOverflow = Dangling $ "integer overflow"
 isConstant id = Dangling $ "constant cannot be modified: " ++ (show id)
 
 -- Terminal error issued by a user
-userError = Dangling $ "error called"
+userIssuedError = Dangling $ "error called"
 uncaughtTopLevel obj = Dangling $ "uncaught top level exception: " ++ (show obj)
 
 -- Impossible situations

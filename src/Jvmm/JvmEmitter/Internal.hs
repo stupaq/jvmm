@@ -25,11 +25,13 @@ import Jvmm.Hierarchy.Output
 
 -- EMITTING CLASS HIERARCHY --
 ------------------------------
-emitClasses :: ClassHierarchy -> ErrorInfoT Identity [JasminAsm]
-emitClasses = execWriterT . Traversable.mapM processClass
+emitTopLevelStatics :: String -> ClassHierarchy -> ErrorInfoT Identity [JasminAsm]
+emitTopLevelStatics className = execWriterT . Traversable.mapM processClass
   where
     processClass :: Class -> WriterT [JasminAsm] (ErrorInfoT Identity) ()
-    processClass clazz = (tell . (:[])) =<< lift (runEmitterM $ emit clazz)
+    processClass clazz@(Class {}) =
+      let env = emitterenv0 { emitterenvOverrideClass = Just (ClassName className) }
+      in tell . (:[]) =<< lift (runEmitterM  env $ emit clazz)
 
 -- EMITTING STATE --
 --------------------
@@ -39,21 +41,31 @@ data EmitterState = EmitterState {
 
 emitterstate0 = EmitterState 0
 
--- EMITTING STATE --
+-- EMITTING ENV --
 --------------------
 data EmitterEnv = EmitterEnv {
     emitterenvStack :: Int
+  , emitterenvOverrideClass :: Maybe ClassName
 } deriving (Show)
 
-emitterenv0 = EmitterEnv 0
+emitterenv0 = EmitterEnv 0 Nothing
 
 -- EMITTER MONAD --
 -------------------
 type EmitterM = StateT EmitterState (ReaderT EmitterEnv (WriterT [JasminLine] (ErrorInfoT Identity)))
-runEmitterM :: EmitterM a -> ErrorInfoT Identity a
-runEmitterM action = do
-  (res, log) <- runWriterT (runReaderT (evalStateT action emitterstate0) emitterenv0)
-  assert (log == []) (return res)
+runEmitterM :: EmitterEnv -> EmitterM a -> ErrorInfoT Identity a
+runEmitterM env action = do
+  (res, log) <- runWriterT (runReaderT (evalStateT action emitterstate0) env)
+  assert (log == []) $ return res
+
+notImplemented :: a
+notImplemented = error "Not implemented"
+
+intercept :: EmitterM a -> EmitterM [JasminLine]
+intercept action =
+  censor (const []) $ do
+    (_, log) <- listen action
+    return log
 
 pushes :: EmitterM a -> EmitterM a
 pushes action = do
@@ -87,11 +99,22 @@ class Emitable a b where
   emit :: a -> EmitterM b
 
 instance Emitable Class JasminAsm where
-  emit clazz@(Class TObject super fields methods sMethods _) =
-    toJasminClass "TObject" $ do
-      dir ".class public "
+  -- TObject is special, we have to translate it to Java's Object
+  emit clazz@(Class TObject super [] [] statics _) = do
+    className <- asks emitterenvOverrideClass
+    case className of
+      Just (ClassName str) -> toJasminClass str $ do
+        dir $ ".class public " ++ str
+        -- TODO
+      Nothing -> notImplemented
     where
-      toJasminClass name = fmap (JasminAsm name . snd) . listen
+      toJasminClass name = fmap (JasminAsm name) . intercept
+  emit _ = notImplemented
+
+instance Emitable TypeComposed String where
+  emit TObject = return "java/lang/Object"
+  emit TString = return "java/lang/String"
+  emit _ = notImplemented
 
 instance Emitable Field () where
 

@@ -1,14 +1,21 @@
-module Main where
+module Main (main) where
 
 import System.IO (stderr, stdout, hPutStrLn)
 import System.Exit (exitSuccess, exitFailure)
 import System.Environment (getArgs, getProgName)
+import qualified System.FilePath as FilePath
+import System.Console.GetOpt
+
+import Text.Show.Pretty (ppShow)
+
+import qualified Data.List as List
 
 import Control.Monad
 import Control.Monad.Error
 import Control.Monad.Identity
 import Control.Monad.Reader
 import Control.Monad.IO.Class
+import Control.Applicative
 
 import Syntax.AbsJvmm (Program)
 import Syntax.ParJvmm (myLexer, pProgram)
@@ -30,60 +37,101 @@ import Jvmm.JvmEmitter.Output
 
 -- WORKFLOWS --
 ---------------
-type Workflow a = String -> ErrorInfoT Identity a
+type WorkflowM a = (ReaderT Options IO) a
+type Workflow a = a -> WorkflowM ()
+type Process a b = a -> ErrorInfoT Identity b
 
--- Performs parsing of input program
-parse :: Workflow Program
-parse str =
-  let ts = myLexer str
-  in case pProgram ts of
-    Bad err -> throwError $ Dangling err
-    Ok tree -> return tree
-
--- Performs all static checking and semantics analysis
-check :: Workflow ClassHierarchy
-check str = parse str >>= trans >>= hierarchy >>= scope >>= typing >>= analyse >>= verify
-
--- Performs all static analysis and emits Jasmin assembly
-compileJvm :: Workflow [JasminAsm]
-compileJvm str = check str >>= emitJvm
-
--- Defaault workflow
-defaultWorkflow = check
-
--- OUTPUT HELPERS --
---------------------
-data Verbosity = Debug | Info | Warn | Error deriving (Eq, Ord, Show)
-
-printl :: Verbosity -> String -> (ReaderT Verbosity IO) ()
-printl v s = do
-  verb <- ask
-  if v >= verb then liftIO $ hPutStrLn stderr s
-  else return ()
-
--- MAIN --
-----------
-processFile :: Workflow a -> FilePath -> (ReaderT Verbosity IO) ()
-processFile workflow f = do
-  str <- lift $ readFile f
-  case runErrorInfoM $ workflow str of
+toWorkflow :: Process a b -> (Workflow b) -> Workflow a
+toWorkflow proc sink input =
+  case runErrorInfoM $ proc input of
     Left err -> do
       printl Error $ "ERROR\n"
       printl Error $ show err
       lift exitFailure
-    Right _ -> do
+    Right res -> do
       printl Warn $ "OK\n"
+      sink res
       lift exitSuccess
 
+nullSink :: Workflow a
+nullSink = const (return ())
+
+-- Performs parsing of input program
+parseProcess :: Process String Program
+parseProcess str =
+  let ts = myLexer str
+  in case pProgram ts of
+    Bad err -> throwError $ Dangling err
+    Ok tree -> return tree
+parse :: Workflow String
+parse = toWorkflow parseProcess nullSink
+
+-- Performs all static checking and semantics analysis
+checkProcess :: Process String ClassHierarchy
+checkProcess str =
+  parseProcess str >>= trans >>= hierarchy >>= scope >>= typing >>= analyse >>= verify
+check :: Workflow String
+check = toWorkflow checkProcess nullSink
+
+-- Performs all static analysis and emits Jasmin assembly
+compileJvm :: Workflow String
+compileJvm =
+  toWorkflow checkProcess $ \hierarchy -> do
+    source <- asks source
+    let name = FilePath.takeBaseName source
+    let dest = FilePath.dropFileName source
+    undefined
+
+-- Defaault workflow
+defaultWorkflow = compileJvm
+
+-- OUTPUT HELPERS --
+--------------------
+data Verbosity = Debug | Info | Warn | Error
+  deriving (Eq, Ord, Show)
+
+printl :: Verbosity -> String -> WorkflowM ()
+printl v s = do
+  verb <- asks verbosity
+  if v >= verb then liftIO $ hPutStrLn stderr s
+  else return ()
+
+-- GENERAL OPTIONS --
+---------------------
+data Options = Options {
+    verbosity :: Verbosity
+  , workflow :: Workflow String
+  , source :: String
+}
+options0 = Options {
+    verbosity = Info
+  , workflow = defaultWorkflow
+  , source = undefined
+}
+
+optionsDef :: [OptDescr (Options -> Options)]
+optionsDef = [
+    Option ['v'] [] (NoArg $ \opts -> opts { verbosity = Debug }) "verbose output"
+  , Option ['q'] [] (NoArg $ \opts -> opts { verbosity = Warn }) "quiet output"
+  , Option ['p'] [] (NoArg $ \opts -> opts { workflow = parse }) "parse code"
+  , Option ['c'] [] (NoArg $ \opts -> opts { workflow = check }) "preform static analysis"
+  , Option ['j'] [] (NoArg $ \opts -> opts { workflow = compileJvm }) "preform static analysis"
+  ]
+
+parseOptions :: IO Options
+parseOptions = do
+  prog <- getProgName
+  let header = "Usage: " ++ prog ++ " [OPTION...] files..."
+  argv <- getArgs
+  case getOpt Permute optionsDef argv of
+    (opts, [source], []) -> return (List.foldl (flip Prelude.id) (options0 { source = source }) opts)
+    _ -> ioError (userError (usageInfo header optionsDef))
+
+-- MAIN --
+----------
 main :: IO ()
 main = do
-  args <- getArgs
-  case take 2 args of
-    "-pv":f:[] -> runReaderT (processFile parse f) Debug
-    "-p":f:[] -> runReaderT (processFile parse f) Info
-    "-cv":f:[] -> runReaderT (processFile check f) Debug
-    "-c":f:[] -> runReaderT (processFile check f) Info
-    "-v":f:[] -> runReaderT (processFile defaultWorkflow f) Debug
-    f:[] -> runReaderT (processFile defaultWorkflow f) Info
-    _ -> hPutStrLn stderr "ERROR\n\nbad options format"
+  opts <- parseOptions
+  str <- readFile (source opts)
+  runReaderT (workflow opts $ str) opts
 

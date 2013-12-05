@@ -12,7 +12,6 @@ import Text.Show.Pretty (ppShow)
 
 -- MAIN --
 ----------
-emitJvm :: ClassHierarchy -> ErrorInfoT Identity [JasminAsm]
-emitJvm = error . ppShow
---emitJvm = emitClasses
+emitJvm :: String -> ClassHierarchy -> ErrorInfoT Identity [JasminAsm]
+emitJvm source = (error . ppShow) <=< emitTopLevelStatics source
 
