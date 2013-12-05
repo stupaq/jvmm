@@ -1,9 +1,10 @@
+{-# LANGUAGE MultiParamTypeClasses #-}
 module Main (main) where
 
 import System.IO (stderr, stdout, hPutStrLn)
 import System.Exit (exitSuccess, exitFailure)
 import System.Environment (getArgs, getProgName)
-import qualified System.FilePath as FilePath
+import System.FilePath ((</>), dropFileName, takeBaseName)
 import System.Console.GetOpt
 
 import Text.Show.Pretty (ppShow)
@@ -37,12 +38,13 @@ import Jvmm.JvmEmitter.Output
 
 -- WORKFLOWS --
 ---------------
-type WorkflowM a = (ReaderT Options IO) a
-type Workflow a = a -> WorkflowM ()
-type Process a b = a -> ErrorInfoT Identity b
+type InteractionM a = (ReaderT Options IO) a
+type Interaction a = a -> InteractionM ()
+type TransformationM a = (ErrorInfoT Identity) a
+type Transformation a b = a -> TransformationM b
 
-toWorkflow :: Process a b -> (Workflow b) -> Workflow a
-toWorkflow proc sink input =
+(=>>) :: Transformation a b -> (Interaction b) -> Interaction a
+(=>>) proc sink input =
   case runErrorInfoM $ proc input of
     Left err -> do
       printl Error $ "ERROR\n"
@@ -53,44 +55,52 @@ toWorkflow proc sink input =
       sink res
       lift exitSuccess
 
-nullSink :: Workflow a
+(=>|) :: Interaction a -> a -> InteractionM ()
+(=>|) = ($)
+
+nullSink :: Interaction a
 nullSink = const (return ())
 
 -- Performs parsing of input program
-parseProcess :: Process String Program
-parseProcess str =
+parseT :: Transformation String Program
+parseT str =
   let ts = myLexer str
   in case pProgram ts of
     Bad err -> throwError $ Dangling err
     Ok tree -> return tree
-parse :: Workflow String
-parse = toWorkflow parseProcess nullSink
+parse :: Interaction String
+parse = parseT =>> nullSink
 
 -- Performs all static checking and semantics analysis
-checkProcess :: Process String ClassHierarchy
-checkProcess str =
-  parseProcess str >>= trans >>= hierarchy >>= scope >>= typing >>= analyse >>= verify
-check :: Workflow String
-check = toWorkflow checkProcess nullSink
+checkT :: Transformation String ClassHierarchy
+checkT str =
+  parseT str >>= trans >>= hierarchy >>= scope >>= typing >>= analyse >>= verify
+check :: Interaction String
+check = checkT =>> nullSink
 
 -- Performs all static analysis and emits Jasmin assembly
-compileJvm :: Workflow String
-compileJvm =
-  toWorkflow checkProcess $ \hierarchy -> do
-    source <- asks source
-    let name = FilePath.takeBaseName source
-    let dest = FilePath.dropFileName source
-    undefined
+compileJvm :: Interaction String
+compileJvm = checkT =>> compile
+  where
+    compile hierarchy = do
+      source <- asks source
+      let name = takeBaseName source
+      let dest = dropFileName source
+      let writeOne = \(JasminAsm clazz lines) -> do
+          let file = dest </> clazz
+          lift $ writeFile file ""
+          mapM_ (lift . appendFile file . toJasmin) lines
+      emitJvm name =>> (mapM_ writeOne) =>| hierarchy
 
 -- Defaault workflow
-defaultWorkflow = compileJvm
+defaultInteraction = compileJvm
 
 -- OUTPUT HELPERS --
 --------------------
 data Verbosity = Debug | Info | Warn | Error
   deriving (Eq, Ord, Show)
 
-printl :: Verbosity -> String -> WorkflowM ()
+printl :: Verbosity -> String -> InteractionM ()
 printl v s = do
   verb <- asks verbosity
   if v >= verb then liftIO $ hPutStrLn stderr s
@@ -100,12 +110,12 @@ printl v s = do
 ---------------------
 data Options = Options {
     verbosity :: Verbosity
-  , workflow :: Workflow String
+  , workflow :: Interaction String
   , source :: String
 }
 options0 = Options {
     verbosity = Info
-  , workflow = defaultWorkflow
+  , workflow = defaultInteraction
   , source = undefined
 }
 

@@ -119,7 +119,7 @@ instance Emitable TypeComposed String where
 instance Emitable Field () where
 
 emitInstance, emitStatic :: Method -> EmitterM ()
-emitInstance = undefined
+emitInstance = notImplemented
 emitStatic = undefined
 
 instance Emitable Method () where
@@ -139,8 +139,8 @@ instance Emitable Stmt () where
     SIf expr stmt -> undefined
     SIfElse expr stmt1 stmt2 -> undefined
     SWhile expr stmt -> undefined
-    SThrow expr -> undefined
-    STryCatch stmt1 typ num stmt2 -> undefined
+    SThrow expr -> notImplemented
+    STryCatch stmt1 typ num stmt2 -> notImplemented
     -- Special function bodies
     SBuiltin -> undefined
     SInherited -> undefined

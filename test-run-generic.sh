@@ -5,6 +5,7 @@ PARSEEXT=".txt"
 
 # what to run
 EXEC="./latc"
+CHECK="./latc -c"
 PARSE="./latc -p"
 
 # memory limit (gc testing)
@@ -108,7 +109,7 @@ function run_example() {
 
 function check_example() {
   echo -ne "CHECK\t$1: "
-  $EXEC $1 1>$OUT 2>$ERR
+  $CHECK $1 1>$OUT 2>$ERR
   status=$?
   if [[ $1 == */good* ]]; then
     check $status
