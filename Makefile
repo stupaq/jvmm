@@ -5,7 +5,7 @@ PDFLATEX := pdflatex -interaction=batchmode
 
 all:
 	$(MAKE) -C src/ all
-	ln -sf src/Interpreter/Main ./latc
+	ln -sf src/Jvmm/Main ./latc
 
 docs: $(DOCS)
 $(DOCS): %.pdf : %.md

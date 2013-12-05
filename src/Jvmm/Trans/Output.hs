@@ -1,3 +1,4 @@
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -23,21 +24,13 @@ data Class = Class {
   , classMethods :: [Method]
   , classStaticMethods :: [Method]
   , classLocation :: Location
-} deriving (Show, Eq, Ord)
+} deriving (Show)
 
 data Field = Field {
     fieldType :: TypeBasic
   , fieldName :: FieldName
   , fieldOrigin :: TypeComposed
-} deriving (Show, Eq, Ord)
-
-data FieldName =
-    FieldName String
-  | FieldDescriptor TypeComposed String
-  deriving (Show, Eq, Ord)
-
-fieldFromVariable :: VariableName -> FieldName
-fieldFromVariable (VariableName name) = FieldName name
+} deriving (Show)
 
 data Method = Method {
     methodType :: TypeMethod
@@ -47,25 +40,31 @@ data Method = Method {
   , methodOrigin :: TypeComposed
   , methodLocation :: Location
   , methodVariables :: [Variable]
-} deriving (Eq, Ord, Show)
-
-data MethodName =
-    MethodName String
-  | MethodDescriptor TypeComposed String
-  deriving (Show, Eq, Ord)
+} deriving (Show)
 
 data Variable = Variable {
     variableType :: TypeBasic
   , variableNum :: VariableNum
   , variableName :: VariableName
-} deriving (Eq, Ord, Show)
+} deriving (Show)
 
+-- NAMES --
+-----------
 data VariableNum =
     VariableNum Int
   | VariableThis
   deriving (Show, Eq, Ord)
 
 newtype VariableName = VariableName String
+  deriving (Show, Eq, Ord)
+
+newtype FieldName = FieldName String
+  deriving (Show, Eq, Ord)
+
+fieldFromVariable :: VariableName -> FieldName
+fieldFromVariable (VariableName name) = FieldName name
+
+newtype MethodName = MethodName String
   deriving (Show, Eq, Ord)
 
 -- STATEMENTS --
@@ -77,7 +76,7 @@ data Stmt =
   -- Memory access
   | SStore VariableNum Expr TypeBasic
   | SStoreArray VariableNum Expr Expr TypeBasic
-  | SPutField VariableNum FieldName Expr TypeBasic
+  | SPutField VariableNum TypeComposed FieldName Expr TypeBasic
   -- Control statements
   | SReturn Expr TypeBasic
   | SReturnV
@@ -97,7 +96,7 @@ data Stmt =
   | T_SAssignArr VariableName Expr Expr
   | T_SAssignFld VariableName FieldName Expr
   | T_STryCatch Stmt TypeComposed VariableName Stmt
-  deriving (Eq, Ord, Show)
+  deriving (Show)
 
 -- TYPES --
 -----------
@@ -158,10 +157,10 @@ data Expr =
   -- Memory access
   | ELoad VariableNum TypeBasic
   | EArrayLoad Expr Expr TypeBasic
-  | EGetField Expr FieldName TypeBasic
+  | EGetField Expr TypeComposed FieldName TypeBasic
   -- Method calls
-  | EInvokeStatic MethodName [Expr]
-  | EInvokeVirtual Expr MethodName [Expr]
+  | EInvokeStatic TypeComposed MethodName [Expr]
+  | EInvokeVirtual Expr TypeComposed MethodName [Expr]
   -- Object creation
   | ENewObj TypeComposed
   | ENewArr TypeBasic Expr
@@ -170,14 +169,14 @@ data Expr =
   | EBinary OpBin Expr Expr TypeBasic
   -- These expressions will be replaced with ones caring more context in subsequent phases
   | T_EVar VariableName
-  deriving (Eq,Ord,Show)
+  deriving (Show)
 
 -- BINARY OPERATIONS --
 -----------------------
 data OpUn =
    OuNeg
  | OuNot
-  deriving (Eq,Ord,Show)
+  deriving (Show, Eq, Ord)
 
 -- UNARY OPERATIONS --
 ----------------------
@@ -195,7 +194,7 @@ data OpBin =
  | ObNEQ
  | ObAnd
  | ObOr
-  deriving (Eq,Ord,Show)
+  deriving (Show, Eq, Ord)
 
 -- AUXILIARY --
 ---------------

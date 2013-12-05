@@ -5,7 +5,7 @@ import Control.Monad.Error
 import Control.Monad.State
 import qualified Data.Traversable as Traversable
 
-import Jvmm.Builtins (entrypointIdent)
+import Jvmm.Builtins (isEntrypoint)
 import qualified Jvmm.Errors as Err
 import Jvmm.Errors (rethrow, ErrorInfoT)
 import Jvmm.Trans.Output
@@ -58,9 +58,8 @@ setReturned b = modify (\st -> st { verifierstateReturned = b })
 orReturned b = gets verifierstateReturned >>= (setReturned . (|| b))
 
 checkEntrypoint :: Method -> VerifierM ()
-checkEntrypoint Method { methodName = name, methodOrigin = TObject }
-  | name  == Types.resolve TObject entrypointIdent =
-      modify (\st -> st { verifierstateMain = True })
+checkEntrypoint method
+  | isEntrypoint method = modify (\st -> st { verifierstateMain = True })
 checkEntrypoint _ = return ()
 
 -- TRAVERSING TREE --

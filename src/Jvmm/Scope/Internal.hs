@@ -251,11 +251,11 @@ instance Scopeable Stmt where
     -- Memory access
     SStore _ _ _ -> Err.unreachable x
     SStoreArray _ _ _ _ -> Err.unreachable x
-    SPutField VariableThis field expr _ -> do
+    SPutField VariableThis _ field expr _ -> do
       expr' <- scope expr
       dynamic field
-      return $ SPutField VariableThis field expr' undefined
-    SPutField _ _ _ _ -> Err.unreachable x
+      return $ SPutField VariableThis undefined field expr' undefined
+    SPutField _ _ _ _ _ -> Err.unreachable x
     -- Control statements
     SReturn expr _ -> do
       expr' <- scope expr
@@ -299,7 +299,7 @@ instance Scopeable Stmt where
       expr' <- scope expr
       varOrField name
         (\num -> SStore num expr' undefined)
-        (\name' -> SPutField VariableThis name' expr' undefined)
+        (\name' -> SPutField VariableThis undefined name' expr' undefined)
     T_SAssignArr name expr1 expr2 -> do
       expr1' <- scope expr1
       expr2' <- scope expr2
@@ -309,7 +309,7 @@ instance Scopeable Stmt where
       expr2' <- scope expr2
       num <- current name
       -- The field name we see here cannot be verified without type information
-      return $ SPutField num field expr2' undefined
+      return $ SPutField num undefined field expr2' undefined
     T_STryCatch stmt1 typ name stmt2 -> do
       stmt1' <- newLocalScope (scope stmt1)
       newLocalScope $ do
@@ -336,26 +336,26 @@ instance Scopeable Expr where
       expr1' <- scope expr1
       expr2' <- scope expr2
       return $ EArrayLoad expr1' expr2' undefined
-    EGetField expr field _ -> do
+    EGetField expr _ field _ -> do
       expr' <- scope expr
       -- The field name we see here cannot be verified without type information
-      return $ EGetField expr' field undefined
+      return $ EGetField expr' undefined field undefined
     -- Method calls
     -- We replace all calls that actually refer to instance method, we also give precedence to
     -- instance methods over static ones.
-    EInvokeStatic name exprs -> do
+    EInvokeStatic _ name exprs -> do
       exprs' <- mapM scope exprs
       stat <- isStatic name
       case stat of
         True -> static name >>
-            return (EInvokeStatic name exprs')
+            return (EInvokeStatic undefined name exprs')
         False -> dynamic name >>
-            return (EInvokeVirtual (ELoad VariableThis undefined) name exprs')
-    EInvokeVirtual expr name exprs -> do
+            return (EInvokeVirtual (ELoad VariableThis undefined) undefined name exprs')
+    EInvokeVirtual expr _ name exprs -> do
       expr' <- scope expr
       exprs' <- mapM scope exprs
       -- The method name we see here cannot be verified without type information
-      return $ EInvokeVirtual expr' name exprs'
+      return $ EInvokeVirtual expr' undefined name exprs'
     -- Object creation
     ENewObj typ -> do
       static typ
@@ -376,7 +376,7 @@ instance Scopeable Expr where
     T_EVar name ->
       varOrField name
         (\num -> ELoad num undefined)
-        (\field -> EGetField (ELoad VariableThis undefined) field undefined)
+        (\field -> EGetField (ELoad VariableThis undefined) undefined field undefined)
 
 -- HELPERS --
 -------------

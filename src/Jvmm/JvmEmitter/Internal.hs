@@ -12,6 +12,7 @@ import Control.Monad.Error
 import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Writer
+import Control.Applicative
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.List as List
@@ -104,25 +105,50 @@ instance Emitable Class JasminAsm where
     className <- asks emitterenvOverrideClass
     case className of
       Just (ClassName str) -> toJasminClass str $ do
-        dir $ ".class public " ++ str
-        -- TODO
+        -- Class that will hold our code
+        dir $ "class public " ++ str
+        dir "super  java/lang/Object"
+        -- Taken as is from lecture notes
+        com "standard initializer"
+        dir "method public <init>()V"
+        ins "aload_0"
+        ins "invokespecial java/lang/Object/<init>()V"
+        ins "return"
+        dir "end method"
+        -- Static top-level methods
+        forM_ statics (emit :: Method -> EmitterM ())
       Nothing -> notImplemented
     where
       toJasminClass name = fmap (JasminAsm name) . intercept
   emit _ = notImplemented
 
+instance Emitable TypeBasic String where
+  emit (TComposed typ) = emit typ
+  emit (TPrimitive typ) = emit typ
+
+instance Emitable TypePrimitive String where
+  emit typ = return $ case typ of
+      TVoid -> "V"
+      TInt -> "I"
+      -- This kind of stinks we won't be able to performa ny better knwoing that
+      -- smth is a character or boolean in fact
+      TBool -> "I"
+      TChar -> "I"
+
 instance Emitable TypeComposed String where
   emit TObject = return "java/lang/Object"
   emit TString = return "java/lang/String"
+  emit (TArray typ) = ("[" ++) <$> emit typ
+  emit TNull = Err.unreachable TNull
   emit _ = notImplemented
 
 instance Emitable Field () where
 
-emitInstance, emitStatic :: Method -> EmitterM ()
-emitInstance = notImplemented
-emitStatic = undefined
-
 instance Emitable Method () where
+  -- TODO this is for static
+  emit method@Method {} = do
+    case isEntrypoint method of
+      True -> dir $ "method public static "
 
 instance Emitable Stmt () where
   emit x = case x of
@@ -132,7 +158,7 @@ instance Emitable Stmt () where
     -- Memory access
     SStore num expr _ -> undefined
     SStoreArray num expr1 expr2 _ -> undefined
-    SPutField num name expr _ -> undefined
+    SPutField num typ name expr _ -> undefined
     -- Control statements
     SReturn expr _ -> undefined
     SReturnV -> undefined
@@ -165,10 +191,10 @@ instance Emitable Expr () where
     -- Memory access
     ELoad num _ -> undefined
     EArrayLoad expr1 expr2 _ -> undefined
-    EGetField expr name _ -> undefined
+    EGetField expr typ name _ -> undefined
     -- Method calls
-    EInvokeStatic name exprs -> undefined
-    EInvokeVirtual expr name exprs -> undefined
+    EInvokeStatic typ name exprs -> undefined
+    EInvokeVirtual typ expr name exprs -> undefined
     -- Object creation
     ENewObj typ -> undefined
     ENewArr typ expr -> undefined

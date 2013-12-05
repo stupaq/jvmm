@@ -149,13 +149,13 @@ class ComposedTypeable a b c where
 
 instance ComposedTypeable TypeComposed MethodName TypeMethod where
   typeof' typ name@(MethodName str) = orThrow (Err.unknownMemberType typ name) $ do
-    TMethod mtyp <- builtinMethodType (MethodDescriptor typ str)
+    TMethod mtyp <- builtinMethodType (typ, str)
         `mplus` lookupC typ (SMethod name)
     return mtyp
 
 instance ComposedTypeable TypeComposed FieldName TypeBasic where
   typeof' typ name@(FieldName str) = orThrow (Err.unknownMemberType typ name) $ do
-    TBasic ftyp <- builtinFieldType (FieldDescriptor typ str)
+    TBasic ftyp <- builtinFieldType (typ, str)
         `mplus` lookupC typ (SField name)
     return ftyp
 
@@ -344,34 +344,6 @@ instance Arithmetizable TypeComposed where
 (?=) :: (InheritsType a, InheritsType b) => a -> b -> TypeM b
 (?=) = flip (=?)
 
--- DESCRIPTOR RESOLUTION --
----------------------------
-class Resolvable a b where
-  resolve :: a -> b -> b
-
-instance Resolvable TypeComposed MethodName where
-  resolve typ (MethodName name) = MethodDescriptor typ name
-
-instance Resolvable TypeComposed FieldName where
-  resolve typ (FieldName name) = FieldDescriptor typ name
-
-instance Resolvable TypeBasic MethodName where
-  resolve (TComposed typ) name = resolve typ name
-
-instance Resolvable TypeBasic FieldName where
-  resolve (TComposed typ) name = resolve typ name
-
-class Resolvable' a where
-  resolve' :: a -> a
-
-instance Resolvable' Field where
-  resolve' field@Field { fieldName = name, fieldOrigin = origin } =
-    field { fieldName = resolve origin name }
-
-instance Resolvable' Method where
-  resolve' method@Method { methodName = name, methodOrigin = origin } =
-    method { methodName = resolve origin name }
-
 -- TRAVERSING TREE --
 ---------------------
 funH :: ClassHierarchy -> TypeM ClassHierarchy
@@ -391,13 +363,13 @@ funH = Traversable.mapM $ \clazz@Class { classType = typ, classLocation = loc } 
 funF :: Field -> TypeM Field
 funF field@Field { fieldType = typ, fieldName = name } = do
   notAVoid typ `rethrow` Err.voidField name
-  return $ resolve' field
+  return field
 
 funM :: Method -> TypeM Method
 funM method@Method { methodType = typ, methodBody = stmt, methodArgs = args, methodVariables = vars } = do
   Err.withLocation (methodLocation method) . called typ args vars $ do
     stmt' <- funS stmt
-    return $ resolve' $ method { methodBody = stmt' }
+    return $ method { methodBody = stmt' }
 
 funMS :: Method -> TypeM Method
 funMS method = do
@@ -405,8 +377,7 @@ funMS method = do
   funM method
   where
     checkEntrypoint :: Method -> TypeM ()
-    checkEntrypoint method =
-      when (entrypointIdent == methodName method && methodOrigin method == TObject) $
+    checkEntrypoint method = when (isEntrypoint method)
         (entrypointType =| methodType method >> return ()) `rethrow` Err.incompatibleMain
 
 funS :: Stmt -> TypeM Stmt
@@ -432,12 +403,12 @@ funS x = case x of
     atyp =| (TArray etyp2)
     let (TArray eltyp) = atyp
     return $ SStoreArray num expr1' expr2' eltyp
-  SPutField num name expr _ -> do
+  SPutField num undefined name expr _ -> do
     (expr', etyp) <- funE expr
     vtyp :: TypeComposed <- typeof num
     ftyp <- typeof' vtyp name
     ftyp =| etyp
-    return $ SPutField num (resolve vtyp name) expr' ftyp
+    return $ SPutField num vtyp name expr' ftyp
   -- Control statements
   SReturn expr _ -> do
     (expr', etyp) <- funE expr
@@ -508,23 +479,25 @@ funE x = case x of
     case etyp1 of
       TComposed (TArray typ) -> return (EArrayLoad expr1' expr2' typ, typ)
       _ -> throwError Err.subscriptNonArray
-  EGetField expr name _ -> do
+  EGetField expr _ name _ -> do
     (expr', etyp) <- funE expr
+    etyp <- notAPrimitive etyp
     typ <- typeof' etyp name
-    return (EGetField expr' (resolve etyp name) typ, typ)
+    return (EGetField expr' etyp name typ, typ)
   -- Method calls
-  EInvokeStatic name exprs -> do
+  EInvokeStatic _ name exprs -> do
     (exprs', etypes) <- mapAndUnzipM funE exprs
     ftyp <- typeof name
     rtyp <- invoke ftyp etypes
     styp <- asks typeenvStaticOrigin
-    return (EInvokeStatic (resolve styp name) exprs', rtyp)
-  EInvokeVirtual expr name exprs -> do
+    return (EInvokeStatic styp name exprs', rtyp)
+  EInvokeVirtual expr _ name exprs -> do
     (expr', etyp) <- funE expr
+    etyp <- notAPrimitive etyp
     (exprs', etypes) <- mapAndUnzipM funE exprs
     ftyp <- typeof' etyp name
     rtyp <- invoke ftyp etypes
-    return (EInvokeVirtual expr' (resolve etyp name) exprs', rtyp)
+    return (EInvokeVirtual expr' etyp name exprs', rtyp)
   -- Object creation
   ENewObj typ -> do
     return (ENewObj typ, TComposed typ)

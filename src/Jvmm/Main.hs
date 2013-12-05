@@ -1,5 +1,5 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
-module Jvmm (main) where
+module Main (main) where
 
 import System.IO (stderr, stdout, hPutStrLn)
 import System.Exit (exitSuccess, exitFailure)
@@ -87,7 +87,7 @@ compileJvm = checkT =>> compile
       let name = takeBaseName source
       let dest = dropFileName source
       let writeOne = \(JasminAsm clazz lines) -> do
-          let file = dest </> clazz
+          let file = dest </> clazz ++ ".j"
           lift $ writeFile file ""
           mapM_ (lift . appendFile file . toJasmin) lines
       emitJvm name =>> (mapM_ writeOne) =>| hierarchy

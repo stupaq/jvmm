@@ -22,21 +22,23 @@ builtinFunctions = map fun [
 
 -- ENTRYPOINT --
 ----------------
-entrypointIdent = MethodName "main"
+entrypointName = MethodName "main"
 entrypointType = TypeMethod (TPrimitive TInt) [] []
+isEntrypoint method = entrypointName == methodName method && methodOrigin method == TObject
 
 -- TYPES --
 -----------
 isBuiltinType (TUser (ClassName str)) = str `elem` ["int", "char", "boolean", "string"]
 isBuiltinType TObject = False
 isBuiltinType (TArray _) = True
+isBuiltinType _ = Err.unreachable TNull
 
 builtinFieldType desc = case desc of
-  FieldDescriptor (TArray _) "length" -> return $ toType TInt
-  FieldDescriptor TString "length" -> return $ toType TInt
+  (TArray _, "length") -> return $ toType TInt
+  (TString, "length") -> return $ toType TInt
   _ -> throwError noMsg
 
 builtinMethodType desc = case desc of
-  MethodDescriptor TString "charAt" -> return $ toType $ TypeMethod (TPrimitive TChar) [TPrimitive TInt] []
+  (TString, "charAt") -> return $ toType $ TypeMethod (TPrimitive TChar) [TPrimitive TInt] []
   _ -> throwError noMsg
 

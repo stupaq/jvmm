@@ -13,7 +13,7 @@ data JasminLine =
   | JasminComment String
   deriving (Show, Eq)
 
-toJasmin (JasminDirective str) = str ++ "\n"
-toJasmin (JasminInstruction str) = str ++ "\n"
-toJasmin (JasminComment str) = str ++ "\n"
+toJasmin (JasminDirective str) = "." ++ str ++ "\n"
+toJasmin (JasminInstruction str) = "\t" ++ str ++ "\n"
+toJasmin (JasminComment str) = "\t; " ++ str ++ "\n"
 
