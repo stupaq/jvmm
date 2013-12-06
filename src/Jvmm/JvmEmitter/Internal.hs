@@ -29,6 +29,7 @@ import Jvmm.Hierarchy.Output
 
 -- A class that holds builtins
 builtinsClassName = "Runtime" :: String
+builtinMethodNames = ["printInt", "readInt", "error", "printString", "readString"]
 
 -- EMITTING CLASS HIERARCHY --
 ------------------------------
@@ -383,7 +384,9 @@ instance Emitable Expr TypeBasic where
           -- Class that holds top-level static methods
           fdesc <- emit ftyp
           let pops = length exprs - (if tret == (TPrimitive TVoid) then 0 else 1)
-          inss ("invokestatic " ++ str ++ "/" ++ name ++ fdesc) (decn pops)
+          -- In case this is actually a builtin
+          let str' = if name `elem` builtinMethodNames then builtinsClassName else str
+          inss ("invokestatic " ++ str' ++ "/" ++ name ++ fdesc) (decn pops)
           return tret
         Nothing -> notImplemented
     EInvokeVirtual expr TString (MethodName "charAt") ftyp [expr1] -> do

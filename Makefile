@@ -5,6 +5,7 @@ PDFLATEX := pdflatex -interaction=batchmode
 
 all:
 	$(MAKE) -C src/ all
+	javac lib/Runtime.java
 	ln -sf src/Jvmm/Main ./latc
 
 docs: $(DOCS)
@@ -16,6 +17,7 @@ $(TESTSUITES): % : all
 
 clean:
 	$(MAKE) -C src/ clean
+	-rm -f lib/Runtime.class
 	-rm -f test.{err,out}
 
 distclean: clean
