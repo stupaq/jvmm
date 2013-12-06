@@ -485,19 +485,19 @@ funE x = case x of
     typ <- typeof' etyp name
     return (EGetField expr' etyp name typ, typ)
   -- Method calls
-  EInvokeStatic _ name exprs -> do
+  EInvokeStatic _ name _ exprs -> do
     (exprs', etypes) <- mapAndUnzipM funE exprs
     ftyp <- typeof name
     rtyp <- invoke ftyp etypes
     styp <- asks typeenvStaticOrigin
-    return (EInvokeStatic styp name exprs', rtyp)
-  EInvokeVirtual expr _ name exprs -> do
+    return (EInvokeStatic styp name ftyp exprs', rtyp)
+  EInvokeVirtual expr _ name _ exprs -> do
     (expr', etyp) <- funE expr
     etyp <- notAPrimitive etyp
     (exprs', etypes) <- mapAndUnzipM funE exprs
     ftyp <- typeof' etyp name
     rtyp <- invoke ftyp etypes
-    return (EInvokeVirtual expr' etyp name exprs', rtyp)
+    return (EInvokeVirtual expr' etyp name ftyp exprs', rtyp)
   -- Object creation
   ENewObj typ -> do
     return (ENewObj typ, TComposed typ)

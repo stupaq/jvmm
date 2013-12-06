@@ -2,6 +2,7 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE DisambiguateRecordFields #-}
 module Jvmm.Trans.Output where
 
 import Control.Monad.Identity
@@ -166,8 +167,8 @@ data Expr =
   | EArrayLoad Expr Expr TypeBasic
   | EGetField Expr TypeComposed FieldName TypeBasic
   -- Method calls
-  | EInvokeStatic TypeComposed MethodName [Expr]
-  | EInvokeVirtual Expr TypeComposed MethodName [Expr]
+  | EInvokeStatic TypeComposed MethodName TypeMethod [Expr]
+  | EInvokeVirtual Expr TypeComposed MethodName TypeMethod [Expr]
   -- Object creation
   | ENewObj TypeComposed
   | ENewArr TypeBasic Expr

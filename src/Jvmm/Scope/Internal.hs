@@ -343,19 +343,19 @@ instance Scopeable Expr where
     -- Method calls
     -- We replace all calls that actually refer to instance method, we also give precedence to
     -- instance methods over static ones.
-    EInvokeStatic _ name exprs -> do
+    EInvokeStatic _ name _ exprs -> do
       exprs' <- mapM scope exprs
       stat <- isStatic name
       case stat of
         True -> static name >>
-            return (EInvokeStatic undefined name exprs')
+            return (EInvokeStatic undefined name undefined exprs')
         False -> dynamic name >>
-            return (EInvokeVirtual (ELoad VariableThis undefined) undefined name exprs')
-    EInvokeVirtual expr _ name exprs -> do
+            return (EInvokeVirtual (ELoad VariableThis undefined) undefined name undefined exprs')
+    EInvokeVirtual expr _ name _ exprs -> do
       expr' <- scope expr
       exprs' <- mapM scope exprs
       -- The method name we see here cannot be verified without type information
-      return $ EInvokeVirtual expr' undefined name exprs'
+      return $ EInvokeVirtual expr' undefined name undefined exprs'
     -- Object creation
     ENewObj typ -> do
       static typ

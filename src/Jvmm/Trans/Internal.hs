@@ -161,18 +161,19 @@ tExpr x = case x of
   I.ENull -> O.ENull
   I.ENullT typ -> O.ENull
   I.EArrayE expr1 expr2 -> O.EArrayLoad (tExpr expr1) (tExpr expr2) undefined
-  I.EMethodE expr id exprs -> O.EInvokeVirtual (tExpr expr) undefined (tMIdent id) (map tExpr exprs)
+  I.EMethodE expr id exprs ->
+    O.EInvokeVirtual (tExpr expr) undefined (tMIdent id) undefined (map tExpr exprs)
   I.EFieldE expr id -> O.EGetField (tExpr expr) undefined (tFIdent id) undefined
-  I.EArrayI ide expr2 ->
-    O.EArrayLoad (tExpr $ I.EVar ide) (tExpr expr2) undefined -- GRAMMAR IRREGULARITY
-  I.EMethodI ide id exprs ->
-    O.EInvokeVirtual (tExpr $ I.EVar ide) undefined (tMIdent id) (map tExpr exprs) -- GRAMMAR IRREGULARITY
-  I.EFieldI ide id ->
-    O.EGetField (tExpr $ I.EVar ide) undefined (tFIdent id)  undefined -- GRAMMAR IRREGULARITY
+  I.EArrayI ide expr2 -> -- GRAMMAR IRREGULARITY
+    O.EArrayLoad (tExpr $ I.EVar ide) (tExpr expr2) undefined
+  I.EMethodI ide id exprs -> -- GRAMMAR IRREGULARITY
+    O.EInvokeVirtual (tExpr $ I.EVar ide) undefined (tMIdent id) undefined (map tExpr exprs)
+  I.EFieldI ide id -> -- GRAMMAR IRREGULARITY
+    O.EGetField (tExpr $ I.EVar ide) undefined (tFIdent id)  undefined
   I.EFieldIT id -> O.EGetField (O.ELoad O.VariableThis undefined) undefined (tFIdent id) undefined
   I.EMethodIT id exprs ->
-    O.EInvokeVirtual (O.ELoad O.VariableThis undefined) undefined (tMIdent id) (map tExpr exprs)
-  I.EApp id exprs -> O.EInvokeStatic undefined (tMIdent id) (map tExpr exprs)
+    O.EInvokeVirtual (O.ELoad O.VariableThis undefined) undefined (tMIdent id) undefined (map tExpr exprs)
+  I.EApp id exprs -> O.EInvokeStatic undefined (tMIdent id) undefined (map tExpr exprs)
   I.ENewArray typ expr -> O.ENewArr (tTBasic typ) (tExpr expr)
   I.ENewObject typ -> O.ENewObj $ tTComposed typ
   I.ENeg expr -> O.EUnary O.OuNeg (tExpr expr) undefined

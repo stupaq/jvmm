@@ -286,7 +286,7 @@ instance Emitable Expr TypeBasic where
     EGetField {} -> notImplemented
     -- Method calls
     -- FIXME add method type here
-    EInvokeStatic typ name exprs -> undefined
+    EInvokeStatic styp name ftyp exprs -> undefined
     -- FIXME add method type here
     EInvokeVirtual {} -> notImplemented
     -- Object creation
