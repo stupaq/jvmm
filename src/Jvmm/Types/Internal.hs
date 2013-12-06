@@ -210,7 +210,7 @@ returns :: TypeBasic -> TypeM ()
 returns typ = do
   ftyp <- asks typeenvFunction
   case ftyp of
-    Just (TypeMethod rett _ _) -> rett =| typ >> return ()
+    Just (TypeMethod rett _ _) -> void $ rett =| typ
     Nothing -> throwError Err.danglingReturn
     _ -> Err.unreachable "typeenvFunction was not of functional type"
 
@@ -231,7 +231,7 @@ enterInstance x =
 
 invoke :: TypeMethod -> [TypeBasic] -> TypeM TypeBasic
 invoke ftyp@(TypeMethod ret args excepts) etypes = do
-    forM excepts throws
+    forM_ excepts throws
     (ftyp =| TypeMethod ret etypes []) `rethrow` Err.argumentsNotMatch args etypes
     return ret
 
@@ -346,198 +346,199 @@ instance Arithmetizable TypeComposed where
 
 -- TRAVERSING TREE --
 ---------------------
-funH :: ClassHierarchy -> TypeM ClassHierarchy
-funH = Traversable.mapM $ \clazz@Class { classType = typ, classLocation = loc } ->
-  Err.withLocation loc $ do
-    enterClass typ $ do
-      staticMethods' <- mapM funMS $ classStaticMethods clazz
+class TypeCheckable a where
+  tcheck :: a -> TypeM a
+
+instance TypeCheckable ClassHierarchy where
+  tcheck = Traversable.mapM $ \clazz@Class { classType = typ, classLocation = loc } ->
+    Err.withLocation loc $ enterClass typ $ do
+      staticMethods' <- mapM tcheck $ classStaticMethods clazz
       enterInstance typ $ do
-        fields' <- mapM funF $ classFields clazz
-        instanceMethods' <- mapM funM $ classInstanceMethods clazz
+        fields' <- mapM tcheck $ classFields clazz
+        instanceMethods' <- mapM tcheck $ classInstanceMethods clazz
         return $ clazz {
               classAllMethods = instanceMethods' ++ staticMethods'
             , classFields = fields'
           }
 
-funF :: Field -> TypeM Field
-funF field@Field { fieldType = typ, fieldName = name } = do
-  notAVoid typ `rethrow` Err.voidField name
-  return field
+instance TypeCheckable Field where
+  tcheck field@Field { fieldType = typ, fieldName = name } = do
+    notAVoid typ `rethrow` Err.voidField name
+    return field
 
-funM :: Method -> TypeM Method
-funM method@Method { methodType = typ, methodBody = stmt, methodArgs = args, methodVariables = vars } = do
-  Err.withLocation (methodLocation method) . called typ args vars $ do
-    stmt' <- funS stmt
-    return $ method { methodBody = stmt' }
+instance TypeCheckable Method where
+  tcheck method@Method { methodType = typ, methodBody = stmt, methodArgs = args,
+      methodVariables = vars } =
+    Err.withLocation (methodLocation method) . called typ args vars $ do
+      checkEntrypoint method
+      stmt' <- tcheck stmt
+      return $ method { methodBody = stmt' }
+    where
+      checkEntrypoint :: Method -> TypeM ()
+      checkEntrypoint method = when (isEntrypoint method)
+          (void $ entrypointType =| methodType method) `rethrow` Err.incompatibleMain
 
-funMS :: Method -> TypeM Method
-funMS method = do
-  checkEntrypoint method
-  funM method
-  where
-    checkEntrypoint :: Method -> TypeM ()
-    checkEntrypoint method = when (isEntrypoint method)
-        (entrypointType =| methodType method >> return ()) `rethrow` Err.incompatibleMain
+instance TypeCheckable Stmt where
+  tcheck x = case x of
+    SEmpty -> return x
+    SBlock stmts -> do
+      stmts' <- mapM tcheck stmts
+      return $ SBlock stmts'
+    SExpr expr -> do
+      (expr', _) <- tcheck' expr
+      return $ SExpr expr'
+    -- Memory access
+    SStore num expr _ -> do
+      (expr', etyp) <- tcheck' expr
+      vtyp <- typeof num
+      vtyp =| etyp
+      return $ SStore num expr' vtyp
+    SStoreArray num expr1 expr2 _ -> do
+      (expr1', etyp1) <- tcheck' expr1
+      (expr2', etyp2) <- tcheck' expr2
+      TPrimitive TInt =| etyp1 `rethrow` Err.indexType
+      atyp <- typeof num
+      atyp =| TArray etyp2
+      let (TArray eltyp) = atyp
+      return $ SStoreArray num expr1' expr2' eltyp
+    SPutField num undefined name expr _ -> do
+      (expr', etyp) <- tcheck' expr
+      vtyp :: TypeComposed <- typeof num
+      ftyp <- typeof' vtyp name
+      ftyp =| etyp
+      return $ SPutField num vtyp name expr' ftyp
+    -- Control statements
+    SReturn expr _ -> do
+      (expr', etyp) <- tcheck' expr
+      notAVoid etyp `rethrow` Err.voidNotIgnored
+      returns etyp
+      return $ SReturn expr' etyp
+    SReturnV -> do
+      returns $ TPrimitive TVoid
+      return x
+    SIf expr stmt -> do
+      (expr', etyp) <- tcheck' expr
+      TBool =? etyp
+      stmt' <- tcheck stmt
+      return $ SIf expr' stmt'
+    SIfElse expr stmt1 stmt2 -> do
+      (expr', etyp) <- tcheck' expr
+      TBool =? etyp
+      stmt1' <- tcheck stmt1
+      stmt2' <- tcheck stmt2
+      return $ SIfElse expr' stmt1' stmt2'
+    SWhile expr stmt -> do
+      (expr', etyp) <- tcheck' expr
+      TBool =? etyp
+      stmt' <- tcheck stmt
+      return $ SWhile expr' stmt'
+    SThrow expr -> do
+      (expr', etyp) <- tcheck' expr
+      -- We cannot throw primitive type
+      etyp <- notAPrimitive etyp
+      throws etyp
+      return $ SThrow expr'
+    STryCatch stmt1 typ num stmt2 -> do
+      stmt2' <- tcheck stmt2
+      catches [typ] $ do
+        stmt1' <- tcheck stmt1
+        return $ STryCatch stmt1' typ num stmt2'
+    -- Special function bodies
+    SBuiltin -> return x
+    SInherited -> return x
+    -- Metainformation carriers
+    SMetaLocation loc stmts -> stmtMetaLocation loc $ mapM tcheck stmts
+    -- These statements will be replaced with ones caring more context in subsequent phases
+    T_SDeclVar {} -> Err.unreachable x
+    T_SAssign {} -> Err.unreachable x
+    T_SAssignArr {} -> Err.unreachable x
+    T_SAssignFld {} -> Err.unreachable x
+    T_STryCatch {} -> Err.unreachable x
 
-funS :: Stmt -> TypeM Stmt
-funS x = case x of
-  SEmpty -> return x
-  SBlock stmts -> do
-    stmts' <- mapM funS stmts
-    return $ SBlock stmts'
-  SExpr expr -> do
-    (expr', _) <- funE expr
-    return $ SExpr expr'
-  -- Memory access
-  SStore num expr _ -> do
-    (expr', etyp) <- funE expr
-    vtyp <- typeof num
-    vtyp =| etyp
-    return $ SStore num expr' vtyp
-  SStoreArray num expr1 expr2 _ -> do
-    (expr1', etyp1) <- funE expr1
-    (expr2', etyp2) <- funE expr2
-    TPrimitive TInt =| etyp1 `rethrow` Err.indexType
-    atyp <- typeof num
-    atyp =| (TArray etyp2)
-    let (TArray eltyp) = atyp
-    return $ SStoreArray num expr1' expr2' eltyp
-  SPutField num undefined name expr _ -> do
-    (expr', etyp) <- funE expr
-    vtyp :: TypeComposed <- typeof num
-    ftyp <- typeof' vtyp name
-    ftyp =| etyp
-    return $ SPutField num vtyp name expr' ftyp
-  -- Control statements
-  SReturn expr _ -> do
-    (expr', etyp) <- funE expr
-    notAVoid etyp `rethrow` Err.voidNotIgnored
-    returns etyp
-    return $ SReturn expr' etyp
-  SReturnV -> do
-    returns $ TPrimitive TVoid
-    return x
-  SIf expr stmt -> do
-    (expr', etyp) <- funE expr
-    TBool =? etyp
-    stmt' <- funS stmt
-    return $ SIf expr' stmt'
-  SIfElse expr stmt1 stmt2 -> do
-    (expr', etyp) <- funE expr
-    TBool =? etyp
-    stmt1' <- funS stmt1
-    stmt2' <- funS stmt2
-    return $ SIfElse expr' stmt1' stmt2'
-  SWhile expr stmt -> do
-    (expr', etyp) <- funE expr
-    TBool =? etyp
-    stmt' <- funS stmt
-    return $ SWhile expr' stmt'
-  SThrow expr -> do
-    (expr', etyp) <- funE expr
-    -- We cannot throw primitive type
-    etyp <- notAPrimitive etyp
-    throws etyp
-    return $ SThrow expr'
-  STryCatch stmt1 typ num stmt2 -> do
-    stmt2' <- funS stmt2
-    catches [typ] $ do
-      stmt1' <- funS stmt1
-      return $ STryCatch stmt1' typ num stmt2'
-  -- Special function bodies
-  SBuiltin -> return x
-  SInherited -> return x
-  -- Metainformation carriers
-  SMetaLocation loc stmts -> stmtMetaLocation loc $ mapM funS stmts
-  -- These statements will be replaced with ones caring more context in subsequent phases
-  T_SDeclVar _ _ -> Err.unreachable x
-  T_SAssign _ _ -> Err.unreachable x
-  T_SAssignArr _ _ _ -> Err.unreachable x
-  T_SAssignFld _ _ _ -> Err.unreachable x
-  T_STryCatch _ _ _ _ -> Err.unreachable x
+class TypeCheckable' a where
+  tcheck' :: a -> TypeM (a, TypeBasic)
 
-funE :: Expr -> TypeM (Expr, TypeBasic)
-funE x = case x of
-  -- Literals
-  ENull -> return (x, TComposed TNull)
-  ELitTrue -> return (x, TPrimitive TBool)
-  ELitFalse -> return (x, TPrimitive TBool)
-  ELitChar _ -> return (x, TPrimitive TChar)
-  ELitString _ -> return (x, TComposed TString)
-  ELitInt n -> do
-    intWithinBounds n `rethrow` Err.intValueOutOfBounds n
-    return (x, TPrimitive TInt)
-  -- Memory access
-  ELoad num _ -> do
-    typ <- typeof num
-    return (ELoad num typ, typ)
-  EArrayLoad expr1 expr2 _ -> do
-    (expr1', etyp1) <- funE expr1
-    (expr2', etyp2) <- funE expr2
-    TInt =? etyp2 `rethrow` Err.indexType
-    case etyp1 of
-      TComposed (TArray typ) -> return (EArrayLoad expr1' expr2' typ, typ)
-      _ -> throwError Err.subscriptNonArray
-  EGetField expr _ name _ -> do
-    (expr', etyp) <- funE expr
-    etyp <- notAPrimitive etyp
-    typ <- typeof' etyp name
-    return (EGetField expr' etyp name typ, typ)
-  -- Method calls
-  EInvokeStatic _ name _ exprs -> do
-    (exprs', etypes) <- mapAndUnzipM funE exprs
-    ftyp <- typeof name
-    rtyp <- invoke ftyp etypes
-    styp <- asks typeenvStaticOrigin
-    return (EInvokeStatic styp name ftyp exprs', rtyp)
-  EInvokeVirtual expr _ name _ exprs -> do
-    (expr', etyp) <- funE expr
-    etyp <- notAPrimitive etyp
-    (exprs', etypes) <- mapAndUnzipM funE exprs
-    ftyp <- typeof' etyp name
-    rtyp <- invoke ftyp etypes
-    return (EInvokeVirtual expr' etyp name ftyp exprs', rtyp)
-  -- Object creation
-  ENewObj typ -> do
-    return (ENewObj typ, TComposed typ)
-  ENewArr typ expr -> do
-    notAVoid typ
-    (expr', etyp) <- funE expr
-    TInt =? etyp `rethrow` Err.indexType
-    return (ENewArr typ expr', TComposed (TArray typ))
-  -- Operations
-  EUnary op expr _ -> do
-    (expr', etyp) <- funE expr
-    case op of
-      OuNot -> TBool =? etyp
-      OuNeg -> TInt =? etyp
-    return (EUnary op expr' etyp, etyp)
-  EBinary opbin expr1 expr2 _ -> do
-    (expr1', etyp1) <- funE expr1
-    (expr2', etyp2) <- funE expr2
-    typ <- etyp1 =||= etyp2
-    isString <- Err.succeeded (TString =? typ)
-    case (isString, opbin) of
-      (True, ObPlus) ->
-        let rett = TComposed TString in return (EBinary opbin expr1' expr2' rett, rett)
-      _ -> do
-        rett <- liftM TPrimitive $ case opbin of
-          ObPlus -> TInt =? typ
-          ObAnd -> TBool =? typ
-          ObOr -> TBool =? typ
-          -- For primitives we have natural ==, for others we compare 'adresses'
-          ObEQU -> return TBool
-          ObNEQ -> return TBool
-          -- TInt-only operations: Times Div Mod Minus LTH LEQ GTH GEQ
-          _ -> do
-            TInt =? typ
-            case opbin of
-              ObLTH -> return TBool
-              ObLEQ -> return TBool
-              ObGTH -> return TBool
-              ObGEQ -> return TBool
-              _ -> return TInt
-        return (EBinary opbin expr1' expr2' rett, rett)
-  -- These expressions will be replaced with ones caring more context in subsequent phases
-  T_EVar _ -> Err.unreachable x
+instance TypeCheckable' Expr where
+  tcheck' x = case x of
+    -- Literals
+    ENull -> return (x, TComposed TNull)
+    ELitTrue -> return (x, TPrimitive TBool)
+    ELitFalse -> return (x, TPrimitive TBool)
+    ELitChar _ -> return (x, TPrimitive TChar)
+    ELitString _ -> return (x, TComposed TString)
+    ELitInt n -> do
+      intWithinBounds n `rethrow` Err.intValueOutOfBounds n
+      return (x, TPrimitive TInt)
+    -- Memory access
+    ELoad num _ -> do
+      typ <- typeof num
+      return (ELoad num typ, typ)
+    EArrayLoad expr1 expr2 _ -> do
+      (expr1', etyp1) <- tcheck' expr1
+      (expr2', etyp2) <- tcheck' expr2
+      TInt =? etyp2 `rethrow` Err.indexType
+      case etyp1 of
+        TComposed (TArray typ) -> return (EArrayLoad expr1' expr2' typ, typ)
+        _ -> throwError Err.subscriptNonArray
+    EGetField expr _ name _ -> do
+      (expr', etyp) <- tcheck' expr
+      etyp <- notAPrimitive etyp
+      typ <- typeof' etyp name
+      return (EGetField expr' etyp name typ, typ)
+    -- Method calls
+    EInvokeStatic _ name _ exprs -> do
+      (exprs', etypes) <- mapAndUnzipM tcheck' exprs
+      ftyp <- typeof name
+      rtyp <- invoke ftyp etypes
+      styp <- asks typeenvStaticOrigin
+      return (EInvokeStatic styp name ftyp exprs', rtyp)
+    EInvokeVirtual expr _ name _ exprs -> do
+      (expr', etyp) <- tcheck' expr
+      etyp <- notAPrimitive etyp
+      (exprs', etypes) <- mapAndUnzipM tcheck' exprs
+      ftyp <- typeof' etyp name
+      rtyp <- invoke ftyp etypes
+      return (EInvokeVirtual expr' etyp name ftyp exprs', rtyp)
+    -- Object creation
+    ENewObj typ -> return (ENewObj typ, TComposed typ)
+    ENewArr typ expr -> do
+      notAVoid typ
+      (expr', etyp) <- tcheck' expr
+      TInt =? etyp `rethrow` Err.indexType
+      return (ENewArr typ expr', TComposed (TArray typ))
+    -- Operations
+    EUnary op expr _ -> do
+      (expr', etyp) <- tcheck' expr
+      case op of
+        OuNot -> TBool =? etyp
+        OuNeg -> TInt =? etyp
+      return (EUnary op expr' etyp, etyp)
+    EBinary opbin expr1 expr2 _ -> do
+      (expr1', etyp1) <- tcheck' expr1
+      (expr2', etyp2) <- tcheck' expr2
+      typ <- etyp1 =||= etyp2
+      isString <- Err.succeeded (TString =? typ)
+      case (isString, opbin) of
+        (True, ObPlus) ->
+          let rett = TComposed TString in return (EBinary opbin expr1' expr2' rett, rett)
+        _ -> do
+          rett <- liftM TPrimitive $ case opbin of
+            ObPlus -> TInt =? typ
+            ObAnd -> TBool =? typ
+            ObOr -> TBool =? typ
+            -- For primitives we have natural ==, for others we compare 'adresses'
+            ObEQU -> return TBool
+            ObNEQ -> return TBool
+            -- TInt-only operations: Times Div Mod Minus LTH LEQ GTH GEQ
+            _ -> do
+              TInt =? typ
+              case opbin of
+                ObLTH -> return TBool
+                ObLEQ -> return TBool
+                ObGTH -> return TBool
+                ObGEQ -> return TBool
+                _ -> return TInt
+          return (EBinary opbin expr1' expr2' rett, rett)
+    -- These expressions will be replaced with ones caring more context in subsequent phases
+    T_EVar _ -> Err.unreachable x
 

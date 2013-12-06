@@ -12,5 +12,5 @@ import Jvmm.Hierarchy.Output
 typing :: ClassHierarchy -> ErrorInfoT Identity ClassHierarchy
 typing classes = do
   env <- collectTypes classes
-  runTypeM env $ funH classes
+  runTypeM env $ tcheck classes
 

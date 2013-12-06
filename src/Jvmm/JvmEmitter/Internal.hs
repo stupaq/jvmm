@@ -153,8 +153,6 @@ class Emitable a b | a -> b where
 instance Emitable Class JasminAsm where
   -- TObject is special, we have to translate it to Java's Object
   emit clazz@(Class TObject super [] statics _) = do
-    -- We can only handle static methods here
-    assert (all (not . methodInstance) statics) $ return ()
     className <- asks emitterenvOverrideClass
     case className of
       Just (ClassName str) -> toJasminClass str $ do
@@ -210,9 +208,9 @@ instance Emitable Field () where
 instance Emitable Method () where
   emit method@Method { methodBody = SBuiltin } = return ()
   emit method@Method { methodBody = SInherited } = return ()
-  -- TODO this is for static method
+  -- Static method
   emit method@Method { methodName = MethodName name, methodType = typ, methodBody = stmt,
-      methodArgs = args, methodVariables = vars } = do
+      methodArgs = args, methodVariables = vars, methodInstance = False } = do
     -- The prologue
     if isEntrypoint method
       then dir "method public static main([Ljava/lang/String;)V"

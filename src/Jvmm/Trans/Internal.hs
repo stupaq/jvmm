@@ -25,7 +25,7 @@ tClass :: I.Class -> (O.TypeComposed, O.ClassDiff)
 tClass (I.Class id extends lbr members rbr) =
   let clazzTyp = O.TUser (tTIdent id)
       super = tExtends extends
-  in (super, prepareClassDiff (brToLoc lbr rbr) $ O.Class {
+  in (super, prepareClassDiff (brToLoc lbr rbr) O.Class {
         O.classType = clazzTyp
       , O.classSuper = super
       , O.classFields = [ tField typ x | I.FieldsList typ fields _ <- members, x <- fields ]
@@ -67,7 +67,7 @@ tFunction inst (I.Function typ id args exceptions lbr stmts rbr) =
 
 tStmt :: I.Stmt -> [O.Stmt]
 tStmt x = case x of
-  I.SDeclVar typ items s -> tSem s $ concat $ map (tItem typ) items
+  I.SDeclVar typ items s -> tSem s $ concatMap (tItem typ) items
   I.SBlock lbr stmts rbr -> tBraces lbr rbr $ return $
     O.SBlock $ concatMap tStmt stmts
   I.SAssignOp id opassign expr s -> tSem s $ return $

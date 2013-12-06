@@ -21,7 +21,7 @@ fieldsClosure clazz super = do
         Field { fieldName = x } <- clazz,
         Field { fieldName = y } <- super,
         x == y ]
-  guard (repeated == []) `rethrow` Err.redeclaredInSuper repeated
+  guard (null repeated) `rethrow` Err.redeclaredInSuper repeated
   return $ super ++ clazz
 
 methodsClosure :: [Method] -> [Method] -> HierarchyM [Method]
@@ -32,7 +32,7 @@ methodsClosure clazz superOrig = do
         Method { methodType = tx, methodName = x } <- clazz,
         Method { methodType = ty, methodName = y } <- super,
         x == y, tx /= ty ]
-  guard (repeated == []) `rethrow` Err.redeclaredWithDifferentType repeated
+  guard (null repeated) `rethrow` Err.redeclaredWithDifferentType repeated
   -- This will leave the last occurence of a function with given name
   return $ List.nubBy eqMethodName $ clazz ++ super
   where

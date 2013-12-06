@@ -195,7 +195,7 @@ instance Scopeable ClassHierarchy where
       static typ
       static super
       enterClass clazz $ do
-        mapM scope fields
+        mapM_ scope fields
         methods' <- mapM scope methods
         return $ clazz { classAllMethods = methods' }
 
@@ -239,13 +239,13 @@ instance Scopeable Stmt where
       stmts' <- newLocalScope (mapM scope stmts)
       return $ SBlock stmts'
     -- Memory access
-    SStore _ _ _ -> Err.unreachable x
-    SStoreArray _ _ _ _ -> Err.unreachable x
+    SStore {} -> Err.unreachable x
+    SStoreArray {} -> Err.unreachable x
     SPutField VariableThis _ field expr _ -> do
       expr' <- scope expr
       dynamic field
       return $ SPutField VariableThis undefined field expr' undefined
-    SPutField _ _ _ _ _ -> Err.unreachable x
+    SPutField {} -> Err.unreachable x
     -- Control statements
     SReturn expr _ -> do
       expr' <- scope expr
@@ -267,7 +267,7 @@ instance Scopeable Stmt where
     SThrow expr -> do
       expr' <- scope expr
       return $ SThrow expr'
-    STryCatch _ _ _ _ -> Err.unreachable x
+    STryCatch {} -> Err.unreachable x
     -- Special function bodies
     SBuiltin -> return SBuiltin
     SInherited -> return SInherited
@@ -336,11 +336,10 @@ instance Scopeable Expr where
     EInvokeStatic _ name _ exprs -> do
       exprs' <- mapM scope exprs
       stat <- isStatic name
-      case stat of
-        True -> static name >>
-            return (EInvokeStatic undefined name undefined exprs')
-        False -> dynamic name >>
-            return (EInvokeVirtual (ELoad VariableThis undefined) undefined name undefined exprs')
+      if stat
+      then static name >> return (EInvokeStatic undefined name undefined exprs')
+      else dynamic name >>
+          return (EInvokeVirtual (ELoad VariableThis undefined) undefined name undefined exprs')
     EInvokeVirtual expr _ name _ exprs -> do
       expr' <- scope expr
       exprs' <- mapM scope exprs
@@ -365,17 +364,17 @@ instance Scopeable Expr where
     -- These expressions will be replaced with ones caring more context in subsequent phases
     T_EVar name ->
       varOrField name
-        (\num -> ELoad num undefined)
+        (`ELoad` undefined)
         (\field -> EGetField (ELoad VariableThis undefined) undefined field undefined)
 
 -- HELPERS --
 -------------
 varOrField name ifVar ifField = do
   field <- isField name
-  case field of
-    False -> current name >>= (return . ifVar)
-    True -> do
+  if field
+  then do
       let field = fieldFromVariable name
       dynamic field
       return $ ifField field
+  else liftM ifVar (current name)
 
