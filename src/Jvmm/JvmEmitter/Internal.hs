@@ -27,6 +27,9 @@ import Jvmm.Builtins
 import Jvmm.Trans.Output
 import Jvmm.Hierarchy.Output
 
+-- A class that holds builtins
+builtinsClassName = "Runtime" :: String
+
 -- EMITTING CLASS HIERARCHY --
 ------------------------------
 emitTopLevelStatics :: String -> ClassHierarchy -> ErrorInfoT Identity [JasminAsm]
@@ -96,16 +99,18 @@ resetLabels = modify (\st -> st { emitterstateNextLabel = 0 })
 
 -- GENERATION 0: RAW STACK OPERATIONS --
 ----------------------------------------
-alterStack :: (Int -> Int) -> EmitterM Int
+alterStack :: (Int -> Int) -> EmitterM ()
 alterStack dif = do
-  stack <- fmap dif $ gets emitterstateStackCurrent
-  stackMax <- gets emitterstateStackMax
-  modify (\st -> st { emitterstateStackCurrent = stack,
-                      emitterstateStackMax = maximum [stack, stackMax] })
-  return stack
+  stack <- dif <$> gets emitterstateStackCurrent
+  stackMax <- (maximum . (:[stack])) <$> gets emitterstateStackMax
+  -- DEBUG remove when in production
+  com $ "Stack: " ++ (show stack) ++ " Max: " ++ (show stackMax)
+  modify (\st -> st { emitterstateStackCurrent = stack
+                    , emitterstateStackMax = stackMax })
 
 newStack :: EmitterM ()
-newStack = modify (\st -> st { emitterstateStackMax = 0 })
+newStack = modify (\st -> st { emitterstateStackMax = 0
+                             , emitterstateStackCurrent = 0 })
 
 -- GENERATION 1: RAW MNEMONICS EMITTERS --
 ------------------------------------------
@@ -131,18 +136,16 @@ nl = tell $ return JasminEmpty
 
 -- GENERATION 2: SAFE (STACK AWARE) MNEMONICS EMITTERS --
 -------------------------------------------------
-jmp :: String -> Label -> EmitterM ()
-jmp str (Label lab)
-  | str == "goto" = ins $ str ++ ' ':lab
-  | otherwise = Err.unreachable "unconditional jump with goto only"
+jmp :: (Int -> Int) -> Label -> EmitterM ()
+jmp stdif (Label lab) = ins ("goto" ++ ' ':lab) >> alterStack stdif
 
-cjmp :: String -> Label -> EmitterM ()
-cjmp str (Label lab)
-  | List.isInfixOf "if" str = alterStack dec1 >> ins (str ++ ' ':lab)
+cjmp :: String -> (Int -> Int) -> Label -> EmitterM ()
+cjmp str stdif (Label lab)
+  | List.isInfixOf "if" str = ins (str ++ ' ':lab) >> alterStack stdif
   | otherwise = Err.unreachable "conditional jump must check condition"
 
 inss :: String -> (Int -> Int) -> EmitterM ()
-inss str stdif = alterStack stdif >> ins str
+inss str stdif = ins str >> alterStack stdif
 
 inssc :: String -> (Int -> Int) -> Int -> EmitterM ()
 inssc str stdif val = inss (str `param` val) stdif
@@ -158,14 +161,16 @@ element (TComposed _) = ('a':)
 variable (TPrimitive _) = ('i':)
 variable (TComposed _) = ('a':)
 
+-- This is awesome in my opinion...
 param :: String -> Int -> String
+-- Garbage in - garbage out
 param "iconst" val
   | val == -1 = "iconst_m1"
-  | val >= 0 && val <= 5 = "iconst_" ++ show val
-param "bipush" val
-  | val >= -1 && val <= 5 = "iconst" `param` val
+  | otherwise = "iconst_" ++ show val
 param "sipush" val
-  | val >= -1 && val <= 5 = "iconst" `param` val
+  | val >= -1 && val <= 5 = param "iconst" val
+param "bipush" val
+  | val >= -128 && val <= 127 = param "sipush" val
 param (t:mnem) val
   | val >= 0 && val <= 3 && mnem `elem` ["load", "store"] = t:mnem ++ '_':show val
 param mnem val = mnem ++ ' ':show val
@@ -173,10 +178,15 @@ param mnem val = mnem ++ ' ':show val
 -- PURE HELPERS --
 ------------------
 inc1, dec1, dec3, set0 :: Int -> Int
-inc1 = (1+)
-dec1 = (1-)
-dec3 = (3-)
+inc1 = (+) 1
+dec1 = decn 1
+dec3 = decn 3
 set0 = const 0
+decn :: Int -> Int -> Int
+decn = flip (-)
+
+classPath :: String -> String
+classPath = List.dropWhile ('L' ==) . List.dropWhileEnd (';' ==)
 
 -- TREE TRAVERSING --
 ---------------------
@@ -251,7 +261,7 @@ instance Emitable Method () where
         tdesc <- emit typ
         dir $ "method public static " ++ name ++ tdesc
     let maxVar = maximum $ (0:) $ map (fromEnum . variableNum) $ args ++ vars
-    dir $ "limit locals " ++ show maxVar
+    dir $ "limit locals " ++ show (maxVar + 1)
     -- Emit method body but do not write it yet
     newStack
     resetLabels
@@ -275,9 +285,10 @@ instance Emitable Stmt () where
       emit expr
       inssv (variable typ "store") dec1 num
     SStoreArray num expr1 expr2 telem -> do
+      emit $ ELoad num (TComposed $ TArray telem)
       emit expr1
       emit expr2
-      inssv (element telem "astore") dec3 num
+      inss (element telem "astore") dec3
     SPutField {} -> notImplemented
     -- Control statements
     SReturn expr typ -> do
@@ -288,26 +299,26 @@ instance Emitable Stmt () where
     SIf expr stmt -> do
       emit expr
       lfalse <- newLabel
-      cjmp "ifeq" lfalse
+      cjmp "ifeq" dec1 lfalse
       emit stmt
       lab lfalse
     SIfElse expr stmt1 stmt2 -> do
       emit expr
       [lfalse, lend] <- newLabels 2
       lab lfalse
-      cjmp "ifeq" lfalse
+      cjmp "ifeq" dec1 lfalse
       emit stmt1
-      jmp "goto" lend
+      jmp id lend
       emit stmt2
       lab lend
     SWhile expr stmt -> do
       [lbody, lcond] <- newLabels 2
-      jmp "goto" lcond
+      jmp id lcond
       lab lbody
       emit stmt
       lab lcond
       emit expr
-      cjmp "ifne" lbody
+      cjmp "ifne" dec1 lbody
     SThrow expr -> notImplemented
     STryCatch stmt1 typ num stmt2 -> notImplemented
     -- Special function bodies
@@ -352,6 +363,16 @@ instance Emitable Expr TypeBasic where
       emit expr2
       inss (element telem "aload") dec1
       return telem
+    EGetField expr TString (FieldName "length") ftyp -> do
+      emit expr
+      cdesc <- classPath <$> emit (TComposed TString)
+      fdesc <- emit ftyp
+      inss ("getfield " ++ cdesc ++ "/length " ++ fdesc) id
+      return ftyp
+    EGetField expr (TArray _) (FieldName "length") ftyp -> do
+      emit expr
+      inss "arraylength" id
+      return ftyp
     EGetField {} -> notImplemented
     -- Method calls
     EInvokeStatic _ (MethodName name) ftyp@(TypeMethod tret _ _) exprs -> do
@@ -361,9 +382,17 @@ instance Emitable Expr TypeBasic where
         Just (ClassName str) -> do
           -- Class that holds top-level static methods
           fdesc <- emit ftyp
-          inss ("invokestatic " ++ str ++ "/" ++ name ++ fdesc) (length exprs -)
+          let pops = length exprs - (if tret == (TPrimitive TVoid) then 0 else 1)
+          inss ("invokestatic " ++ str ++ "/" ++ name ++ fdesc) (decn pops)
           return tret
         Nothing -> notImplemented
+    EInvokeVirtual expr TString (MethodName "charAt") ftyp [expr1] -> do
+      emit expr
+      emit expr1
+      cdesc <- classPath <$> emit TString
+      fdesc <- emit ftyp
+      inss ("invokevirtual " ++ cdesc ++ "/charAt" ++ fdesc) id
+      return (TPrimitive TChar)
     EInvokeVirtual {} -> notImplemented
     -- Object creation
     ENewObj typ -> notImplemented
@@ -388,18 +417,62 @@ instance Emitable Expr TypeBasic where
           -- Alternatively we can: iconst_1, swap, isub.
           -- Java uses the following pattern:
           [ltrue, lend] <- newLabels 2
-          cjmp "ifne" ltrue
+          cjmp "ifne" dec1 ltrue
           emit ELitTrue
-          jmp "goto" lend
+          jmp dec1 lend
           lab ltrue
           emit ELitFalse
           lab lend
           return typ
         OuNeg -> inss "ineg" id >> return typ
-    EBinary opbin expr1 expr2 tret -> do
-      typ1 <- emit expr1
-      typ1 <- emit expr1
-      -- FIXME
+    EBinary ObAnd expr1 expr2 tret -> do
+      [lfalse, lend] <- newLabels 2
+      emit expr1
+      cjmp "ifeq" dec1 lfalse
+      emit expr2
+      cjmp "ifeq" dec1 lfalse
+      emit ELitTrue
+      jmp id lend
+      lab lfalse
+      emit ELitFalse
+      lab lend
+      return tret
+    EBinary ObOr expr1 expr2 tret -> do
+      [ltrue, lend] <- newLabels 2
+      emit expr1
+      cjmp "ifne" dec1 ltrue
+      emit expr2
+      cjmp "ifne" dec1 ltrue
+      emit ELitFalse
+      jmp id lend
+      lab ltrue
+      emit ELitTrue
+      lab lend
+      return tret
+    EBinary ObPlus expr1 expr2 tret@(TComposed TString) -> do
+      emit expr1
+      emit expr2
+      fdesc <- emit $ TypeMethod (TComposed TString) [TComposed TString, TComposed TString] []
+      inss ("invokestatic " ++ builtinsClassName ++ "/concat"  ++ fdesc) dec1
+      return tret
+    EBinary opbin expr1 expr2 tret@(TPrimitive tprim) -> do
+      emit expr1
+      emit expr2
+      case opbin of
+        ObTimes -> inss "imul" dec1
+        ObDiv -> inss "idiv" dec1
+        ObMod -> inss "irem" dec1
+        ObPlus -> inss "iadd" dec1
+        ObMinus -> inss "isub" dec1
+        _ -> do
+          -- FIXME
+          case opbin of
+            ObLTH -> return ()
+            ObLEQ -> return ()
+            ObGTH -> return ()
+            ObGEQ -> return ()
+            ObEQU -> return ()
+            ObNEQ -> return ()
       return tret
     -- These expressions will be replaced with ones caring more context in subsequent phases
     T_EVar {} -> Err.unreachable x
