@@ -284,13 +284,31 @@ instance Emitable Expr TypeBasic where
       insst "aload" dec telem
     EGetField {} -> notImplemented
     -- Method calls
-    -- FIXME add method type here
-    EInvokeStatic styp name ftyp exprs -> undefined
-    -- FIXME add method type here
+    EInvokeStatic _ (MethodName name) ftyp@(TypeMethod tret _ _) exprs -> do
+      mapM_ emit exprs
+      className <- asks emitterenvOverrideClass
+      case className of
+        Just (ClassName str) -> do
+          -- Class that holds top-level static methods
+          fdesc <- emit ftyp
+          inss ("invokestatic " ++ str ++ "/" ++ name ++ fdesc) (length exprs -)
+          return tret
+        Nothing -> notImplemented
     EInvokeVirtual {} -> notImplemented
     -- Object creation
     ENewObj typ -> notImplemented
-    ENewArr typ expr -> notImplemented
+    ENewArr typ@(TComposed _) expr -> do
+      emit expr
+      tdesc <- emit typ
+      insst ("newarray " ++ tdesc) id typ
+    ENewArr typ@(TPrimitive tprim) expr -> do
+      emit expr
+      let tdesc = case tprim of
+            TChar -> "char"
+            TBool -> "boolean"
+            TInt -> "int"
+      inss ("newarray " ++ tdesc) id
+      return typ
     -- Operations
     EUnary op expr tret -> do
       typ <- emit expr
@@ -300,7 +318,7 @@ instance Emitable Expr TypeBasic where
     EBinary opbin expr1 expr2 tret -> do
       typ1 <- emit expr1
       typ1 <- emit expr1
-      -- FIXME missing
+      undefined
       return tret
     -- These expressions will be replaced with ones caring more context in subsequent phases
     T_EVar {} -> Err.unreachable x
