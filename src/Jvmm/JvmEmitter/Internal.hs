@@ -213,9 +213,9 @@ instance Emitable Method () where
   emit method@Method { methodName = MethodName name, methodType = typ, methodBody = stmt,
       methodArgs = args, methodVariables = vars } = do
     -- The prologue
-    case isEntrypoint method of
-      True -> dir "method public static main([Ljava/lang/String;)V"
-      False -> do
+    if isEntrypoint method
+      then dir "method public static main([Ljava/lang/String;)V"
+      else do
         tdesc <- emit typ
         dir $ "method public static " ++ name ++ tdesc
     let maxVar = maximum $ (0:) $ map (fromEnum . variableNum) $ args ++ vars
@@ -245,7 +245,7 @@ instance Emitable Stmt () where
       emit expr1
       emit expr2
       insstv "astore" dec3 telem num >> none
-    SPutField _ _ _ _ _ -> notImplemented
+    SPutField {} -> notImplemented
     -- Control statements
     SReturn expr typ -> do
       emit expr
@@ -262,11 +262,11 @@ instance Emitable Stmt () where
     -- Metainformation carriers
     SMetaLocation loc stmts -> stmtMetaLocation' loc (mapM emit stmts)
     -- These statements will be replaced with ones caring more context in subsequent phases
-    T_SDeclVar _ _ -> Err.unreachable x
-    T_SAssign _ _ -> Err.unreachable x
-    T_SAssignArr _ _ _ -> Err.unreachable x
-    T_SAssignFld _ _ _ -> Err.unreachable x
-    T_STryCatch _ _ _ _ -> Err.unreachable x
+    T_SDeclVar {} -> Err.unreachable x
+    T_SAssign {} -> Err.unreachable x
+    T_SAssignArr {} -> Err.unreachable x
+    T_SAssignFld {} -> Err.unreachable x
+    T_STryCatch {} -> Err.unreachable x
 
 instance Emitable Expr TypeBasic where
   emit x = case x of
@@ -283,12 +283,12 @@ instance Emitable Expr TypeBasic where
       emit expr1
       emit expr2
       insst "aload" dec telem
-    EGetField _ _ _ _ -> notImplemented
+    EGetField {} -> notImplemented
     -- Method calls
     -- FIXME add method type here
     EInvokeStatic typ name exprs -> undefined
     -- FIXME add method type here
-    EInvokeVirtual _ _ _ _ -> notImplemented
+    EInvokeVirtual {} -> notImplemented
     -- Object creation
     ENewObj typ -> notImplemented
     ENewArr typ expr -> notImplemented
@@ -304,5 +304,5 @@ instance Emitable Expr TypeBasic where
       -- FIXME missing
       return tret
     -- These expressions will be replaced with ones caring more context in subsequent phases
-    T_EVar _ -> Err.unreachable x
+    T_EVar {} -> Err.unreachable x
 

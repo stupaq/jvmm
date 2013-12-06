@@ -43,17 +43,23 @@ type Interaction a = a -> InteractionM ()
 type TransformationM a = (ErrorInfoT Identity) a
 type Transformation a b = a -> TransformationM b
 
-(=>>) :: Transformation a b -> (Interaction b) -> Interaction a
-(=>>) proc sink input =
+(=?>) :: Transformation a b -> Interaction b -> Interaction a
+(=?>) proc sink input =
   case runErrorInfoM $ proc input of
     Left err -> do
-      printl Error $ "ERROR\n"
+      printl Error "ERROR\n"
       printl Error $ show err
       lift exitFailure
     Right res -> do
-      printl Warn $ "OK\n"
+      printl Warn "OK\n"
       sink res
       lift exitSuccess
+
+(=>>) :: Transformation a b -> Interaction b -> Interaction a
+(=>>) proc sink input =
+  case runErrorInfoM $ proc input of
+    Left _ -> lift exitFailure
+    Right res -> sink res >> lift exitSuccess
 
 (=>|) :: Interaction a -> a -> InteractionM ()
 (=>|) = ($)
@@ -69,28 +75,28 @@ parseT str =
     Bad err -> throwError $ Dangling err
     Ok tree -> return tree
 parse :: Interaction String
-parse = parseT =>> nullSink
+parse = parseT =?> nullSink
 
 -- Performs all static checking and semantics analysis
 checkT :: Transformation String ClassHierarchy
 checkT str =
   parseT str >>= trans >>= hierarchy >>= scope >>= typing >>= analyse >>= verify
 check :: Interaction String
-check = checkT =>> nullSink
+check = checkT =?> nullSink
 
 -- Performs all static analysis and emits Jasmin assembly
 compileJvm :: Interaction String
-compileJvm = checkT =>> compile
+compileJvm = checkT =?> compile
   where
     compile hierarchy = do
       source <- asks source
       let name = takeBaseName source
       let dest = dropFileName source
-      let writeOne = \(JasminAsm clazz lines) -> do
+      let writeOne (JasminAsm clazz lines) = do
           let file = dest </> clazz ++ ".j"
           lift $ writeFile file $ "; source: " ++ source ++ "\n"
           mapM_ (lift . appendFile file . toJasmin) lines
-      emitJvm name =>> (mapM_ writeOne) =>| hierarchy
+      emitJvm name =>> mapM_ writeOne =>| hierarchy
 
 -- Defaault workflow
 defaultInteraction = compileJvm
@@ -103,8 +109,7 @@ data Verbosity = Debug | Info | Warn | Error
 printl :: Verbosity -> String -> InteractionM ()
 printl v s = do
   verb <- asks verbosity
-  if v >= verb then liftIO $ hPutStrLn stderr s
-  else return ()
+  when (v >= verb) $ liftIO $ hPutStrLn stderr s
 
 -- GENERAL OPTIONS --
 ---------------------
@@ -121,11 +126,11 @@ options0 = Options {
 
 optionsDef :: [OptDescr (Options -> Options)]
 optionsDef = [
-    Option ['v'] [] (NoArg $ \opts -> opts { verbosity = Debug }) "verbose output"
-  , Option ['q'] [] (NoArg $ \opts -> opts { verbosity = Warn }) "quiet output"
-  , Option ['p'] [] (NoArg $ \opts -> opts { workflow = parse }) "parse code"
-  , Option ['c'] [] (NoArg $ \opts -> opts { workflow = check }) "preform static analysis"
-  , Option ['j'] [] (NoArg $ \opts -> opts { workflow = compileJvm }) "preform static analysis"
+    Option "v" [] (NoArg $ \opts -> opts { verbosity = Debug }) "verbose output"
+  , Option "q" [] (NoArg $ \opts -> opts { verbosity = Warn }) "quiet output"
+  , Option "p" [] (NoArg $ \opts -> opts { workflow = parse }) "parse code"
+  , Option "c" [] (NoArg $ \opts -> opts { workflow = check }) "preform static analysis"
+  , Option "j" [] (NoArg $ \opts -> opts { workflow = compileJvm }) "preform static analysis"
   ]
 
 parseOptions :: IO Options
@@ -143,5 +148,5 @@ main :: IO ()
 main = do
   opts <- parseOptions
   str <- readFile (source opts)
-  runReaderT (workflow opts $ str) opts
+  runReaderT (workflow opts str) opts
 
