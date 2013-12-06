@@ -47,8 +47,7 @@ objectSuperClass = Class {
     classType = TObject
   , classSuper = undefined
   , classFields = []
-  , classMethods = []
-  , classStaticMethods = []
+  , classAllMethods = []
   , classLocation = Err.Unknown
 }
 

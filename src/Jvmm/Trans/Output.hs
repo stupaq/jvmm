@@ -8,6 +8,8 @@ module Jvmm.Trans.Output where
 import Control.Monad.Identity
 import Control.Monad.Error
 
+import Data.List as List
+
 import qualified Jvmm.Errors as Err
 import Jvmm.Errors (ErrorInfo, ErrorInfoT, runErrorInfoM, withLocation, Location)
 
@@ -22,10 +24,13 @@ data Class = Class {
     classType :: TypeComposed
   , classSuper :: TypeComposed
   , classFields :: [Field]
-  , classMethods :: [Method]
-  , classStaticMethods :: [Method]
+  , classAllMethods :: [Method]
   , classLocation :: Location
 } deriving (Show)
+
+classStaticMethods, classInstanceMethods :: Class -> [Method]
+classStaticMethods = List.filter (not . methodInstance) . classAllMethods
+classInstanceMethods = List.filter methodInstance . classAllMethods
 
 data Field = Field {
     fieldType :: TypeBasic
@@ -41,6 +46,7 @@ data Method = Method {
   , methodOrigin :: TypeComposed
   , methodLocation :: Location
   , methodVariables :: [Variable]
+  , methodInstance :: Bool
 } deriving (Show)
 
 data Variable = Variable {
@@ -231,8 +237,7 @@ instance Show ClassDiff where
         classType = TObject
       , classSuper = TObject
       , classFields = []
-      , classMethods = []
-      , classStaticMethods = []
+      , classAllMethods = []
       , classLocation = Err.Unknown
     }
 

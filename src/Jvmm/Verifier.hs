@@ -1,5 +1,5 @@
 module Jvmm.Verifier where
-import Jvmm.Verifier.Internal
+import Jvmm.Verifier.Internal as Internal
 
 import Control.Monad.Identity
 
@@ -9,5 +9,5 @@ import Jvmm.Hierarchy.Output
 -- MAIN --
 ----------
 verify :: ClassHierarchy -> ErrorInfoT Identity ClassHierarchy
-verify classes = (runVerifierM $ funH classes) >> return classes
+verify classes = (runVerifierM $ Internal.verify classes) >> return classes
 

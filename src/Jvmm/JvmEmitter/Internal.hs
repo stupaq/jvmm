@@ -109,11 +109,10 @@ nl = tell $ return JasminEmpty
 
 -- GENERATION 2: SAFE (TYPE AND STACK AWARE) MNEMONICS EMITTERS --
 -------------------------------------------------
-inss :: String -> (Int -> Int) -> TypeBasic -> EmitterM TypeBasic
-inss str stdif typ = do
+inss :: String -> (Int -> Int) -> EmitterM ()
+inss str stdif = do
   alterStack stdif
   ins str
-  return typ
 
 insst :: String -> (Int -> Int) -> TypeBasic -> EmitterM TypeBasic
 insst str stdif typ = do
@@ -153,7 +152,9 @@ class Emitable a b | a -> b where
 
 instance Emitable Class JasminAsm where
   -- TObject is special, we have to translate it to Java's Object
-  emit clazz@(Class TObject super [] [] statics _) = do
+  emit clazz@(Class TObject super [] statics _) = do
+    -- We can only handle static methods here
+    assert (all (not . methodInstance) statics) $ return ()
     className <- asks emitterenvOverrideClass
     case className of
       Just (ClassName str) -> toJasminClass str $ do
@@ -250,7 +251,7 @@ instance Emitable Stmt () where
     SReturn expr typ -> do
       emit expr
       insst "return" (const 0) typ >> none
-    SReturnV -> ins "return"
+    SReturnV -> inss "return" (const 0)
     SIf expr stmt -> undefined
     SIfElse expr stmt1 stmt2 -> undefined
     SWhile expr stmt -> undefined

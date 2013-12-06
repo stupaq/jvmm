@@ -17,7 +17,7 @@ tempIdent (I.Ident id) ctx = I.Ident $ id ++ "#" ++ ctx
 
 tProgram :: I.Program -> ErrorInfoT Identity O.CompilationUnit
 tProgram (I.Program defs) = do
-  objectDiff <- objectClassDiff [ tFunction x | I.DFunction x <- defs ]
+  objectDiff <- objectClassDiff [ tFunction False x | I.DFunction x <- defs ]
   let userClasses = [ x | I.DClass x <- defs ]
   return $ O.CompilationUnit $ (undefined, objectDiff):map tClass userClasses
 
@@ -29,8 +29,7 @@ tClass (I.Class id extends lbr members rbr) =
         O.classType = clazzTyp
       , O.classSuper = super
       , O.classFields = [ tField typ x | I.FieldsList typ fields _ <- members, x <- fields ]
-      , O.classMethods = [ tFunction x | I.Method x <- members ]
-      , O.classStaticMethods = []
+      , O.classAllMethods = [ tFunction True x | I.Method x <- members ]
       , O.classLocation = Err.Unknown
     })
 
@@ -46,8 +45,8 @@ tField typ (I.Field id) = O.Field {
   O.fieldOrigin = undefined
 }
 
-tFunction :: I.Function -> O.Method
-tFunction (I.Function typ id args exceptions lbr stmts rbr) =
+tFunction :: Bool -> I.Function -> O.Method
+tFunction inst (I.Function typ id args exceptions lbr stmts rbr) =
   O.Method {
       O.methodType = funType
     , O.methodName = tMIdent id
@@ -56,6 +55,7 @@ tFunction (I.Function typ id args exceptions lbr stmts rbr) =
     , O.methodOrigin = undefined
     , O.methodLocation = brToLoc lbr rbr
     , O.methodVariables = []
+    , O.methodInstance = inst
   }
   where
     arguments = map (\(I.Argument typ id) -> O.Variable (tTBasic typ) undefined (tVIdent id))  args

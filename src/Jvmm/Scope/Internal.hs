@@ -86,7 +86,7 @@ enterHierarchy hierarchy = do
 enterClass :: Class -> ScopeM a -> ScopeM a
 enterClass clazz = do
   let instanceScope = Set.fromList $ List.map (SField . fieldName) (classFields clazz)
-        ++ List.map (SMethod . methodName) (classMethods clazz)
+        ++ List.map (SMethod . methodName) (classInstanceMethods clazz)
   let staticScope = Set.fromList $ List.map (SMethod . methodName) (classStaticMethods clazz)
   local (\env@ScopeEnv { scopeenvStatic = classes } -> env {
           scopeenvInstance = instanceScope
@@ -190,18 +190,14 @@ class Scopeable a where
   scope :: a -> ScopeM a
 
 instance Scopeable ClassHierarchy where
-  scope = Traversable.mapM $ \clazz@(Class typ super fields methods staticMethods loc) ->
+  scope = Traversable.mapM $ \clazz@(Class typ super fields methods loc) ->
     Err.withLocation loc $ do
       static typ
       static super
       enterClass clazz $ do
         mapM scope fields
-        methods' <- mapM scopeInstance methods
-        staticMethods' <- mapM scopeStatic staticMethods
-        return $ clazz {
-              classMethods = methods'
-            , classStaticMethods = staticMethods'
-          }
+        methods' <- mapM scope methods
+        return $ clazz { classAllMethods = methods' }
 
 instance Scopeable Field where
   scope field@(Field typ name origin) = do
@@ -210,32 +206,26 @@ instance Scopeable Field where
     static origin
     return field
 
-scopeInstance :: Method -> ScopeM Method
-scopeInstance method@Method { methodName = name, methodLocation = loc } =
-  Err.withLocation loc . newLocalScope $ do
-    num <- declare (VariableName "self")
-    assert (num == variablenum0) $ return ()
-    dynamic name
-    scope method
-
-scopeStatic :: Method -> ScopeM Method
-scopeStatic method@Method { methodName = name, methodLocation = loc } =
-  Err.withLocation loc . newLocalScope $ do
-    static name
-    scope method
-
 instance Scopeable Method where
-  scope method@(Method typ name args stmt origin loc _) = Err.withLocation loc $ do
-    static typ
-    static origin
-    enterMethod $ do
-      args' <- mapM declareArg args `rethrow` Err.duplicateArg name
-      (stmt', vars') <- listen $ newLocalScope (scope stmt)
-      return method {
-            methodBody = stmt'
-          , methodArgs = args'
-          , methodVariables = vars'
-        }
+  scope method@(Method typ name args stmt origin loc _ inst) =
+    Err.withLocation loc . newLocalScope $ do
+      if inst
+      then do
+        num <- declare (VariableName "self")
+        assert (num == variablenum0) $ return ()
+        dynamic name
+      else
+        static name
+      static typ
+      static origin
+      enterMethod $ do
+        args' <- mapM declareArg args `rethrow` Err.duplicateArg name
+        (stmt', vars') <- listen $ newLocalScope (scope stmt)
+        return method {
+              methodBody = stmt'
+            , methodArgs = args'
+            , methodVariables = vars'
+          }
     where
       declareArg :: Variable -> ScopeM Variable
       declareArg var@Variable { variableName = name } = do

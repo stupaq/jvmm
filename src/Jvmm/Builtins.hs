@@ -18,12 +18,13 @@ builtinFunctions = map fun [
     ("readString", TypeMethod (TComposed TString) [] []),
     ("error", TypeMethod (TPrimitive TVoid) [] [])]
   where
-    fun (name, typ) = Method typ (MethodName name) [] SBuiltin  TObject Err.Unknown []
+    fun (name, typ) = Method typ (MethodName name) [] SBuiltin  TObject Err.Unknown [] False
 
 -- ENTRYPOINT --
 ----------------
 entrypointType = TypeMethod (TPrimitive TInt) [] []
 isEntrypoint method = entrypointName == methodName method && methodOrigin method == TObject
+    && not (methodInstance method)
   where
     entrypointName = MethodName "main"
 

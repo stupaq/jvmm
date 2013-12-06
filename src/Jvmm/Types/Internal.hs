@@ -97,7 +97,7 @@ collectTypes classes = fmap snd $ runStateT (Traversable.mapM decClass classes) 
       }
       where
         fields = List.map (\x -> (SField $ fieldName x, toType $ fieldType x)) $ classFields clazz
-        methods = List.map (\x -> (SMethod $ methodName x, toType $ methodType x)) $ classMethods clazz
+        methods = List.map (\x -> (SMethod $ methodName x, toType $ methodType x)) $ classInstanceMethods clazz
         typeDef = Map.fromList $ fields ++ methods
         staticMethods = List.map (\x -> (SFunction $ methodName x, toType $ methodType x)) $ classStaticMethods clazz
 
@@ -353,11 +353,10 @@ funH = Traversable.mapM $ \clazz@Class { classType = typ, classLocation = loc } 
       staticMethods' <- mapM funMS $ classStaticMethods clazz
       enterInstance typ $ do
         fields' <- mapM funF $ classFields clazz
-        methods' <- mapM funM $ classMethods clazz
+        instanceMethods' <- mapM funM $ classInstanceMethods clazz
         return $ clazz {
-              classMethods = methods'
+              classAllMethods = instanceMethods' ++ staticMethods'
             , classFields = fields'
-            , classStaticMethods = staticMethods'
           }
 
 funF :: Field -> TypeM Field

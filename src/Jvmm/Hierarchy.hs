@@ -19,24 +19,23 @@ prepareClassDiff loc clazz@(Class { classType = typ }) super = Err.withLocation 
     guard (classType super == classSuper clazz)
     guard (clashing == []) `rethrow` Err.staticNonStaticConflict (head clashing)
     fields' <- fieldsClosure fields (classFields super)
-    methods' <- methodsClosure methods (classMethods super)
+    instanceMethods' <- methodsClosure instanceMethods (classInstanceMethods super)
     staticMethods' <- methodsClosure staticMethods (classStaticMethods super)
     return clazz {
         classFields = fields'
-      , classMethods = methods'
-      , classStaticMethods = staticMethods'
+      , classAllMethods = instanceMethods' ++ staticMethods'
       , classLocation = loc
     }
   where
     clashing :: [MethodName]
-    clashing = (List.map methodName methods) `intersect` (List.map methodName staticMethods)
+    clashing = (List.map methodName instanceMethods) `intersect` (List.map methodName staticMethods)
     fields :: [Field]
     fields = [ field { fieldOrigin = typ } | field <- classFields clazz]
     methodsWithOrigin :: (Class -> [Method]) -> [Method]
     methodsWithOrigin accessor =
       List.map (\method -> method { methodOrigin = typ }) $ accessor clazz
-    methods, staticMethods :: [Method]
-    methods = methodsWithOrigin classMethods
+    instanceMethods, staticMethods :: [Method]
+    instanceMethods = methodsWithOrigin classInstanceMethods
     staticMethods = methodsWithOrigin classStaticMethods
 
 -- CLASS HIERARCHY --
@@ -57,8 +56,7 @@ objectClassDiff functions = do
         classType = TObject
       , classSuper = TObject
       , classFields = []
-      , classMethods = []
-      , classStaticMethods = builtinFunctions ++ functions
+      , classAllMethods = builtinFunctions ++ functions
       , classLocation = Err.Unknown
     }
   where
