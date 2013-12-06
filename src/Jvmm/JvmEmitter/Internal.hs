@@ -42,9 +42,10 @@ emitTopLevelStatics className = execWriterT . Traversable.mapM processClass
 data EmitterState = EmitterState {
     emitterstateStackCurrent :: Int
   , emitterstateStackMax :: Int
+  , emitterstateNextLabel :: Int
 } deriving (Show)
 
-emitterstate0 = EmitterState 0 0
+emitterstate0 = EmitterState 0 0 0
 
 -- EMITTER ENVIRONMENT --
 -------------------------
@@ -75,6 +76,24 @@ assertStack pred x = do
   stack <- gets emitterstateStackCurrent
   assert (pred stack) x
 
+-- LABELS ALLOCATION --
+-----------------------
+newtype Label = Label String
+  deriving (Show, Eq, Ord)
+
+newLabel :: EmitterM Label
+newLabel = do
+  num <- gets emitterstateNextLabel
+  modify (\st -> st { emitterstateNextLabel = num + 1 })
+  return $ Label $ "l" ++ show num
+
+newLabels :: Int -> EmitterM [Label]
+newLabels 0 = return []
+newLabels n = liftM2 (:) newLabel (newLabels $ n - 1)
+
+resetLabels :: EmitterM ()
+resetLabels = modify (\st -> st { emitterstateNextLabel = 0 })
+
 -- GENERATION 0: RAW STACK OPERATIONS --
 ----------------------------------------
 alterStack :: (Int -> Int) -> EmitterM Int
@@ -98,6 +117,9 @@ ins str = do
   assert (str == List.dropWhile Char.isSpace str) $ return ()
   tell [JasminInstruction str]
 
+lab :: Label -> EmitterM ()
+lab (Label str) = tell [JasminLabel str]
+
 dir :: String -> EmitterM ()
 dir = tell . return . JasminDirective
 
@@ -107,43 +129,54 @@ com = tell . return . JasminComment
 nl :: EmitterM ()
 nl = tell $ return JasminEmpty
 
--- GENERATION 2: SAFE (TYPE AND STACK AWARE) MNEMONICS EMITTERS --
+-- GENERATION 2: SAFE (STACK AWARE) MNEMONICS EMITTERS --
 -------------------------------------------------
+jmp :: String -> Label -> EmitterM ()
+jmp str (Label lab)
+  | str == "goto" = ins $ str ++ ' ':lab
+  | otherwise = Err.unreachable "unconditional jump with goto only"
+
+cjmp :: String -> Label -> EmitterM ()
+cjmp str (Label lab)
+  | List.isInfixOf "if" str = alterStack dec1 >> ins (str ++ ' ':lab)
+  | otherwise = Err.unreachable "conditional jump must check condition"
+
 inss :: String -> (Int -> Int) -> EmitterM ()
-inss str stdif = do
-  alterStack stdif
-  ins str
+inss str stdif = alterStack stdif >> ins str
 
-insst :: String -> (Int -> Int) -> TypeBasic -> EmitterM TypeBasic
-insst str stdif typ = do
-  alterStack stdif
-  ins (insModifier typ:str)
-  return typ
-    where
-      insModifier (TComposed _) = 'a'
-      insModifier (TPrimitive _) = 'i'
+inssc :: String -> (Int -> Int) -> Int -> EmitterM ()
+inssc str stdif val = inss (str `param` val) stdif
 
-insstc :: String -> (Int -> Int) -> TypeBasic -> Int -> EmitterM TypeBasic
-insstc str stdif typ val = insst (str `param` val) stdif typ
+inssv :: String -> (Int -> Int) -> VariableNum -> EmitterM ()
+inssv str stdif num = inssc str stdif (fromEnum num)
 
-insstv :: String -> (Int -> Int) -> TypeBasic -> VariableNum -> EmitterM TypeBasic
-insstv str stdif typ num = insstc str stdif typ (fromEnum num)
+element, variable :: TypeBasic -> String -> String
+element (TPrimitive TChar) = ('c':)
+element (TPrimitive TInt) = ('i':)
+element (TPrimitive TBool) = ('b':)
+element (TComposed _) = ('a':)
+variable (TPrimitive _) = ('i':)
+variable (TComposed _) = ('a':)
 
 param :: String -> Int -> String
-param "const" param
-  | param == -1 = "const_m1"
-  | param >= 0 && param <= 5 = "const_" ++ show param
-param mnem param
-  | param >= 0 && param <= 3 = mnem ++ '_':show param
-param mnem param = mnem ++ ' ':show param
+param "iconst" val
+  | val == -1 = "iconst_m1"
+  | val >= 0 && val <= 5 = "iconst_" ++ show val
+param "bipush" val
+  | val >= -1 && val <= 5 = "iconst" `param` val
+param "sipush" val
+  | val >= -1 && val <= 5 = "iconst" `param` val
+param (t:mnem) val
+  | val >= 0 && val <= 3 && mnem `elem` ["load", "store"] = t:mnem ++ '_':show val
+param mnem val = mnem ++ ' ':show val
 
 -- PURE HELPERS --
 ------------------
-inc, dec, inc2, dec3 :: Int -> Int
-inc = (1+)
-dec = (1-)
-inc2 = (2+)
+inc1, dec1, dec3, set0 :: Int -> Int
+inc1 = (1+)
+dec1 = (1-)
 dec3 = (3-)
+set0 = const 0
 
 -- TREE TRAVERSING --
 ---------------------
@@ -221,6 +254,7 @@ instance Emitable Method () where
     dir $ "limit locals " ++ show maxVar
     -- Emit method body but do not write it yet
     newStack
+    resetLabels
     body <- intercept $ emit stmt
     maxStack <- gets emitterstateStackMax
     -- Emit stack size limit...
@@ -239,20 +273,41 @@ instance Emitable Stmt () where
     -- Memory access
     SStore num expr typ -> do
       emit expr
-      insstv "store" dec typ num >> none
+      inssv (variable typ "store") dec1 num
     SStoreArray num expr1 expr2 telem -> do
       emit expr1
       emit expr2
-      insstv "astore" dec3 telem num >> none
+      inssv (element telem "astore") dec3 num
     SPutField {} -> notImplemented
     -- Control statements
     SReturn expr typ -> do
       emit expr
-      insst "return" (const 0) typ >> none
-    SReturnV -> inss "return" (const 0)
-    SIf expr stmt -> undefined
-    SIfElse expr stmt1 stmt2 -> undefined
-    SWhile expr stmt -> undefined
+      inss (variable typ "return") set0
+    SReturnV ->
+      inss "return" set0
+    SIf expr stmt -> do
+      emit expr
+      lfalse <- newLabel
+      cjmp "ifeq" lfalse
+      emit stmt
+      lab lfalse
+    SIfElse expr stmt1 stmt2 -> do
+      emit expr
+      [lfalse, lend] <- newLabels 2
+      lab lfalse
+      cjmp "ifeq" lfalse
+      emit stmt1
+      jmp "goto" lend
+      emit stmt2
+      lab lend
+    SWhile expr stmt -> do
+      [lbody, lcond] <- newLabels 2
+      jmp "goto" lcond
+      lab lbody
+      emit stmt
+      lab lcond
+      emit expr
+      cjmp "ifne" lbody
     SThrow expr -> notImplemented
     STryCatch stmt1 typ num stmt2 -> notImplemented
     -- Special function bodies
@@ -270,18 +325,33 @@ instance Emitable Stmt () where
 instance Emitable Expr TypeBasic where
   emit x = case x of
     -- Literals
-    ENull -> insst "const_null" inc (TComposed TObject)
-    ELitTrue -> insstc "const" inc (TPrimitive TInt) 0
-    ELitFalse -> insstc "const" inc (TPrimitive TInt) 1
-    ELitChar c ->  insstc "const" inc (TPrimitive TInt) (Char.ord c)
-    ELitString s -> insst ("ldc \"" ++ s ++ "\"") inc (TComposed TString)
-    ELitInt n -> insstc "const" inc (TPrimitive TInt) (fromInteger n)
+    ENull -> do
+      inss "aconst_null" inc1
+      return (TComposed TObject)
+    ELitTrue -> do
+      inssc "iconst" inc1 1
+      return (TPrimitive TInt)
+    ELitFalse -> do
+      inssc "iconst" inc1 0
+      return (TPrimitive TInt)
+    ELitChar c -> do
+      emit $ ELitInt (toInteger $ Char.ord c)
+      return (TPrimitive TInt)
+    ELitString s -> do
+      inss ("ldc \"" ++ s ++ "\"") inc1
+      return (TComposed TString)
+    ELitInt n -> do
+      inssc "bipush" inc1 (fromInteger n)
+      return (TPrimitive TInt)
     -- Memory access
-    ELoad num typ -> insstv "load" inc typ num
+    ELoad num typ -> do
+      inssv (variable typ "load") inc1 num
+      return typ
     EArrayLoad expr1 expr2 telem -> do
       emit expr1
       emit expr2
-      insst "aload" dec telem
+      inss (element telem "aload") dec1
+      return telem
     EGetField {} -> notImplemented
     -- Method calls
     EInvokeStatic _ (MethodName name) ftyp@(TypeMethod tret _ _) exprs -> do
@@ -300,7 +370,8 @@ instance Emitable Expr TypeBasic where
     ENewArr typ@(TComposed _) expr -> do
       emit expr
       tdesc <- emit typ
-      insst ("newarray " ++ tdesc) id typ
+      inss ("anewarray " ++ tdesc) id
+      return typ
     ENewArr typ@(TPrimitive tprim) expr -> do
       emit expr
       let tdesc = case tprim of
@@ -313,12 +384,22 @@ instance Emitable Expr TypeBasic where
     EUnary op expr tret -> do
       typ <- emit expr
       case op of
-        OuNot -> undefined
-        OuNeg -> insst "neg" id typ
+        OuNot -> do
+          -- Alternatively we can: iconst_1, swap, isub.
+          -- Java uses the following pattern:
+          [ltrue, lend] <- newLabels 2
+          cjmp "ifne" ltrue
+          emit ELitTrue
+          jmp "goto" lend
+          lab ltrue
+          emit ELitFalse
+          lab lend
+          return typ
+        OuNeg -> inss "ineg" id >> return typ
     EBinary opbin expr1 expr2 tret -> do
       typ1 <- emit expr1
       typ1 <- emit expr1
-      undefined
+      -- FIXME
       return tret
     -- These expressions will be replaced with ones caring more context in subsequent phases
     T_EVar {} -> Err.unreachable x

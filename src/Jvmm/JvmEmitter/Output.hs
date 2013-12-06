@@ -11,11 +11,13 @@ data JasminLine =
     JasminDirective String
   | JasminInstruction String
   | JasminComment String
+  | JasminLabel String
   | JasminEmpty
   deriving (Show, Eq)
 
 toJasmin (JasminDirective str) = "." ++ str ++ "\n"
 toJasmin (JasminInstruction str) = "\t" ++ str ++ "\n"
 toJasmin (JasminComment str) = "; " ++ str ++ "\n"
+toJasmin (JasminLabel str) = str ++ ":\n"
 toJasmin JasminEmpty = "\n"
 
