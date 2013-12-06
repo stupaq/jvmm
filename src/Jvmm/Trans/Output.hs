@@ -55,6 +55,13 @@ data VariableNum =
   | VariableThis
   deriving (Show, Eq, Ord)
 
+instance Enum VariableNum where
+  fromEnum VariableThis = 0
+  fromEnum (VariableNum num) = num
+  toEnum num
+    | num == 0 = VariableThis
+    | otherwise = VariableNum num
+
 newtype VariableName = VariableName String
   deriving (Show, Eq, Ord)
 
@@ -202,6 +209,9 @@ stmtMetaLocation :: (MonadError ErrorInfo m) => Location -> m [Stmt] -> m Stmt
 stmtMetaLocation loc action = do
   stmts' <- withLocation loc action
   return $ SMetaLocation loc stmts'
+
+stmtMetaLocation' :: (MonadError ErrorInfo m) => Location -> m [a] -> m ()
+stmtMetaLocation' loc action = stmtMetaLocation loc (action >> return []) >> return ()
 
 -- TOP LEVEL --
 ---------------

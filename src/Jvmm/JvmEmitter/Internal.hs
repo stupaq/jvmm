@@ -3,6 +3,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE FunctionalDependencies #-}
 module Jvmm.JvmEmitter.Internal where
 import Jvmm.JvmEmitter.Output
 
@@ -13,6 +14,8 @@ import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Writer
 import Control.Applicative
+
+import qualified Data.Char as Char
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.List as List
@@ -42,8 +45,8 @@ data EmitterState = EmitterState {
 
 emitterstate0 = EmitterState 0
 
--- EMITTING ENV --
---------------------
+-- EMITTING ENVIRONMENT --
+--------------------------
 data EmitterEnv = EmitterEnv {
     emitterenvStack :: Int
   , emitterenvOverrideClass :: Maybe ClassName
@@ -63,10 +66,7 @@ notImplemented :: a
 notImplemented = error "Not implemented"
 
 intercept :: EmitterM a -> EmitterM [JasminLine]
-intercept action =
-  censor (const []) $ do
-    (_, log) <- listen action
-    return log
+intercept action = fmap snd $ censor (const []) $ listen action
 
 pushes :: EmitterM a -> EmitterM a
 pushes action = do
@@ -88,15 +88,41 @@ inss = tell . map JasminInstruction
 ins :: String -> EmitterM ()
 ins = inss . return
 
+insModifier :: TypeBasic -> Char
+insModifier (TComposed _) = 'a'
+insModifier (TPrimitive _) = 'i'
+
+insm :: TypeBasic -> String -> EmitterM ()
+insm typ = ins . (insModifier typ:)
+
+insmr :: TypeBasic -> String -> EmitterM TypeBasic
+insmr typ str = do
+  ins (insModifier typ:str)
+  return typ
+
 dir :: String -> EmitterM ()
 dir = tell . return . JasminDirective
 
 com :: String -> EmitterM ()
 com = tell . return . JasminComment
 
+nl :: EmitterM ()
+nl = tell $ return JasminEmpty
+
+-- We copy parts of bytecodde verifier functionality here
+assertStack :: (Int -> Bool) -> EmitterM a -> EmitterM a
+assertStack pred x = do
+  stack <- asks emitterenvStack
+  assert (pred stack) x
+
+-- EMITTER HELPERS --
+---------------------
+var :: VariableNum -> String
+var = show . fromEnum
+
 -- TREE TRAVERSING --
 ---------------------
-class Emitable a b where
+class Emitable a b | a -> b where
   emit :: a -> EmitterM b
 
 instance Emitable Class JasminAsm where
@@ -105,21 +131,31 @@ instance Emitable Class JasminAsm where
     className <- asks emitterenvOverrideClass
     case className of
       Just (ClassName str) -> toJasminClass str $ do
-        -- Class that will hold our code
+        -- Class that will hold top-level static methods
         dir $ "class public " ++ str
-        dir "super  java/lang/Object"
-        -- Taken as is from lecture notes
-        com "standard initializer"
+        dir "super java/lang/Object"
+        nl
+        -- Standart initializer
         dir "method public <init>()V"
+        dir "limit locals 0"
+        dir "limit stack 1"
         ins "aload_0"
         ins "invokespecial java/lang/Object/<init>()V"
         ins "return"
         dir "end method"
+        nl
         -- Static top-level methods
-        forM_ statics (emit :: Method -> EmitterM ())
+        forM_ statics emit
       Nothing -> notImplemented
     where
       toJasminClass name = fmap (JasminAsm name) . intercept
+  emit _ = notImplemented
+
+instance Emitable TypeMethod String where
+  emit (TypeMethod tret targs []) = do
+    ret <- emit tret
+    args <- mapM emit targs
+    return $ concat $ concat [["("], args, [")", ret]]
   emit _ = notImplemented
 
 instance Emitable TypeBasic String where
@@ -136,8 +172,8 @@ instance Emitable TypePrimitive String where
       TChar -> "I"
 
 instance Emitable TypeComposed String where
-  emit TObject = return "java/lang/Object"
-  emit TString = return "java/lang/String"
+  emit TObject = return "Ljava/lang/Object;"
+  emit TString = return "Ljava/lang/String;"
   emit (TArray typ) = ("[" ++) <$> emit typ
   emit TNull = Err.unreachable TNull
   emit _ = notImplemented
@@ -145,33 +181,60 @@ instance Emitable TypeComposed String where
 instance Emitable Field () where
 
 instance Emitable Method () where
-  -- TODO this is for static
-  emit method@Method {} = do
+  emit method@Method { methodBody = SBuiltin } = return ()
+  emit method@Method { methodBody = SInherited } = return ()
+  -- TODO this is for static method
+  emit method@Method { methodName = MethodName name, methodType = typ, methodBody = stmt,
+      methodArgs = args, methodVariables = vars } = do
+    -- The prologue
     case isEntrypoint method of
-      True -> dir $ "method public static "
+      True -> dir "method public static main([Ljava/lang/String;)V"
+      False -> do
+        tdesc <- emit typ
+        dir $ "method public static " ++ name ++ tdesc
+    let maxVar = maximum $ (0:) $ map (fromEnum . variableNum) $ args ++ vars
+    dir $ "limit locals " ++ (show maxVar)
+    -- Emit method body but do not write it yet
+    newStack
+    body <- intercept $ emit stmt
+    maxStack <- gets emitterstateStackMax
+    -- Emit stack size limit...
+    dir $ "limit stack " ++ (show maxStack)
+    -- ...and method body
+    tell body
+    -- The epilogue
+    dir "end method"
+    nl
 
 instance Emitable Stmt () where
   emit x = case x of
     SEmpty -> nothing
-    SBlock stmts -> mapM_ (emit :: Stmt -> EmitterM ()) stmts
-    SExpr expr -> undefined
+    SBlock stmts -> mapM_ emit stmts
+    SExpr expr -> emit expr >> return ()
     -- Memory access
-    SStore num expr _ -> undefined
-    SStoreArray num expr1 expr2 _ -> undefined
-    SPutField num typ name expr _ -> undefined
+    SStore num expr typ -> do
+      emit expr
+      insm typ $ "store " ++ (var num)
+    SStoreArray num expr1 expr2 telem -> do
+      emit expr1
+      emit expr2
+      insm telem $ "astore " ++ (var num)
+    SPutField _ _ _ _ _ -> notImplemented
     -- Control statements
-    SReturn expr _ -> undefined
-    SReturnV -> undefined
+    SReturn expr typ -> do
+      emit expr
+      insm typ "return"
+    SReturnV -> ins "return"
     SIf expr stmt -> undefined
     SIfElse expr stmt1 stmt2 -> undefined
     SWhile expr stmt -> undefined
     SThrow expr -> notImplemented
     STryCatch stmt1 typ num stmt2 -> notImplemented
     -- Special function bodies
-    SBuiltin -> undefined
-    SInherited -> undefined
+    SBuiltin -> Err.unreachable SBuiltin
+    SInherited -> Err.unreachable SInherited
     -- Metainformation carriers
-    SMetaLocation loc stmts -> undefined
+    SMetaLocation loc stmts -> stmtMetaLocation' loc (mapM emit stmts)
     -- These statements will be replaced with ones caring more context in subsequent phases
     T_SDeclVar _ _ -> Err.unreachable x
     T_SAssign _ _ -> Err.unreachable x
@@ -179,28 +242,42 @@ instance Emitable Stmt () where
     T_SAssignFld _ _ _ -> Err.unreachable x
     T_STryCatch _ _ _ _ -> Err.unreachable x
 
-instance Emitable Expr () where
+instance Emitable Expr TypeBasic where
   emit x = case x of
     -- Literals
-    ENull -> undefined
-    ELitTrue -> undefined
-    ELitFalse -> undefined
-    ELitChar _ -> undefined
-    ELitString _ -> undefined
-    ELitInt n -> undefined
+    ENull -> insmr (TComposed TObject) "const_null"
+    ELitTrue -> emit $ ELitInt 0
+    ELitFalse -> emit $ ELitInt 1
+    ELitChar c -> emit $ ELitInt $ toInteger $ Char.ord c
+    ELitString s -> do
+      ins $ "ldc \"" ++ s ++ "\""
+      return $ TComposed TString
+    ELitInt n -> insmr (TPrimitive TInt) $ "const " ++ (show n)
     -- Memory access
-    ELoad num _ -> undefined
-    EArrayLoad expr1 expr2 _ -> undefined
-    EGetField expr typ name _ -> undefined
+    ELoad num typ -> insmr typ $ "load " ++ (var num)
+    EArrayLoad expr1 expr2 telem -> do
+      emit expr1
+      emit expr2
+      insmr telem "aload"
+    EGetField _ _ _ _ -> notImplemented
     -- Method calls
+    -- FIXME add method type here
     EInvokeStatic typ name exprs -> undefined
-    EInvokeVirtual typ expr name exprs -> undefined
+    -- FIXME add method type here
+    EInvokeVirtual _ _ _ _ -> notImplemented
     -- Object creation
-    ENewObj typ -> undefined
-    ENewArr typ expr -> undefined
+    ENewObj typ -> notImplemented
+    ENewArr typ expr -> notImplemented
     -- Operations
-    EUnary op expr _ -> undefined
-    EBinary opbin expr1 expr2 _ -> undefined
+    EUnary op expr tret -> do
+      typ <- emit expr
+      -- FIXME missing
+      return tret
+    EBinary opbin expr1 expr2 tret -> do
+      typ1 <- emit expr1
+      typ1 <- emit expr1
+      -- FIXME missing
+      return tret
     -- These expressions will be replaced with ones caring more context in subsequent phases
     T_EVar _ -> Err.unreachable x
 

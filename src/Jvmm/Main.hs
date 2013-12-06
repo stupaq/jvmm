@@ -88,7 +88,7 @@ compileJvm = checkT =>> compile
       let dest = dropFileName source
       let writeOne = \(JasminAsm clazz lines) -> do
           let file = dest </> clazz ++ ".j"
-          lift $ writeFile file ""
+          lift $ writeFile file $ "; source: " ++ source ++ "\n"
           mapM_ (lift . appendFile file . toJasmin) lines
       emitJvm name =>> (mapM_ writeOne) =>| hierarchy
 

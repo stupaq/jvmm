@@ -22,9 +22,10 @@ builtinFunctions = map fun [
 
 -- ENTRYPOINT --
 ----------------
-entrypointName = MethodName "main"
 entrypointType = TypeMethod (TPrimitive TInt) [] []
 isEntrypoint method = entrypointName == methodName method && methodOrigin method == TObject
+  where
+    entrypointName = MethodName "main"
 
 -- TYPES --
 -----------
