@@ -1,6 +1,10 @@
 #!/bin/bash
 
 # configuration
+pattern_good="*/good/*.lat"
+pattern_bad_check="*/bad/*.lat"
+pattern_bad_parse="*/bad/*.txt"
+
 compile_jvm="./latc"
 compile_check="./latc_check"
 compile_parse="./latc_parse"
@@ -128,6 +132,10 @@ case $2 in
 esac
 
 if [[ $# -eq 0 ]]; then
+  TotalCount=0
+  function incTotal() {
+    TotalCount=`expr $TotalCount + 1`
+  }
   FailsCount=0
   function incFails() {
     FailsCount=`expr $FailsCount + 1`
@@ -135,18 +143,21 @@ if [[ $# -eq 0 ]]; then
 
   # run all found tests
   for f in $tests_bad_parse; do
+    incTotal
     testcase_parse $f || incFails
   done
   for f in $tests_bad_check; do
+    incTotal
     testcase_parse $f
     testcase_check $f || incFails
   done
   for f in $tests_good; do
+    incTotal
     testcase_parse $f
     testcase_check $f || incFails
   done
 
-  echo "TOTAL FAILED: $FailsCount"
+  echo -e "FAILED: $FailsCount\tTOTAL:  $TotalCount"
   exit $FailsCount
 else
   File=

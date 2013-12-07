@@ -1,2 +1,6 @@
 #!/bin/bash
-`dirname $0`/src/Jvmm/Main -j "$@"
+set -e
+
+`dirname $0`/src/Jvmm/Main -j $1
+jasmin ${1%.*}.j -d `dirname $1`
+jar cfe ${1%.*}.jar `basename $1` ${1%.*}.class lib/Runtime.class
