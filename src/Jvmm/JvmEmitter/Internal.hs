@@ -206,14 +206,16 @@ comparison op = case op of
 
 -- This is awesome in my opinion...
 param :: String -> Int -> String
--- Garbage in - garbage out
+-- Garbage in, garbage out
 param "iconst" val
   | val == -1 = "iconst_m1"
   | otherwise = "iconst_" ++ show val
-param "sipush" val
-  | val >= -1 && val <= 5 = param "iconst" val
 param "bipush" val
-  | val >= -128 && val <= 127 = param "sipush" val
+  | val >= -1 && val <= 5 = param "iconst" val
+param "sipush" val
+  | val >= -128 && val <= 127 = param "bipush" val
+param "ldc" val
+  | val >= -32768 && val <= 32767 = param "bipush" val
 param (t:mnem) val
   | val >= 0 && val <= 3 && mnem `elem` ["load", "store"] = t:mnem ++ '_':show val
 param mnem val = mnem ++ ' ':show val
@@ -402,7 +404,7 @@ instance Emitable Expr TypeBasic where
       inss ("ldc \"" ++ s ++ "\"") inc1
       return (TComposed TString)
     ELitInt n -> do
-      inssc "bipush" inc1 (fromInteger n)
+      inssc "ldc" inc1 (fromInteger n)
       return (TPrimitive TInt)
     -- Memory access
     ELoad num typ -> do

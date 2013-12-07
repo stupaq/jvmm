@@ -78,7 +78,7 @@ optionsDef = [
 parseOptions :: IO Configuration
 parseOptions = do
   prog <- getProgName
-  let header = "Usage: " ++ prog ++ " [OPTION...] files..."
+  let header = "\nUsage: " ++ prog ++ " [OPTION...] file"
   argv <- getArgs
   case getOpt Permute optionsDef argv of
     (opts, [source], []) ->

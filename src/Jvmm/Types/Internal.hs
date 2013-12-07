@@ -10,6 +10,8 @@ import Control.Monad.Identity
 import Control.Monad.Error
 import Control.Monad.Reader
 import Control.Monad.State
+
+import Data.Int (Int32)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.List as List
@@ -36,6 +38,8 @@ data Symbol =
   deriving (Show, Eq, Ord)
 
 type Types = Map.Map Symbol Type
+
+types0 :: Types
 types0 = Map.empty
 
 data Member =
@@ -44,9 +48,13 @@ data Member =
   deriving (Show, Eq, Ord)
 
 type Members = Map.Map Member Type
+
+members0 :: Members
 members0 = Map.empty
 
 type MemberTypes = Map.Map TypeComposed Members
+
+membertypes0 :: MemberTypes
 membertypes0 = Map.empty
 
 data TypeEnv = TypeEnv {
@@ -250,7 +258,7 @@ notAPrimitive x = case x of
 
 intWithinBounds :: Integer -> TypeM ()
 intWithinBounds n =
-  when (n /= (fromIntegral (fromIntegral n :: Int) :: Integer)) $ throwError noMsg
+  when (n /= (fromIntegral (fromIntegral n :: Int32) :: Integer)) $ throwError noMsg
 
 -- TYPE ARITHMETIC --
 ---------------------
