@@ -237,7 +237,11 @@ instance Scopeable Stmt where
     SEmpty -> return SEmpty
     SBlock stmts -> do
       stmts' <- newLocalScope (mapM scope stmts)
-      return $ SBlock stmts'
+      -- Blocks have no semantic value after we compute scope
+      case stmts' of
+        [] -> return SEmpty
+        [stmt'] -> return stmt'
+        _ -> return $ SBlock stmts'
     -- Memory access
     SStore {} -> Err.unreachable x
     SStoreArray {} -> Err.unreachable x

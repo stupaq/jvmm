@@ -111,7 +111,8 @@ alterStack :: StackDiff -> EmitterM ()
 alterStack dif = do
   stack <- dif <$> gets emitterstateStackCurrent
   stackMax <- (maximum . (:[stack])) <$> gets emitterstateStackMax
-  -- TODO: com $ "Stack: " ++ show stack ++ " Max: " ++ show stackMax
+  -- TODO:
+  com $ "Stack: " ++ show stack ++ " Max: " ++ show stackMax
   modify (\st -> st { emitterstateStackCurrent = stack
                     , emitterstateStackMax = stackMax })
 
@@ -119,8 +120,8 @@ newStack :: EmitterM ()
 newStack = modify (\st -> st { emitterstateStackMax = 0
                              , emitterstateStackCurrent = 0 })
 
-clearStack :: EmitterM ()
-clearStack = modify (\st -> st { emitterstateStackCurrent = 0 })
+getStack :: EmitterM Int
+getStack = gets emitterstateStackCurrent
 
 -- GENERATION 1: RAW MNEMONICS EMITTERS --
 ------------------------------------------
@@ -159,7 +160,7 @@ jmps lgoto lnext stdif
 
 cjmp :: ConditionalJump
 cjmp str stdif (Label lab)
-  | "if" `List.isInfixOf` str = ins (str ++ ' ':lab) >> alterStack stdif
+  | "if" `List.isInfixOf` str = inss (str ++ ' ':lab) stdif
   | otherwise = Err.unreachable "conditional jump must check condition"
 
 cjmps :: Label -> Label -> Label -> String -> StackDiff -> EmitterM ()
@@ -321,7 +322,10 @@ instance Emitable Stmt () where
   emit x = case x of
     SEmpty -> none
     SBlock stmts -> mapM_ emit stmts
-    SExpr expr -> emit expr >> clearStack
+    SExpr expr -> do
+      emit expr
+      n <- getStack
+      replicateM_ n $ inss "pop" dec1
     -- Memory access
     SStore num expr typ -> do
       emit expr

@@ -2,6 +2,8 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE KindSignatures #-}
 module Jvmm.Analyser.Internal where
 
 import Control.Monad.Identity
@@ -11,7 +13,7 @@ import Control.Applicative
 import qualified Data.Traversable as Traversable
 
 import qualified Jvmm.Errors as Err
-import Jvmm.Errors (rethrow, ErrorInfoT)
+import Jvmm.Errors (ErrorInfoT)
 import Jvmm.Trans.Output
 import Jvmm.Hierarchy.Output
 
@@ -20,15 +22,16 @@ import Jvmm.Hierarchy.Output
 -- - prunning of unreachable branches and no-op loops
 
 -- THE STATE --
---------------------
+---------------
 data AnalyserState = AnalyserState {
     analyserstateReachable :: Bool
 } deriving (Show)
 
-analyserstate0 = AnalyserState True :: AnalyserState
+analyserstate0 :: AnalyserState
+analyserstate0 = AnalyserState True
 
 -- THE MONAD --
---------------------
+---------------
 type AnalyserM = StateT AnalyserState (ErrorInfoT Identity)
 runAnalyserM :: AnalyserM a -> ErrorInfoT Identity a
 runAnalyserM m = fmap fst $ runStateT m analyserstate0
@@ -37,6 +40,7 @@ setReachable :: Bool -> AnalyserM ()
 setReachable b = modify (\st -> st { analyserstateReachable = b })
 isReachable :: AnalyserM Bool
 isReachable = gets analyserstateReachable
+-- TODO make use of this information in consecutive instructions
 
 -- TREE REWRITING --
 --------------------
@@ -49,6 +53,7 @@ instance Analysable ClassHierarchy ClassHierarchy where
 instance Analysable Class Class where
   analyse clazz@Class { classAllMethods = methods, classLocation = loc } =
     Err.withLocation loc $ do
+      setReachable True
       methods' <- mapM analyse methods
       return clazz { classAllMethods = methods' }
 
@@ -58,13 +63,15 @@ instance Analysable Method Method where
       stmt' <- wrapStmts <$> analyse stmt
       return method { methodBody = stmt' }
         where
-          wrapStmts [stmt] = stmt
-          wrapStmts stmts = SMetaLocation loc stmts
+          wrapStmts [x] = x
+          wrapStmts x = SMetaLocation loc x
 
 instance Analysable Stmt [Stmt] where
   analyse x = case x of
     SEmpty -> nothing
-    SBlock stmts -> single $ SBlock <$> sequence stmts
+    SBlock stmts ->
+     -- Blocks have no semantic value after resolving scope
+     consecutive stmts
     SExpr expr -> single $ SExpr <$> analyse expr
     -- Memory access
     SStore num expr typ -> single $ SStore num <$> analyse expr <#> typ
@@ -86,10 +93,9 @@ instance Analysable Stmt [Stmt] where
         ELitTrue -> analyse stmt
         ELitFalse -> nothing
         _ -> do
-          -- Expr might have some side effects and is not statically known which branch will be taken
           stmts' <- analyse stmt
           case stmts' of
-            -- Thie expression cannot just dissapear
+            -- This expression cannot just dissapear
             [] -> return [SExpr expr']
             _ -> return [SIf expr' $ block stmts']
     SIfElse expr stmt1 stmt2 -> do
@@ -120,7 +126,7 @@ instance Analysable Stmt [Stmt] where
     SBuiltin -> original
     SInherited -> original
     -- Metainformation carriers
-    SMetaLocation loc stmts -> Err.withLocation loc (sequence stmts)
+    SMetaLocation loc stmts -> Err.withLocation loc (consecutive stmts)
     -- These statements will be replaced with ones caring more context in subsequent phases
     T_SDeclVar {} -> Err.unreachable x
     T_SAssign {} -> Err.unreachable x
@@ -133,8 +139,8 @@ instance Analysable Stmt [Stmt] where
       nothing = return []
       single :: AnalyserM Stmt -> AnalyserM [Stmt]
       single = fmap (:[])
-      sequence :: [Stmt] -> AnalyserM [Stmt]
-      sequence = liftM concat . mapM analyse
+      consecutive :: [Stmt] -> AnalyserM [Stmt]
+      consecutive = liftM concat . mapM analyse
       block :: [Stmt] -> Stmt
       block [] = SEmpty
       block [stmt] = stmt
@@ -159,14 +165,21 @@ instance Analysable Expr Expr where
     EUnary op expr tret -> do
       expr' <- analyse expr
       case (expr', op) of
-        (ELitInt n, OuNeg) -> return $ ELitInt (0 - n)
+        (ELitInt n, OuNeg) -> return $ ELitInt (negate n)
         (ELitTrue, OuNot) -> return ELitFalse
         (ELitFalse, OuNot) -> return ELitTrue
         _ -> return $ EUnary op expr' tret
     EBinary op expr1 expr2 tret -> do
-      option <- liftM3 (,,) (analyse expr1) (analyse expr2) (return op)
+      option <- liftM3 (,,) (return op) (analyse expr1) (analyse expr2)
+      -- Note that comparint subtrees is meaningless here (this is one of the reasons for Expr
+      -- not being instance of Eq) as the language is not purely functional
       case option of
-        (expr1', expr2', op) -> return $ EBinary op expr1' expr2' tret
+        (ObAnd, ELitFalse, _) -> return ELitFalse
+        (ObAnd, ELitTrue, expr2') -> return expr2'
+        (ObOr, ELitTrue, _) -> return ELitTrue
+        (ObOr, ELitFalse, expr2') -> return expr2'
+        -- TODO constant propagation
+        (_, expr1', expr2') -> return $ EBinary op expr1' expr2' tret
     -- These expressions will be replaced with ones caring more context in subsequent phases
     T_EVar {} -> Err.unreachable x
     -- Fallback to original value
@@ -178,5 +191,6 @@ instance Analysable Expr Expr where
 -- PORN --
 ----------
 infixl 4 <#>
+(<#>) :: forall (f :: * -> *) a b. Applicative f => f (a -> b) -> a -> f b
 (<#>) x y = x <*> pure y
 
