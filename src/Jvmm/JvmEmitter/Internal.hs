@@ -4,6 +4,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE OverloadedStrings #-}
 module Jvmm.JvmEmitter.Internal where
 import Jvmm.JvmEmitter.Output
 
@@ -15,6 +16,7 @@ import Control.Monad.State
 import Control.Monad.Writer
 import Control.Applicative
 
+import qualified Data.Text as Text
 import qualified Data.Char as Char
 import qualified Data.Map as Map
 import qualified Data.Set as Set
@@ -82,14 +84,16 @@ assertStack pred x = do
 
 -- LABELS ALLOCATION --
 -----------------------
-newtype Label = Label String
+data Label =
+    Label String
+  | Subseq
   deriving (Show, Eq, Ord)
 
 newLabel :: EmitterM Label
 newLabel = do
   num <- gets emitterstateNextLabel
   modify (\st -> st { emitterstateNextLabel = num + 1 })
-  return $ Label $ "l" ++ show num
+  return $ Label $ 'l':show num
 
 newLabels :: Int -> EmitterM [Label]
 newLabels 0 = return []
@@ -100,12 +104,14 @@ resetLabels = modify (\st -> st { emitterstateNextLabel = 0 })
 
 -- GENERATION 0: RAW STACK OPERATIONS --
 ----------------------------------------
-alterStack :: (Int -> Int) -> EmitterM ()
+type StackDiff = Int -> Int
+
+alterStack :: StackDiff -> EmitterM ()
 alterStack dif = do
   stack <- dif <$> gets emitterstateStackCurrent
   stackMax <- (maximum . (:[stack])) <$> gets emitterstateStackMax
   -- DEBUG remove when in production
-  com $ "Stack: " ++ (show stack) ++ " Max: " ++ (show stackMax)
+  com $ "Stack: " ++ show stack ++ " Max: " ++ show stackMax
   modify (\st -> st { emitterstateStackCurrent = stack
                     , emitterstateStackMax = stackMax })
 
@@ -135,23 +141,43 @@ com = tell . return . JasminComment
 nl :: EmitterM ()
 nl = tell $ return JasminEmpty
 
--- GENERATION 2: SAFE (STACK AWARE) MNEMONICS EMITTERS --
--------------------------------------------------
-jmp :: (Int -> Int) -> Label -> EmitterM ()
+-- GENERATION 2: SAFE (STACK AWARE) MNEMONIC EMITTERS --
+--------------------------------------------------------
+type Goto = StackDiff -> Label -> EmitterM ()
+type ConditionalJump = String -> Goto
+
+jmp :: Goto
 jmp stdif (Label lab) = ins ("goto" ++ ' ':lab) >> alterStack stdif
+jmp _ Subseq = return ();
 
-cjmp :: String -> (Int -> Int) -> Label -> EmitterM ()
+cjmp :: ConditionalJump
 cjmp str stdif (Label lab)
-  | List.isInfixOf "if" str = ins (str ++ ' ':lab) >> alterStack stdif
+  | "if" `List.isInfixOf` str = ins (str ++ ' ':lab) >> alterStack stdif
   | otherwise = Err.unreachable "conditional jump must check condition"
+cjmp _ _ Subseq = return ();
 
-inss :: String -> (Int -> Int) -> EmitterM ()
+cjmps :: Label -> Label -> Label -> String -> StackDiff -> EmitterM ()
+cjmps lthen lelse lnext cond stdif
+  | lthen == Subseq = jfalse
+  | lelse == Subseq = jtrue
+  | lnext == lthen = jfalse
+  | lnext == lelse = jtrue
+  | otherwise = jtrue >> jmp id lelse
+  where
+    jtrue = cjmp cond stdif lthen
+    jfalse = cjmp (neg cond) stdif lelse
+    neg op =
+      let rel = ["eq", "ge", "gt", "le", "lt", "ne"]
+          negMap = zip rel $ reverse rel
+      in head [ x | rule <- negMap, let x = Text.unpack $ uncurry Text.replace rule $ Text.pack op, x /= op ]
+
+inss :: String -> StackDiff -> EmitterM ()
 inss str stdif = ins str >> alterStack stdif
 
-inssc :: String -> (Int -> Int) -> Int -> EmitterM ()
+inssc :: String -> StackDiff -> Int -> EmitterM ()
 inssc str stdif val = inss (str `param` val) stdif
 
-inssv :: String -> (Int -> Int) -> VariableNum -> EmitterM ()
+inssv :: String -> StackDiff -> VariableNum -> EmitterM ()
 inssv str stdif num = inssc str stdif (fromEnum num)
 
 element, variable :: TypeBasic -> String -> String
@@ -178,12 +204,12 @@ param mnem val = mnem ++ ' ':show val
 
 -- PURE HELPERS --
 ------------------
-inc1, dec1, dec3, set0 :: Int -> Int
+inc1, dec1, dec3, set0 :: StackDiff
 inc1 = (+) 1
 dec1 = decn 1
 dec3 = decn 3
 set0 = const 0
-decn :: Int -> Int -> Int
+decn :: Int -> StackDiff
 decn = flip (-)
 
 classPath :: String -> String
@@ -298,18 +324,18 @@ instance Emitable Stmt () where
     SReturnV ->
       inss "return" set0
     SIf expr stmt -> do
-      emit expr
       lfalse <- newLabel
-      cjmp "ifeq" dec1 lfalse
+      emit expr
+      cjmps Subseq lfalse Subseq "ifne" dec1
       emit stmt
       lab lfalse
     SIfElse expr stmt1 stmt2 -> do
-      emit expr
       [lfalse, lend] <- newLabels 2
-      lab lfalse
-      cjmp "ifeq" dec1 lfalse
+      emit expr
+      cjmps Subseq lfalse lend "ifne" dec1
       emit stmt1
       jmp id lend
+      lab lfalse
       emit stmt2
       lab lend
     SWhile expr stmt -> do
@@ -319,7 +345,7 @@ instance Emitable Stmt () where
       emit stmt
       lab lcond
       emit expr
-      cjmp "ifne" dec1 lbody
+      cjmps lbody Subseq Subseq "ifne" dec1
     SThrow expr -> notImplemented
     STryCatch stmt1 typ num stmt2 -> notImplemented
     -- Special function bodies
@@ -383,7 +409,7 @@ instance Emitable Expr TypeBasic where
         Just (ClassName str) -> do
           -- Class that holds top-level static methods
           fdesc <- emit ftyp
-          let pops = length exprs - (if tret == (TPrimitive TVoid) then 0 else 1)
+          let pops = length exprs - (if tret == TPrimitive TVoid then 0 else 1)
           -- In case this is actually a builtin
           let str' = if name `elem` builtinMethodNames then builtinsClassName else str
           inss ("invokestatic " ++ str' ++ "/" ++ name ++ fdesc) (decn pops)
@@ -417,25 +443,23 @@ instance Emitable Expr TypeBasic where
       typ <- emit expr
       case op of
         OuNot -> do
-          -- Alternatively we can: iconst_1, swap, isub.
-          -- Java uses the following pattern:
-          [ltrue, lend] <- newLabels 2
-          cjmp "ifne" dec1 ltrue
-          emit ELitTrue
-          jmp dec1 lend
-          lab ltrue
+          [lfalse, lend] <- newLabels 2
+          cjmps Subseq lfalse lend "ifne" dec1
           emit ELitFalse
+          jmp dec1 lend
+          lab lfalse
+          emit ELitTrue
           lab lend
           return typ
         OuNeg -> inss "ineg" id >> return typ
     EBinary ObAnd expr1 expr2 tret -> do
       [lfalse, lend] <- newLabels 2
       emit expr1
-      cjmp "ifeq" dec1 lfalse
+      cjmps Subseq lfalse lend "ifne" dec1
       emit expr2
-      cjmp "ifeq" dec1 lfalse
+      cjmps Subseq lfalse lend "ifne" dec1
       emit ELitTrue
-      jmp id lend
+      jmp dec1 lend
       lab lfalse
       emit ELitFalse
       lab lend
@@ -443,11 +467,11 @@ instance Emitable Expr TypeBasic where
     EBinary ObOr expr1 expr2 tret -> do
       [ltrue, lend] <- newLabels 2
       emit expr1
-      cjmp "ifne" dec1 ltrue
+      cjmps ltrue Subseq lend "ifne" dec1
       emit expr2
-      cjmp "ifne" dec1 ltrue
+      cjmps ltrue Subseq lend "ifne" dec1
       emit ELitFalse
-      jmp id lend
+      jmp dec1 lend
       lab ltrue
       emit ELitTrue
       lab lend
@@ -479,4 +503,12 @@ instance Emitable Expr TypeBasic where
       return tret
     -- These expressions will be replaced with ones caring more context in subsequent phases
     T_EVar {} -> Err.unreachable x
+
+-- JUMPING CODE --
+------------------
+class Emittable' a where
+  emit' :: a -> Label -> Label -> Label -> EmitterM a
+
+instance Emittable' Expr where
+  -- FIXME
 
