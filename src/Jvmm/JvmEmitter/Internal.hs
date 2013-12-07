@@ -84,9 +84,7 @@ assertStack pred x = do
 
 -- LABELS ALLOCATION --
 -----------------------
-data Label =
-    Label String
-  | Subseq
+newtype Label = Label String
   deriving (Show, Eq, Ord)
 
 newLabel :: EmitterM Label
@@ -95,9 +93,12 @@ newLabel = do
   modify (\st -> st { emitterstateNextLabel = num + 1 })
   return $ Label $ 'l':show num
 
-newLabels :: Int -> EmitterM [Label]
-newLabels 0 = return []
-newLabels n = liftM2 (:) newLabel (newLabels $ n - 1)
+newLabels2 :: EmitterM (Label, Label)
+newLabels2 = liftM2 (,) newLabel newLabel
+newLabels3 :: EmitterM (Label, Label, Label)
+newLabels3 = liftM3 (,,) newLabel newLabel newLabel
+newLabels4 :: EmitterM (Label, Label, Label, Label)
+newLabels4 = liftM4 (,,,) newLabel newLabel newLabel newLabel
 
 resetLabels :: EmitterM ()
 resetLabels = modify (\st -> st { emitterstateNextLabel = 0 })
@@ -110,14 +111,16 @@ alterStack :: StackDiff -> EmitterM ()
 alterStack dif = do
   stack <- dif <$> gets emitterstateStackCurrent
   stackMax <- (maximum . (:[stack])) <$> gets emitterstateStackMax
-  -- DEBUG remove when in production
-  com $ "Stack: " ++ show stack ++ " Max: " ++ show stackMax
+  -- TODO: com $ "Stack: " ++ show stack ++ " Max: " ++ show stackMax
   modify (\st -> st { emitterstateStackCurrent = stack
                     , emitterstateStackMax = stackMax })
 
 newStack :: EmitterM ()
 newStack = modify (\st -> st { emitterstateStackMax = 0
                              , emitterstateStackCurrent = 0 })
+
+clearStack :: EmitterM ()
+clearStack = modify (\st -> st { emitterstateStackCurrent = 0 })
 
 -- GENERATION 1: RAW MNEMONICS EMITTERS --
 ------------------------------------------
@@ -148,18 +151,19 @@ type ConditionalJump = String -> Goto
 
 jmp :: Goto
 jmp stdif (Label lab) = ins ("goto" ++ ' ':lab) >> alterStack stdif
-jmp _ Subseq = return ();
+
+jmps :: Label -> Label -> StackDiff -> EmitterM ()
+jmps lgoto lnext stdif
+  | lnext == lgoto = alterStack stdif
+  | otherwise = jmp stdif lgoto
 
 cjmp :: ConditionalJump
 cjmp str stdif (Label lab)
   | "if" `List.isInfixOf` str = ins (str ++ ' ':lab) >> alterStack stdif
   | otherwise = Err.unreachable "conditional jump must check condition"
-cjmp _ _ Subseq = return ();
 
 cjmps :: Label -> Label -> Label -> String -> StackDiff -> EmitterM ()
 cjmps lthen lelse lnext cond stdif
-  | lthen == Subseq = jfalse
-  | lelse == Subseq = jtrue
   | lnext == lthen = jfalse
   | lnext == lelse = jtrue
   | otherwise = jtrue >> jmp id lelse
@@ -188,6 +192,16 @@ element (TComposed _) = ('a':)
 variable (TPrimitive _) = ('i':)
 variable (TComposed _) = ('a':)
 
+comparison :: OpBin -> EmitterM String
+comparison op = case op of
+  ObLTH -> return "lt"
+  ObLEQ -> return "le"
+  ObGTH -> return "gt"
+  ObGEQ -> return "ge"
+  ObEQU -> return "eq"
+  ObNEQ -> return "ne"
+  _ -> Err.unreachable "no a comparison operator"
+
 -- This is awesome in my opinion...
 param :: String -> Int -> String
 -- Garbage in - garbage out
@@ -207,6 +221,7 @@ param mnem val = mnem ++ ' ':show val
 inc1, dec1, dec3, set0 :: StackDiff
 inc1 = (+) 1
 dec1 = decn 1
+dec2 = decn 2
 dec3 = decn 3
 set0 = const 0
 decn :: Int -> StackDiff
@@ -306,7 +321,7 @@ instance Emitable Stmt () where
   emit x = case x of
     SEmpty -> none
     SBlock stmts -> mapM_ emit stmts
-    SExpr expr -> emit expr >> none
+    SExpr expr -> emit expr >> clearStack
     -- Memory access
     SStore num expr typ -> do
       emit expr
@@ -324,28 +339,28 @@ instance Emitable Stmt () where
     SReturnV ->
       inss "return" set0
     SIf expr stmt -> do
-      lfalse <- newLabel
-      emit expr
-      cjmps Subseq lfalse Subseq "ifne" dec1
+      (ltrue, lfalse) <- newLabels2
+      emitCond expr ltrue lfalse ltrue
+      lab ltrue
       emit stmt
       lab lfalse
     SIfElse expr stmt1 stmt2 -> do
-      [lfalse, lend] <- newLabels 2
-      emit expr
-      cjmps Subseq lfalse lend "ifne" dec1
+      (ltrue, lfalse, lend) <- newLabels3
+      emitCond expr ltrue lfalse ltrue
+      lab ltrue
       emit stmt1
       jmp id lend
       lab lfalse
       emit stmt2
       lab lend
     SWhile expr stmt -> do
-      [lbody, lcond] <- newLabels 2
+      (lbody, lcond, lend) <- newLabels3
       jmp id lcond
       lab lbody
       emit stmt
       lab lcond
-      emit expr
-      cjmps lbody Subseq Subseq "ifne" dec1
+      emitCond expr lbody lend lend
+      lab lend
     SThrow expr -> notImplemented
     STryCatch stmt1 typ num stmt2 -> notImplemented
     -- Special function bodies
@@ -439,43 +454,12 @@ instance Emitable Expr TypeBasic where
       inss ("newarray " ++ tdesc) id
       return typ
     -- Operations
-    EUnary op expr tret -> do
-      typ <- emit expr
-      case op of
-        OuNot -> do
-          [lfalse, lend] <- newLabels 2
-          cjmps Subseq lfalse lend "ifne" dec1
-          emit ELitFalse
-          jmp dec1 lend
-          lab lfalse
-          emit ELitTrue
-          lab lend
-          return typ
-        OuNeg -> inss "ineg" id >> return typ
-    EBinary ObAnd expr1 expr2 tret -> do
-      [lfalse, lend] <- newLabels 2
-      emit expr1
-      cjmps Subseq lfalse lend "ifne" dec1
-      emit expr2
-      cjmps Subseq lfalse lend "ifne" dec1
-      emit ELitTrue
-      jmp dec1 lend
-      lab lfalse
-      emit ELitFalse
-      lab lend
+    EUnary _ _ (TPrimitive TBool) -> evalCond x
+    EUnary OuNeg expr tret -> do
+      emit expr
+      inss "ineg" id
       return tret
-    EBinary ObOr expr1 expr2 tret -> do
-      [ltrue, lend] <- newLabels 2
-      emit expr1
-      cjmps ltrue Subseq lend "ifne" dec1
-      emit expr2
-      cjmps ltrue Subseq lend "ifne" dec1
-      emit ELitFalse
-      jmp dec1 lend
-      lab ltrue
-      emit ELitTrue
-      lab lend
-      return tret
+    EBinary _ _ _ (TPrimitive TBool) -> evalCond x
     EBinary ObPlus expr1 expr2 tret@(TComposed TString) -> do
       emit expr1
       emit expr2
@@ -491,24 +475,68 @@ instance Emitable Expr TypeBasic where
         ObMod -> inss "irem" dec1
         ObPlus -> inss "iadd" dec1
         ObMinus -> inss "isub" dec1
-        _ -> do
-          -- FIXME
-          case opbin of
-            ObLTH -> return ()
-            ObLEQ -> return ()
-            ObGTH -> return ()
-            ObGEQ -> return ()
-            ObEQU -> return ()
-            ObNEQ -> return ()
+        _ -> Err.unreachable "should be handled in TPrimitive TBool branch"
       return tret
     -- These expressions will be replaced with ones caring more context in subsequent phases
     T_EVar {} -> Err.unreachable x
 
 -- JUMPING CODE --
 ------------------
-class Emittable' a where
-  emit' :: a -> Label -> Label -> Label -> EmitterM a
+class EmitableConditional a where
+  emitCond :: a -> Label -> Label -> Label -> EmitterM ()
+  evalCond :: a -> EmitterM TypeBasic
+  evalCond x = do
+    (ltrue, lfalse, lend) <- newLabels3
+    emitCond x ltrue lfalse ltrue
+    lab ltrue
+    emit ELitTrue
+    jmp dec1 lend
+    lab lfalse
+    emit ELitFalse
+    lab lend
+    return (TPrimitive TBool)
 
-instance Emittable' Expr where
-  -- FIXME
+instance EmitableConditional Expr where
+  emitCond x ltrue lfalse lnext = case x of
+    -- Literals
+    ELitTrue -> jmp id ltrue
+    ELitFalse -> jmp id lfalse
+    -- Memory access
+    ELoad num typ@(TPrimitive TBool) -> do
+      inssv (variable typ "load") inc1 num
+      cjmps ltrue lfalse lnext "ifne" dec1
+    EArrayLoad expr1 expr2 telem@(TPrimitive TBool) -> do
+      emit expr1
+      emit expr2
+      inss (element telem "aload") dec1
+      cjmps ltrue lfalse lnext "ifne" dec1
+    EGetField {} -> notImplemented
+    -- Method calls
+    EInvokeStatic _ (MethodName name) (TypeMethod (TPrimitive TBool) _ _) exprs -> do
+      emit x
+      cjmps ltrue lfalse lnext "ifne" dec1
+    EInvokeVirtual {} -> notImplemented
+    -- Object creation
+    -- Operations
+    EUnary OuNot expr _ ->
+      emitCond expr lfalse ltrue lnext
+    EBinary ObAnd expr1 expr2 _ -> do
+      lmid <- newLabel
+      emitCond expr1 lmid lfalse lmid
+      lab lmid
+      emitCond expr2 ltrue lfalse lnext
+    EBinary ObOr expr1 expr2 _ -> do
+      lmid <- newLabel
+      emitCond expr1 ltrue lmid lmid
+      lab lmid
+      emitCond expr2 ltrue lfalse lnext
+    EBinary opbin expr1 expr2 _ -> do
+      atyp <- emit expr1
+      emit expr2
+      comp <- comparison opbin
+      cjmps ltrue lfalse lnext ("if_" ++ variable atyp ("cmp" ++ comp)) dec2
+    -- If we cannot recognize expression as binary one
+    _ -> badExpressionType
+    where
+      badExpressionType = Err.unreachable $ "attempt to emit jump code for non-boolean" ++ show x
 

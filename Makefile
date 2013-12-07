@@ -3,10 +3,12 @@ TESTSUITES := $(wildcard test-*)
 
 PDFLATEX := pdflatex -interaction=batchmode
 
-all:
+all: runtime-jvm
 	$(MAKE) -C src/ all
-	javac lib/Runtime.java
 	ln -sf src/Jvmm/Main ./latc
+
+runtime-jvm: lib/Runtime.java
+	javac $<
 
 docs: $(DOCS)
 $(DOCS): %.pdf : %.md
