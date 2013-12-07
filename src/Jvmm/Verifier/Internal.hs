@@ -3,7 +3,6 @@
 module Jvmm.Verifier.Internal where
 
 import Control.Monad.Identity
-import Control.Monad.Error
 import Control.Monad.State
 import qualified Data.Traversable as Traversable
 
@@ -12,12 +11,9 @@ import qualified Jvmm.Errors as Err
 import Jvmm.Errors (rethrow, ErrorInfoT)
 import Jvmm.Trans.Output
 import Jvmm.Hierarchy.Output
-import qualified Jvmm.Types.Internal as Types
 
--- This layer performs static checks that do not alter Abstract Program Tree.
-
--- STATIC INFORMATION REPRESENTATION --
----------------------------------------
+-- THE STATE --
+---------------
 data VerifierState = VerifierState {
     -- This keeps trach whether functions actually returned
     verifierstateReturned :: Bool
@@ -25,13 +21,14 @@ data VerifierState = VerifierState {
   , verifierstateMain :: Bool
 }
 
+verifierstate0 :: VerifierState
 verifierstate0 = VerifierState {
     verifierstateReturned = False
   , verifierstateMain = False
 }
 
--- ANALYSER MONAD --
---------------------
+-- THE MONAD --
+---------------
 type VerifierM = StateT VerifierState (ErrorInfoT Identity)
 runVerifierM :: VerifierM a -> ErrorInfoT Identity a
 runVerifierM m = fmap fst $ runStateT m verifierstate0
@@ -64,8 +61,8 @@ checkEntrypoint method
   | isEntrypoint method = modify (\st -> st { verifierstateMain = True })
 checkEntrypoint _ = return ()
 
--- TRAVERSING TREE --
----------------------
+-- TREE TRANSVERSAL --
+----------------------
 class Verifiable a where
   verify :: a -> VerifierM ()
 
@@ -92,16 +89,10 @@ instance Verifiable Stmt where
     -- Control statements
     SReturn _ _ -> setReturned True
     SReturnV -> setReturned True
-    SIf ELitTrue stmt -> verify stmt -- TODO analyser should resolve this
     SIf _ stmt ->
       -- Whether this statement was executed depends on runtime evaluation of expression
       clearReturned $ verify stmt
-    SIfElse ELitTrue stmt1 _ -> verify stmt1 -- TODO analyser should resolve this
-    SIfElse ELitFalse _ stmt2 -> verify stmt2 -- TODO analyser should resolve this
-    SIfElse _ stmt1 stmt2 -> do
-      (_, retd1) <- probeReturned $ verify stmt1
-      (_, retd2) <- probeReturned $ verify stmt2
-      orReturned (retd1 && retd2)
+    SIfElse _ stmt1 stmt2 -> verifyBoth stmt1 stmt2
     -- We have no break nor goto instruction therefore infinite loop will either loop or return or
     -- terminate entire program with 'runtime error' (which I consider as returning)
     SWhile ELitTrue stmt -> do
@@ -115,17 +106,23 @@ instance Verifiable Stmt where
     SThrow _ -> orReturned True
     -- Since we cannot statically exclude possibility of exception being thrown, we require try {}
     -- block to return or throw AND catch () {} block to return
-    STryCatch stmt1 _ _ stmt2 -> do
-      (_, retd1) <- probeReturned $ verify stmt1
-      (_, retd2) <- probeReturned $ verify stmt2
-      orReturned (retd1 && retd2)
+    STryCatch stmt1 _ _ stmt2 -> verifyBoth stmt1 stmt2
     -- Special function bodies
     SBuiltin -> setReturned True
     SInherited -> setReturned True
     -- Metainformation carriers
     SMetaLocation loc stmts -> Err.withLocation loc (mapM_ verify stmts)
     -- These statements will be replaced with ones caring more context in subsequent phases
-    T_SDeclVar _ _ -> Err.unreachable x
+    T_SDeclVar {} -> Err.unreachable x
+    T_SAssign {} -> Err.unreachable x
+    T_SAssignArr {} -> Err.unreachable x
+    T_SAssignFld {} -> Err.unreachable x
+    T_STryCatch {} -> Err.unreachable x
     -- Nothing to do here
     _ -> return ()
+    where
+      verifyBoth stmt1 stmt2 = do
+        (_, retd1) <- probeReturned $ verify stmt1
+        (_, retd2) <- probeReturned $ verify stmt2
+        orReturned (retd1 && retd2)
 
