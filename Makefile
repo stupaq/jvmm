@@ -1,12 +1,13 @@
 DOCS := $(patsubst %.md, %.pdf, $(wildcard docs/*.md))
 TESTSUITES := $(wildcard test-*)
 JVM_RUNTIME := lib/Runtime.class
+DEFAULT := jvm
 
 PDFLATEX := pdflatex -interaction=batchmode
 
 all: $(JVM_RUNTIME)
 	$(MAKE) -C src/ all
-	ln -sf src/Jvmm/Main ./latc
+	ln -sf ./latc_$(DEFAULT) ./latc
 
 $(JVM_RUNTIME): %.class: %.java
 	javac $<
@@ -19,12 +20,12 @@ $(TESTSUITES): % : all
 	@./$@/test-run.sh
 
 clean:
-	$(MAKE) -C src/ clean
+	-$(MAKE) -C src/ clean
 	-rm -f lib/Runtime.class
 	-rm -f test.{err,out}
 
 distclean: clean
-	$(MAKE) -C src/ distclean
-	-rm -f $(DOCS) *.zip ./latc ./latc_syntax
+	-$(MAKE) -C src/ distclean
+	-rm -f $(DOCS) ./latc
 
 .PHONY: clean distclean docs

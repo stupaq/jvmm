@@ -1,2 +1,2 @@
 #!/bin/bash
-`dirname $0`/latc -j "$@""
+`dirname $0`/src/Jvmm/Main -j "$@"

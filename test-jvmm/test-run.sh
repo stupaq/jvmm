@@ -1,8 +1,6 @@
 #!/bin/bash
-
-# testcases' locations
-TESTROOT="./test-jvmm/"
-EXECEXT=".jv"
-
-# run tests
-source test-run-generic.sh
+tests_root="./test-jvmm/"
+pattern_good="*/good/*.jv"
+pattern_bad_check="*/bad/*.jv"
+pattern_bad_parse="*/bad/*.txt"
+. test-run-generic.sh
