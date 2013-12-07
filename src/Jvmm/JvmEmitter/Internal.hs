@@ -4,7 +4,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE FunctionalDependencies #-}
-{-# LANGUAGE OverloadedStrings #-}
 module Jvmm.JvmEmitter.Internal where
 import Jvmm.JvmEmitter.Output
 
@@ -16,32 +15,30 @@ import Control.Monad.State
 import Control.Monad.Writer
 import Control.Applicative
 
-import qualified Data.Text as Text
+import Data.Text (pack, unpack, replace)
 import qualified Data.Char as Char
-import qualified Data.Map as Map
-import qualified Data.Set as Set
 import qualified Data.List as List
 import qualified Data.Traversable as Traversable
 
 import qualified Jvmm.Errors as Err
-import Jvmm.Errors (orThrow, rethrow, ErrorInfoT)
+import Jvmm.Errors (ErrorInfoT)
 import Jvmm.Builtins
 import Jvmm.Trans.Output
 import Jvmm.Hierarchy.Output
 
 -- A class that holds builtins
-builtinsClassName = "Runtime" :: String
+builtinsClassName :: String
+builtinsClassName = "Runtime"
+builtinMethodNames :: [String]
 builtinMethodNames = ["printInt", "readInt", "error", "printString", "readString"]
 
 -- EMITTING CLASS HIERARCHY --
 ------------------------------
-emitTopLevelStatics :: String -> ClassHierarchy -> ErrorInfoT Identity [JasminAsm]
-emitTopLevelStatics className = execWriterT . Traversable.mapM processClass
+emitTopLevelStatics :: EmitterEnv -> ClassHierarchy -> ErrorInfoT Identity [JasminAsm]
+emitTopLevelStatics env = execWriterT . Traversable.mapM processClass
   where
     processClass :: Class -> WriterT [JasminAsm] (ErrorInfoT Identity) ()
-    processClass clazz@(Class {}) =
-      let env = emitterenv0 { emitterenvOverrideClass = Just (ClassName className) }
-      in tell . (:[]) =<< lift (runEmitterM  env $ emit clazz)
+    processClass clazz@(Class {}) = tell . (:[]) =<< lift (runEmitterM  env $ emit clazz)
 
 -- EMITTER STATE --
 -------------------
@@ -51,23 +48,26 @@ data EmitterState = EmitterState {
   , emitterstateNextLabel :: Int
 } deriving (Show)
 
+emitterstate0 :: EmitterState
 emitterstate0 = EmitterState 0 0 0
 
 -- EMITTER ENVIRONMENT --
 -------------------------
 data EmitterEnv = EmitterEnv {
     emitterenvOverrideClass :: Maybe ClassName
+  , emitterenvDebugStack :: Bool
 } deriving (Show)
 
-emitterenv0 = EmitterEnv Nothing
+emitterenv0 :: EmitterEnv
+emitterenv0 = EmitterEnv Nothing False
 
 -- THE MONAD --
 ---------------
 type EmitterM = StateT EmitterState (ReaderT EmitterEnv (WriterT [JasminLine] (ErrorInfoT Identity)))
 runEmitterM :: EmitterEnv -> EmitterM a -> ErrorInfoT Identity a
 runEmitterM env action = do
-  (res, log) <- runWriterT (runReaderT (evalStateT action emitterstate0) env)
-  assert (null log) $ return res
+  (res, leftCode) <- runWriterT (runReaderT (evalStateT action emitterstate0) env)
+  assert (null leftCode) $ return res
 
 -- MONADIC HELPERS --
 ---------------------
@@ -78,9 +78,9 @@ intercept :: EmitterM a -> EmitterM [JasminLine]
 intercept action = fmap snd $ censor (const []) $ listen action
 
 assertStack :: (Int -> Bool) -> EmitterM a -> EmitterM a
-assertStack pred x = do
+assertStack p x = do
   stack <- gets emitterstateStackCurrent
-  assert (pred stack) x
+  assert (p stack) x
 
 -- LABELS ALLOCATION --
 -----------------------
@@ -111,8 +111,8 @@ alterStack :: StackDiff -> EmitterM ()
 alterStack dif = do
   stack <- dif <$> gets emitterstateStackCurrent
   stackMax <- (maximum . (:[stack])) <$> gets emitterstateStackMax
-  -- TODO:
-  com $ "Stack: " ++ show stack ++ " Max: " ++ show stackMax
+  debug <- asks emitterenvDebugStack
+  when debug $ com $ "stack: " ++ show stack ++ " max: " ++ show stackMax
   modify (\st -> st { emitterstateStackCurrent = stack
                     , emitterstateStackMax = stackMax })
 
@@ -139,8 +139,9 @@ lab (Label str) = tell [JasminLabel str]
 dir :: String -> EmitterM ()
 dir = tell . return . JasminDirective
 
-com :: String -> EmitterM ()
-com = tell . return . JasminComment
+com, com' :: String -> EmitterM ()
+com = tell . return . JasminComment . ('\n':)
+com' = tell . return . JasminComment
 
 nl :: EmitterM ()
 nl = tell $ return JasminEmpty
@@ -151,7 +152,7 @@ type Goto = StackDiff -> Label -> EmitterM ()
 type ConditionalJump = String -> Goto
 
 jmp :: Goto
-jmp stdif (Label lab) = ins ("goto" ++ ' ':lab) >> alterStack stdif
+jmp stdif (Label lstr) = ins ("goto" ++ ' ':lstr) >> alterStack stdif
 
 jmps :: Label -> Label -> StackDiff -> EmitterM ()
 jmps lgoto lnext stdif
@@ -159,8 +160,8 @@ jmps lgoto lnext stdif
   | otherwise = jmp stdif lgoto
 
 cjmp :: ConditionalJump
-cjmp str stdif (Label lab)
-  | "if" `List.isInfixOf` str = inss (str ++ ' ':lab) stdif
+cjmp str stdif (Label lstr)
+  | "if" `List.isInfixOf` str = inss (str ++ ' ':lstr) stdif
   | otherwise = Err.unreachable "conditional jump must check condition"
 
 cjmps :: Label -> Label -> Label -> String -> StackDiff -> EmitterM ()
@@ -172,9 +173,9 @@ cjmps lthen lelse lnext cond stdif
     jtrue = cjmp cond stdif lthen
     jfalse = cjmp (neg cond) stdif lelse
     neg op =
-      let rel = ["eq", "ge", "gt", "le", "lt", "ne"]
+      let rel = map pack ["eq", "ge", "gt", "le", "lt", "ne"]
           negMap = zip rel $ reverse rel
-      in head [ x | rule <- negMap, let x = Text.unpack $ uncurry Text.replace rule $ Text.pack op, x /= op ]
+      in head [ x | rule <- negMap, let x = unpack $ uncurry replace rule $ pack op, x /= op ]
 
 inss :: String -> StackDiff -> EmitterM ()
 inss str stdif = ins str >> alterStack stdif
@@ -219,7 +220,7 @@ param mnem val = mnem ++ ' ':show val
 
 -- PURE HELPERS --
 ------------------
-inc1, dec1, dec3, set0 :: StackDiff
+inc1, dec1, dec2, dec3, set0 :: StackDiff
 inc1 = (+) 1
 dec1 = decn 1
 dec2 = decn 2
@@ -238,7 +239,7 @@ class Emitable a b | a -> b where
 
 instance Emitable Class JasminAsm where
   -- TObject is special, we have to translate it to Java's Object
-  emit clazz@(Class TObject super [] statics _) = do
+  emit (Class TObject _ [] statics _) = do
     className <- asks emitterenvOverrideClass
     case className of
       Just (ClassName str) -> toJasminClass str $ do
@@ -257,6 +258,7 @@ instance Emitable Class JasminAsm where
         nl
         -- Static top-level methods
         forM_ statics emit
+        nl
       Nothing -> notImplemented
     where
       toJasminClass name = fmap (JasminAsm name) . intercept
@@ -290,10 +292,11 @@ instance Emitable TypeComposed String where
   emit _ = notImplemented
 
 instance Emitable Field () where
+  emit = notImplemented
 
 instance Emitable Method () where
-  emit method@Method { methodBody = SBuiltin } = return ()
-  emit method@Method { methodBody = SInherited } = return ()
+  emit Method { methodBody = SBuiltin } = return ()
+  emit Method { methodBody = SInherited } = return ()
   -- Static method
   emit method@Method { methodName = MethodName name, methodType = typ, methodBody = stmt,
       methodArgs = args, methodVariables = vars, methodInstance = False } = do
@@ -317,6 +320,7 @@ instance Emitable Method () where
     -- The epilogue
     dir "end method"
     nl
+  emit _ = notImplemented
 
 instance Emitable Stmt () where
   emit x = case x of
@@ -365,8 +369,8 @@ instance Emitable Stmt () where
       lab lcond
       emitCond expr lbody lend lend
       lab lend
-    SThrow expr -> notImplemented
-    STryCatch stmt1 typ num stmt2 -> notImplemented
+    SThrow {} -> notImplemented
+    STryCatch {} -> notImplemented
     -- Special function bodies
     SBuiltin -> Err.unreachable SBuiltin
     SInherited -> Err.unreachable SInherited
@@ -443,7 +447,7 @@ instance Emitable Expr TypeBasic where
       return (TPrimitive TChar)
     EInvokeVirtual {} -> notImplemented
     -- Object creation
-    ENewObj typ -> notImplemented
+    ENewObj _ -> notImplemented
     ENewArr typ@(TComposed _) expr -> do
       emit expr
       tdesc <- emit typ
@@ -455,6 +459,7 @@ instance Emitable Expr TypeBasic where
             TChar -> "char"
             TBool -> "boolean"
             TInt -> "int"
+            TVoid -> Err.unreachable "void array creation prohibited"
       inss ("newarray " ++ tdesc) id
       return typ
     -- Operations
@@ -470,7 +475,7 @@ instance Emitable Expr TypeBasic where
       fdesc <- emit $ TypeMethod (TComposed TString) [TComposed TString, TComposed TString] []
       inss ("invokestatic " ++ builtinsClassName ++ "/concat"  ++ fdesc) dec1
       return tret
-    EBinary opbin expr1 expr2 tret@(TPrimitive tprim) -> do
+    EBinary opbin expr1 expr2 tret@(TPrimitive _) -> do
       emit expr1
       emit expr2
       case opbin of
@@ -516,7 +521,7 @@ instance EmitableConditional Expr where
       cjmps ltrue lfalse lnext "ifne" dec1
     EGetField {} -> notImplemented
     -- Method calls
-    EInvokeStatic _ (MethodName name) (TypeMethod (TPrimitive TBool) _ _) exprs -> do
+    EInvokeStatic _ (MethodName _) (TypeMethod (TPrimitive TBool) _ _) _ -> do
       emit x
       cjmps ltrue lfalse lnext "ifne" dec1
     EInvokeVirtual {} -> notImplemented

@@ -1,7 +1,5 @@
 module Jvmm.JvmEmitter.Output where
 
-import Jvmm.Trans.Output (ClassName(..))
-
 -- JASMIN ASSEMBLER INPUT --
 ----------------------------
 data JasminAsm = JasminAsm String [JasminLine]
@@ -15,9 +13,11 @@ data JasminLine =
   | JasminEmpty
   deriving (Show, Eq)
 
-toJasmin (JasminDirective str) = "." ++ str ++ "\n"
-toJasmin (JasminInstruction str) = "\t" ++ str ++ "\n"
-toJasmin (JasminComment str) = "; " ++ str ++ "\n"
-toJasmin (JasminLabel str) = str ++ ":\n"
+toJasmin :: JasminLine -> String
+toJasmin (JasminDirective str) = '\n':'.':str
+toJasmin (JasminInstruction str) = '\n':'\t':str
+toJasmin (JasminComment ('\n':str)) = '\n':';':' ':str
+toJasmin (JasminComment str) = '\t':';':' ':str
+toJasmin (JasminLabel str) = '\n':str ++ ":"
 toJasmin JasminEmpty = "\n"
 

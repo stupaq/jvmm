@@ -1,31 +1,22 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 module Main (main) where
 
-import System.IO (stderr, stdout, hPutStrLn)
-import System.Exit (exitSuccess, exitFailure)
 import System.Environment (getArgs, getProgName)
-import System.FilePath ((</>), dropFileName, takeBaseName)
+import System.FilePath ((</>), dropFileName)
 import System.Console.GetOpt
-
-import Text.Show.Pretty (ppShow)
 
 import qualified Data.List as List
 
-import Control.Monad
 import Control.Monad.Error
-import Control.Monad.Identity
 import Control.Monad.Reader
-import Control.Monad.IO.Class
-import Control.Applicative
 
 import Syntax.AbsJvmm (Program)
 import Syntax.ParJvmm (myLexer, pProgram)
-import Syntax.PrintJvmm (printTree)
 import Syntax.ErrM (Err(..))
 
+import Jvmm.Workflows
 import Jvmm.Errors
 import Jvmm.Trans
-import Jvmm.Trans.Output
 import Jvmm.Hierarchy
 import Jvmm.Hierarchy.Output
 import Jvmm.Scope
@@ -34,39 +25,9 @@ import Jvmm.Analyser
 import Jvmm.Verifier
 import Jvmm.JvmEmitter
 import Jvmm.JvmEmitter.Output
---import Semantics.Runtime
 
 -- WORKFLOWS --
 ---------------
-type InteractionM a = (ReaderT Options IO) a
-type Interaction a = a -> InteractionM ()
-type TransformationM a = (ErrorInfoT Identity) a
-type Transformation a b = a -> TransformationM b
-
-(=?>) :: Transformation a b -> Interaction b -> Interaction a
-(=?>) proc sink input =
-  case runErrorInfoM $ proc input of
-    Left err -> do
-      printl Error "ERROR\n"
-      printl Error $ show err
-      lift exitFailure
-    Right res -> do
-      printl Warn "OK\n"
-      sink res
-      lift exitSuccess
-
-(=>>) :: Transformation a b -> Interaction b -> Interaction a
-(=>>) proc sink input =
-  case runErrorInfoM $ proc input of
-    Left _ -> lift exitFailure
-    Right res -> sink res >> lift exitSuccess
-
-(=>|) :: Interaction a -> a -> InteractionM ()
-(=>|) = ($)
-
-nullSink :: Interaction a
-nullSink = const (return ())
-
 -- Performs parsing of input program
 parseT :: Transformation String Program
 parseT str =
@@ -88,58 +49,42 @@ check = checkT =?> nullSink
 compileJvm :: Interaction String
 compileJvm = checkT =?> compile
   where
-    compile hierarchy = do
-      source <- asks source
-      let name = takeBaseName source
+    compile classes = do
+      config <- ask
+      let source = configurationSource config
       let dest = dropFileName source
-      let writeOne (JasminAsm clazz lines) = do
+      let writeOne (JasminAsm clazz code) = do
           let file = dest </> clazz ++ ".j"
-          lift $ writeFile file $ "; source: " ++ source ++ "\n"
-          mapM_ (lift . appendFile file . toJasmin) lines
-      emitJvm name =>> mapM_ writeOne =>| hierarchy
+          lift $ writeFile file $ "; source: " ++ source
+          mapM_ (lift . appendFile file . toJasmin) code
+      emitJvm config =>> mapM_ writeOne =>| classes
 
 -- Defaault workflow
+defaultInteraction :: Interaction String
 defaultInteraction = compileJvm
-
--- OUTPUT HELPERS --
---------------------
-data Verbosity = Debug | Info | Warn | Error
-  deriving (Eq, Ord, Show)
-
-printl :: Verbosity -> String -> InteractionM ()
-printl v s = do
-  verb <- asks verbosity
-  when (v >= verb) $ liftIO $ hPutStrLn stderr s
 
 -- GENERAL OPTIONS --
 ---------------------
-data Options = Options {
-    verbosity :: Verbosity
-  , workflow :: Interaction String
-  , source :: String
-}
-options0 = Options {
-    verbosity = Info
-  , workflow = defaultInteraction
-  , source = undefined
-}
-
-optionsDef :: [OptDescr (Options -> Options)]
+optionsDef :: [OptDescr (Configuration -> Configuration)]
 optionsDef = [
-    Option "v" [] (NoArg $ \opts -> opts { verbosity = Debug }) "verbose output"
-  , Option "q" [] (NoArg $ \opts -> opts { verbosity = Warn }) "quiet output"
-  , Option "p" [] (NoArg $ \opts -> opts { workflow = parse }) "parse code"
-  , Option "c" [] (NoArg $ \opts -> opts { workflow = check }) "preform static analysis"
-  , Option "j" [] (NoArg $ \opts -> opts { workflow = compileJvm }) "preform static analysis"
+    Option "v" [] (NoArg $ \opts -> opts { configurationVerbosity = Debug }) "verbose output"
+  , Option "q" [] (NoArg $ \opts -> opts { configurationVerbosity = Warn }) "quiet output"
+  , Option "p" [] (NoArg $ \opts -> opts { configurationWorkflow = parse }) "parse code"
+  , Option "c" [] (NoArg $ \opts -> opts { configurationWorkflow = check }) "preform static analysis"
+  , Option "j" [] (NoArg $ \opts -> opts { configurationWorkflow = compileJvm }) "preform static analysis"
+  , Option "g" [] (NoArg $ \opts -> opts { configurationDebug = True }) "include debug comments in code"
   ]
 
-parseOptions :: IO Options
+parseOptions :: IO Configuration
 parseOptions = do
   prog <- getProgName
   let header = "Usage: " ++ prog ++ " [OPTION...] files..."
   argv <- getArgs
   case getOpt Permute optionsDef argv of
-    (opts, [source], []) -> return (List.foldl (flip Prelude.id) (options0 { source = source }) opts)
+    (opts, [source], []) ->
+      let baseConfig = configuration0 { configurationSource = source
+                                      , configurationWorkflow = defaultInteraction }
+      in return (List.foldl (flip Prelude.id) baseConfig opts)
     _ -> ioError (userError (usageInfo header optionsDef))
 
 -- MAIN --
@@ -147,6 +92,6 @@ parseOptions = do
 main :: IO ()
 main = do
   opts <- parseOptions
-  str <- readFile (source opts)
-  runReaderT (workflow opts str) opts
+  str <- readFile (configurationSource opts)
+  runReaderT (configurationWorkflow opts str) opts
 
