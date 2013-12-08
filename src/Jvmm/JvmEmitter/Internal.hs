@@ -408,7 +408,8 @@ instance Emitable Expr TypeBasic where
       emit $ ELitInt (toInteger $ Char.ord c)
       return (TPrimitive TInt)
     ELitString s -> do
-      inss ("ldc \"" ++ s ++ "\"") inc1
+      -- Show will automatically escape things as needed and add quotes
+      inss ("ldc " ++ show s) inc1
       return (TComposed TString)
     ELitInt n -> do
       inssc "ldc" inc1 (fromInteger n)
