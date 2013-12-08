@@ -59,22 +59,34 @@ function assert_exec() {
 }
 
 function test_result() {
-  echo
-  return $1
+    echo
+    return $1
 }
 
 # reporting
 function show_results() {
-  echo ":: STDERR (actual):"
-  cat "$compile_output" 2>/dev/null
-  echo ":: STDOUT (actual):"
-  cat "$exec_output" 2>/dev/null
-  echo ":: STDOUT (expected):"
-  cat "${1%.*}.output" 2>/dev/null
-  echo ":: SOURCE:"
-  cat "$1"
-  echo ":: JASMIN:"
-  cat "${1%.*}.j" 2>/dev/null
+    if [[ $2 == -*c* ]] || [[ $2 == -*v* ]]; then
+        echo -e ":: COMPILER:"
+        cat "$compile_output" 2>/dev/null
+    fi
+    if [[ $2 == -*o* ]] || [[ $2 == -*v* ]]; then
+        echo -e ":: OUTPUT (actual):"
+        cat "$exec_output" 2>/dev/null
+        echo -e ":: OUTPUT (expected):"
+        cat "${1%.*}.output" 2>/dev/null
+    fi
+    if [[ $2 == -*i* ]] || [[ $2 == -*v* ]]; then
+        echo -e ":: INPUT:"
+        cat "${1%.*}.input" 2>/dev/null
+    fi
+    if [[ $2 == -*s* ]] || [[ $2 == -*v* ]]; then
+        echo -e ":: SOURCE:"
+        cat "$1"
+    fi
+    if [[ $2 == -*j* ]] || [[ $2 == -*v* ]]; then
+        echo -e "\n:: JASMIN:"
+        cat "${1%.*}.j" 2>/dev/null
+    fi
 }
 
 # testers
@@ -173,9 +185,7 @@ else
   testcase_parse $File
   testcase_check $File
   testcase_jvm $File
-  if [[ $? -ne 0 ]] || [[ $2 == -*v* ]]; then
-    show_results $File
-  fi
+  show_results $File $2
 fi
 
 # EOF

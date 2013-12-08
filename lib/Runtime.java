@@ -21,7 +21,9 @@ public class Runtime {
   }
 
   public static int readInt() {
-    return stdin.nextInt();
+    int n = stdin.nextInt();
+    stdin.nextLine();
+    return n;
   }
 
   public static String readString() {
