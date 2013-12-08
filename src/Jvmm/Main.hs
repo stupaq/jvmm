@@ -23,6 +23,7 @@ import Jvmm.Scope
 import Jvmm.Types
 import Jvmm.Analyser
 import Jvmm.Verifier
+import Jvmm.Interpreter
 import Jvmm.JvmEmitter
 import Jvmm.JvmEmitter.Output
 
