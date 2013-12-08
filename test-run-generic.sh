@@ -5,9 +5,9 @@ pattern_good="*/good/*.lat"
 pattern_bad_check="*/bad/*.lat"
 pattern_bad_parse="*/bad/*.txt"
 
-compile_jvm="./latc"
-compile_check="./latc_check"
-compile_parse="./latc_parse"
+compile_jvm="./jvmmc_jvm"
+compile_check="./jvmmc_check"
+compile_parse="./jvmmc_parse"
 
 env_memlimit=60000
 env_verbosity=1

@@ -1,0 +1,33 @@
+#!/bin/bash
+set -e
+
+class=`basename ${1%.*}`
+path=`dirname $1`
+ext=${1##*.}
+
+if [[ $2 == -*c* ]]; then
+  rm -f $path/$class.{j,class,jar}
+  exit 0
+fi
+
+`dirname $0`/src/Jvmm/Main -j $1
+java -jar lib/jasmin.jar $path/$class.j -d $path
+
+if [[ $2 == -*v* ]]; then
+  echo -e "\n:: JVMM (source)"
+  cat $path/$class.$ext
+  echo -e "\n:: JASMIN (source)"
+  cat $path/$class.j
+fi
+
+if [[ $2 == -*p* ]] || [[ $2 == -*x* ]]; then
+  echo "Packaging $path/$class.jar"
+  jar cfe $path/$class.jar $class \
+    -C $path $class.class \
+    -C lib/ Runtime.class
+fi
+
+if [[ $2 == -*x* ]]; then
+  echo "Executing $path/$class.jar"
+  java -jar $path/$class.jar
+fi

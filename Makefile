@@ -7,7 +7,7 @@ PDFLATEX := pdflatex -interaction=batchmode
 
 all: $(JVM_RUNTIME)
 	$(MAKE) -C src/ all
-	ln -sf ./latc_$(DEFAULT) ./latc
+	ln -sf ./jvmmc_$(DEFAULT) ./latc
 
 $(JVM_RUNTIME): %.class: %.java
 	javac $<
