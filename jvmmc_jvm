@@ -13,11 +13,16 @@ fi
 `dirname $0`/src/Jvmm/Main -j $1
 java -jar lib/jasmin.jar $path/$class.j -d $path
 
-if [[ $2 == -*v* ]]; then
+if [[ $2 == -*s* ]] || [[ $2 == -*v* ]]; then
   echo -e "\n:: JVMM (source)"
   cat $path/$class.$ext
+  echo
+fi
+
+if [[ $2 == -*a* ]] || [[ $2 == -*v* ]]; then
   echo -e "\n:: JASMIN (source)"
   cat $path/$class.j
+  echo
 fi
 
 if [[ $2 == -*p* ]] || [[ $2 == -*x* ]]; then

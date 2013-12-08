@@ -6,14 +6,17 @@ pattern_bad_check="*/bad/*.lat"
 pattern_bad_parse="*/bad/*.txt"
 
 compile_jvm="./jvmmc_jvm"
+compile_jvm_opts="-p"
 compile_check="./jvmmc_check"
 compile_parse="./jvmmc_parse"
+
+run_jvm="java -jar"
 
 env_memlimit=60000
 env_verbosity=1
 
-out_stdout="test.out"
-out_stderr="test.err"
+compile_output="test.err"
+exec_output="test.out"
 
 command_find="find $tests_root ! -name *.output -a ! -name *.input -a -type f"
 
@@ -45,8 +48,13 @@ function assert_status() {
     return $1;
 }
 
-function assert_output() {
-    diff <(head -n1 $out_stderr) <(echo -ne "$1\n") &>/dev/null
+function assert_compile() {
+    diff <(head -n1 $compile_output) <(echo -ne "$1\n") &>/dev/null
+    assert_status $?
+}
+
+function assert_exec() {
+    diff $exec_output "$1" &>/dev/null
     assert_status $?
 }
 
@@ -58,79 +66,71 @@ function test_result() {
 # reporting
 function show_results() {
   echo ":: STDERR (actual):"
-  cat "$out_stderr"
+  cat "$compile_output" 2>/dev/null
   echo ":: STDOUT (actual):"
-  cat "$out_stdout"
-  if [[ $verbosity -ge 1 ]]; then
-    echo ":: STDOUT (expected):"
-    cat "${1%.*}.output"
-  fi
-  if [[ $verbosity -ge 2 ]]; then
-    echo ":: SOURCE:"
-    cat "$1"
-    echo ":: JASMIN:"
-    cat "${1%.*}.j"
-  fi
+  cat "$exec_output" 2>/dev/null
+  echo ":: STDOUT (expected):"
+  cat "${1%.*}.output" 2>/dev/null
+  echo ":: SOURCE:"
+  cat "$1"
+  echo ":: JASMIN:"
+  cat "${1%.*}.j" 2>/dev/null
 }
 
 # testers
-# FIXME make it work once we have the first backend
-function run_example() {
-input="${1%$EXECEXT}.input"
-[[ -f $input ]] || input=/dev/null
-output="${1%$EXECEXT}.output"
-[[ -f $output ]] || output=/dev/null
+function testcase_jvm() {
+  Input="${1%.*}.input"
+  [[ -f $Input ]] || Input=/dev/null
+  Output="${1%.*}.output"
+  [[ -f $Output ]] || Output=/dev/null
 
-echo -ne "TEST\t$1: "
-ulimit -Sv $MEMLIMIT
-$EXEC $1 <$input 1>$out_stdout 2>$out_stderr && diff $out_stdout $output &>/dev/null
-status=$?
-if [[ $1 == */good* ]]; then
-  assert_status $status
-else
-  negate $status
-  assert_status $?
-fi
-test_result $?
+  echo -ne "JVM\t$1: "
+  $compile_jvm $1 $compile_jvm_opts &>$compile_output
+  $run_jvm ${1%.*}.jar <$Input &>$exec_output
+  Status=$?
+  if [[ $1 == $pattern_bad_exec ]]; then
+    negate $Status
+    assert_status $?
+    assert_exec $Output
+  else
+    assert_status $Status
+    assert_exec $Output
+  fi
+  test_result $?
 }
 
 function testcase_check() {
   echo -ne "CHECK\t$1: "
-  $compile_check $1 1>$out_stdout 2>$out_stderr
-  status=$?
+  $compile_check $1 2>$compile_output
+  Status=$?
   if [[ $1 == $pattern_bad_check ]]; then
-    negate $status
+    negate $Status
     assert_status $?
-    assert_output ERROR
+    assert_compile ERROR
   else
-    assert_status $status
-    assert_output OK
+    assert_status $Status
+    assert_compile OK
   fi
   test_result $?
 }
 
 function testcase_parse() {
   echo -ne "PARSE\t$1: "
-  $compile_parse $1 1>$out_stdout 2>$out_stderr
-  status=$?
+  $compile_parse $1 2>$compile_output
+  Status=$?
   if [[ $1 == $pattern_bad_parse ]]; then
-    negate $status
+    negate $Status
     assert_status $?
-    assert_output ERROR
+    assert_compile ERROR
   else
-    assert_status $status
-    assert_output OK
+    assert_status $Status
+    assert_compile OK
   fi
   test_result $?
 }
 
 
 # main()
-case $2 in
-  -v) env_verbosity=3 ;;
-  -q) env_verbosity=0 ;;
-esac
-
 if [[ $# -eq 0 ]]; then
   TotalCount=0
   function incTotal() {
@@ -154,7 +154,8 @@ if [[ $# -eq 0 ]]; then
   for f in $tests_good; do
     incTotal
     testcase_parse $f
-    testcase_check $f || incFails
+    testcase_check $f
+    testcase_jvm $f || incFails
   done
 
   echo -e "FAILED: $FailsCount\tTOTAL:  $TotalCount"
@@ -171,7 +172,8 @@ else
   # run found test
   testcase_parse $File
   testcase_check $File
-  if [[ $? -ne 0 ]] || [[ $2 == -v* ]]; then
+  testcase_jvm $File
+  if [[ $? -ne 0 ]] || [[ $2 == -*v* ]]; then
     show_results $File
   fi
 fi

@@ -57,11 +57,11 @@ showFeedback :: Verbosity -> Verbosity -> Transformation a b -> Interaction b ->
 showFeedback verbErr verbOk proc sink input =
   case runErrorInfoM $ proc input of
     Left err -> do
-      printl verbErr "ERROR\n"
+      printl verbErr "ERROR"
       printl verbErr (show err)
       lift exitFailure
     Right res -> do
-      printl verbOk "OK\n"
+      printl verbOk "OK"
       sink res
       lift exitSuccess
 

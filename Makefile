@@ -23,6 +23,7 @@ clean:
 	-$(MAKE) -C src/ clean
 	-rm -f lib/Runtime.class
 	-rm -f test.{err,out}
+	-find ./ -path "*test-*" -a \( -name "*.class" -o -name "*.j" -o -name "*.jar" \) -delete
 
 distclean: clean
 	-$(MAKE) -C src/ distclean
