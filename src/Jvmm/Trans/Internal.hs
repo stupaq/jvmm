@@ -91,7 +91,7 @@ tStmt x = case x of
   I.SIf expr stmt -> return $ O.SIf (tExpr expr) (O.SBlock $ tStmt stmt)
   I.SIfElse expr stmt1 stmt2 -> return $ O.SIfElse (tExpr expr) (O.SBlock $ tStmt stmt1) (O.SBlock $ tStmt stmt2)
   I.SWhile expr stmt -> return $ O.SWhile (tExpr expr) (O.SBlock $ tStmt stmt)
-  I.SForeach typ id expr stmt ->  -- SYNTACTIC SUGAR
+  I.SForeach typ id expr stmt -> -- SYNTACTIC SUGAR
     let idarr = tempIdent id "arr"
         idlength = tempIdent id "length"
         iditer = tempIdent id "iter"
@@ -140,15 +140,44 @@ noRbr = I.RightBrace ((-1, -1), ";")
 tItem :: I.TypeBasic -> I.Item -> [O.Stmt]
 tItem typ x = case x of
   I.NoInit id -> [O.T_SDeclVar (tTBasic typ) (tVIdent id)]
-  -- We use temporary variable with lifetime limited to four statements,
-  -- which cannot hide any user-defined variable
-  I.Init id expr ->  -- SYNTACTIC SUGAR
-    let idtmp = tempIdent id "decl"
-    in [
-      O.T_SDeclVar (tTBasic typ) (tVIdent idtmp),
-      O.T_SAssign (tVIdent idtmp) (tExpr expr),
-      O.T_SDeclVar (tTBasic typ) (tVIdent id),
-      O.T_SAssign (tVIdent id) (O.T_EVar (tVIdent idtmp))]
+  I.Init id expr -> -- SYNTACTIC SUGAR
+    -- For declarations with conflicts (e.g. int x = x;) we use temporary variable
+    -- with lifetime limited to four statements, which cannot hide any user-defined variable
+    if refersTo (tVIdent id) (tExpr expr) then let idtmp = tempIdent id "decl" in [
+        O.T_SDeclVar (tTBasic typ) (tVIdent idtmp),
+        O.T_SAssign (tVIdent idtmp) (tExpr expr),
+        O.T_SDeclVar (tTBasic typ) (tVIdent id),
+        O.T_SAssign (tVIdent id) (O.T_EVar (tVIdent idtmp))]
+    else [O.T_SDeclVar (tTBasic typ) (tVIdent id), O.T_SAssign (tVIdent id) (tExpr expr)]
+
+refersTo :: O.VariableName -> O.Expr -> Bool
+refersTo var expr = case expr of
+  -- Literals
+  O.ENull -> False
+  O.ELitTrue -> False
+  O.ELitFalse -> False
+  O.ELitChar _ -> False
+  O.ELitString _ -> False
+  O.ELitInt _ -> False
+  -- Memory access
+  O.ELoad {} -> False
+  O.EArrayLoad expr1 expr2 _ -> any refers [expr1, expr2]
+  O.EGetField expr _ _ _ -> refers expr
+  -- Method calls
+  O.EInvokeStatic _ _ _ exprs -> any refers exprs
+  O.EInvokeVirtual expr _ _ _ exprs -> any refers (expr:exprs)
+  -- Object creation
+  O.ENewObj {} -> False
+  O.ENewArr _ expr -> refers expr
+  -- Operations
+  O.EUnary _ expr _ -> refers expr
+  O.EBinary _ expr1 expr2 _ -> any refers [expr1, expr2]
+  -- These expressions will be replaced with ones caring more context in subsequent phases
+  O.T_EVar var1 -> var == var1
+  -- We can always make a mistake and aswer True
+  _ -> True
+  where
+    refers = refersTo var
 
 tExpr :: I.Expr -> O.Expr
 tExpr x = case x of
