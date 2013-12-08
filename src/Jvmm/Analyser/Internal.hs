@@ -58,13 +58,23 @@ instance Analysable Class Class where
       return clazz { classAllMethods = methods' }
 
 instance Analysable Method Method where
-  analyse method@Method { methodBody = stmt, methodLocation = loc } =
+  analyse method@Method { methodBody = stmt, methodLocation = loc, methodVariables = vars } =
     Err.withLocation loc $ do
-      stmt' <- wrapStmts <$> analyse stmt
-      return method { methodBody = stmt' }
+      -- Process method body
+      stmts' <- analyse stmt
+      -- Prepare assignments for each variable
+      let inits' = map assignDefault vars
+      return method { methodBody = wrapStmts $ inits' ++ stmts' }
         where
           wrapStmts [x] = x
           wrapStmts x = SMetaLocation loc x
+          assignDefault (Variable typ num _) = SStore num (defaultValue typ) typ
+          defaultValue typ = case typ of
+            TComposed _ -> ENull
+            TPrimitive TInt -> ELitInt 0
+            TPrimitive TChar -> ELitChar '\0'
+            TPrimitive TBool -> ELitFalse
+            _ -> Err.unreachable TVoid
 
 instance Analysable Stmt [Stmt] where
   analyse x = case x of

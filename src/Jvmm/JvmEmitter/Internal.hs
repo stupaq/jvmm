@@ -215,7 +215,7 @@ param "bipush" val
 param "sipush" val
   | val >= -128 && val <= 127 = param "bipush" val
 param "ldc" val
-  | val >= -32768 && val <= 32767 = param "bipush" val
+  | val >= -32768 && val <= 32767 = param "sipush" val
 param (t:mnem) val
   | val >= 0 && val <= 3 && mnem `elem` ["load", "store"] = t:mnem ++ '_':show val
 param mnem val = mnem ++ ' ':show val
