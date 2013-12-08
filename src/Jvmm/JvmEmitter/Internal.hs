@@ -312,7 +312,7 @@ instance Emitable Method () where
     -- The prologue
     tdesc <- emit typ
     dir $ "method public static " ++ name ++ tdesc
-    let maxVar = maximum $ (0:) $ map (fromEnum . variableNum) $ args ++ vars
+    let maxVar = maximum $ (negate 1:) $ map (fromEnum . variableNum) $ args ++ vars
     dir $ "limit locals " ++ show (maxVar + 1)
     -- Emit method body but do not write it yet
     newStack
@@ -323,8 +323,9 @@ instance Emitable Method () where
     dir $ "limit stack " ++ show maxStack
     -- ...and method body
     tell body
-    -- ...and final return (just in case)
+    -- ...and final return/nop (just in case there was a branch after return or empty method)
     when (tret == TPrimitive TVoid) $ ins "return"
+    unless (not (null body) && isInstruction (last body)) $ ins "nop"
     -- The epilogue
     dir "end method"
     nl

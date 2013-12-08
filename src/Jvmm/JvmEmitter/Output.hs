@@ -13,6 +13,10 @@ data JasminLine =
   | JasminEmpty
   deriving (Show, Eq)
 
+isInstruction :: JasminLine -> Bool
+isInstruction (JasminInstruction _) = True
+isInstruction _ = False
+
 toJasmin :: JasminLine -> String
 toJasmin (JasminDirective str) = '\n':'.':str
 toJasmin (JasminInstruction str) = '\n':'\t':str
