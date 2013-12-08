@@ -457,9 +457,11 @@ instance Emitable Expr TypeBasic where
     EInvokeVirtual {} -> notImplemented
     -- Object creation
     ENewObj _ -> notImplemented
-    ENewArr typ@(TComposed _) expr -> do
+    ENewArr typ@(TComposed tcomp) expr -> do
       emit expr
-      tdesc <- emit typ
+      tdesc <- case tcomp of
+        TArray _ -> emit typ
+        _ -> classPath <$> emit typ
       inss ("anewarray " ++ tdesc) id
       return typ
     ENewArr typ@(TPrimitive tprim) expr -> do
