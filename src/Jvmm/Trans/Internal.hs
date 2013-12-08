@@ -138,17 +138,27 @@ noRbr :: I.RightBrace
 noRbr = I.RightBrace ((-1, -1), ";")
 
 tItem :: I.TypeBasic -> I.Item -> [O.Stmt]
-tItem typ x = case x of
-  I.NoInit id -> [O.T_SDeclVar (tTBasic typ) (tVIdent id)]
-  I.Init id expr -> -- SYNTACTIC SUGAR
+tItem t x =
+  let typ = tTBasic t
+  in case x of
+  I.NoInit id -> [O.T_SDeclVar typ (tVIdent id), O.T_SAssign (tVIdent id) (defaultValue typ)]
+  I.Init id e -> -- SYNTACTIC SUGAR
     -- For declarations with conflicts (e.g. int x = x;) we use temporary variable
     -- with lifetime limited to four statements, which cannot hide any user-defined variable
-    if refersTo (tVIdent id) (tExpr expr) then let idtmp = tempIdent id "decl" in [
-        O.T_SDeclVar (tTBasic typ) (tVIdent idtmp),
-        O.T_SAssign (tVIdent idtmp) (tExpr expr),
-        O.T_SDeclVar (tTBasic typ) (tVIdent id),
+    let expr = tExpr e
+    in if refersTo (tVIdent id) expr then let idtmp = tempIdent id "decl" in [
+        O.T_SDeclVar typ (tVIdent idtmp),
+        O.T_SAssign (tVIdent idtmp) expr,
+        O.T_SDeclVar typ (tVIdent id),
         O.T_SAssign (tVIdent id) (O.T_EVar (tVIdent idtmp))]
-    else [O.T_SDeclVar (tTBasic typ) (tVIdent id), O.T_SAssign (tVIdent id) (tExpr expr)]
+    else [O.T_SDeclVar typ (tVIdent id), O.T_SAssign (tVIdent id) expr]
+  where
+    defaultValue typ = case typ of
+      O.TComposed _ -> O.ENull
+      O.TPrimitive O.TInt -> O.ELitInt 0
+      O.TPrimitive O.TChar -> O.ELitChar '\0'
+      O.TPrimitive O.TBool -> O.ELitFalse
+      _ -> O.ENull
 
 refersTo :: O.VariableName -> O.Expr -> Bool
 refersTo var expr = case expr of

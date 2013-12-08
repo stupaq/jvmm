@@ -426,7 +426,7 @@ instance Emitable Expr TypeBasic where
       emit expr
       cdesc <- classPath <$> emit (TComposed TString)
       fdesc <- emit ftyp
-      inss ("getfield " ++ cdesc ++ "/length " ++ fdesc) id
+      inss ("invokevirtual " ++ cdesc ++ "/length()" ++ fdesc) id
       return ftyp
     EGetField expr (TArray _) (FieldName "length") ftyp -> do
       emit expr

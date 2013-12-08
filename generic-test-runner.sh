@@ -17,8 +17,10 @@ env_verbosity=1
 
 compile_output="test.err"
 exec_output="test.out"
+exec_error="exec.err"
 
-command_find="find $tests_root ! -name *.output -a ! -name *.input -a -type f"
+command_find="find $tests_root -type f \
+    ! -name *.output -a ! -name *.input -a ! -name *.class -a ! -name *.j -a ! -name *.jar "
 
 # test cases
 tests_good=`$command_find -path "$pattern_good" | sort | uniq`
@@ -98,7 +100,7 @@ function testcase_jvm() {
 
   echo -ne "JVM\t$1: "
   $compile_jvm $1 $compile_jvm_opts &>$compile_output
-  $run_jvm ${1%.*}.jar <$Input &>$exec_output
+  $run_jvm ${1%.*}.jar <$Input 1>$exec_output 2>$exec_error
   Status=$?
   if [[ $1 == $pattern_bad_exec ]]; then
     negate $Status
