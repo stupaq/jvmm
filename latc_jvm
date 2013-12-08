@@ -3,4 +3,7 @@ set -e
 
 `dirname $0`/src/Jvmm/Main -j $1
 jasmin ${1%.*}.j -d `dirname $1`
-jar cfe ${1%.*}.jar `basename $1` ${1%.*}.class lib/Runtime.class
+[[ $2 == "-v" ]] && cat ${1%.*}.j
+jar cfe ${1%.*}.jar `basename ${1%.*}` \
+  -C `dirname $1` `basename ${1%.*}.class` \
+  -C lib/ Runtime.class

@@ -251,10 +251,17 @@ instance Emitable Class JasminAsm where
         nl
         -- Standard initializer
         dir "method public <init>()V"
-        dir "limit locals 0"
+        dir "limit locals 1"
         dir "limit stack 1"
         ins "aload_0"
         ins "invokespecial java/lang/Object/<init>()V"
+        ins "return"
+        dir "end method"
+        nl
+        dir "method public static main([Ljava/lang/String;)V"
+        dir "limit locals 1"
+        dir "limit stack 1"
+        ins $ "invokestatic " ++ str ++ "/main()I"
         ins "return"
         dir "end method"
         nl
@@ -300,14 +307,11 @@ instance Emitable Method () where
   emit Method { methodBody = SBuiltin } = return ()
   emit Method { methodBody = SInherited } = return ()
   -- Static method
-  emit method@Method { methodName = MethodName name, methodType = typ, methodBody = stmt,
-      methodArgs = args, methodVariables = vars, methodInstance = False } = do
+  emit method@Method { methodName = MethodName name, methodType = typ@(TypeMethod tret _ _),
+       methodBody = stmt, methodArgs = args, methodVariables = vars, methodInstance = False } = do
     -- The prologue
-    if isEntrypoint method
-      then dir "method public static main([Ljava/lang/String;)V"
-      else do
-        tdesc <- emit typ
-        dir $ "method public static " ++ name ++ tdesc
+    tdesc <- emit typ
+    dir $ "method public static " ++ name ++ tdesc
     let maxVar = maximum $ (0:) $ map (fromEnum . variableNum) $ args ++ vars
     dir $ "limit locals " ++ show (maxVar + 1)
     -- Emit method body but do not write it yet
@@ -319,6 +323,8 @@ instance Emitable Method () where
     dir $ "limit stack " ++ show maxStack
     -- ...and method body
     tell body
+    -- ...and final return (just in case)
+    when (tret == TPrimitive TVoid) $ ins "return"
     -- The epilogue
     dir "end method"
     nl
