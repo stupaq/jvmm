@@ -26,7 +26,7 @@ interpret hierarchy = let runenv0 = buildRunEnv hierarchy in do
       printl Debug $ "+----------------------------------"
       printl Debug $ "| Main returned:\t" ++ show res
       printl Debug $ "| Heap stats:\n|\tallocated_count:\t"
-          ++ (show $ Map.size (heap runstate1 Map.\\ heap runstate0))
+          ++ (show $ Map.size (runenvHeap runstate1 Map.\\ runenvHeap runstate0))
       printl Debug $ "+----------------------------------"
       -- Main result will become the return code of interpreter process
       liftIO $ exitWith $ if res == 0 then ExitSuccess else ExitFailure res

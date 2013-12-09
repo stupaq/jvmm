@@ -17,38 +17,49 @@ import qualified Jvmm.Errors as Err
 import Jvmm.Trans.Output
 import Jvmm.Hierarchy.Output
 
--- BUILTIN STATIC METHODS --
-----------------------------
-builtinGlobal = map (\(name, fun) -> (MethodName name, \vals -> fun vals >> nop)) [
-  ("printInt",
-      \[VInt val] -> do
-        liftIO $ putStrLn (show val)
-        return'_
-  ),
-  ("readInt",
-      \[] -> do
-        val <- liftIO (readLn :: IO Int)
-        return_ $ VInt val
-  ),
-  ("printString",
-      \[ref] -> do
-        VString str <- deref ref
-        liftIO (putStrLn str)
-        return'_
-  ),
-  ("readString",
-      \[] -> do
-        val <- liftIO (getLine :: IO String)
-        ref <- alloc (VString val)
-        return_ ref
-  ),
-  ("error",
-      \[] -> throwError $ RError Err.userIssuedError
-  )]
+-- RUNTIME ENVIRONMENT --
+-------------------------
+data GCConf = GCConf {
+    gcthresh :: Int
+}
+
+data RunEnv = RunEnv {
+    runenvClasses :: ClassHierarchy
+  , gcconf :: GCConf
+}
+
+buildRunEnv :: ClassHierarchy -> RunEnv
+buildRunEnv hierarchy = RunEnv hierarchy (GCConf 100)
+
+-- RUNTIME STATE --
+-------------------
+type StackFrame = Map.Map VariableNum PrimitiveValue
+stackframe0 :: StackFrame
+stackframe0 = Map.empty
+
+mapHead :: (a -> a) -> [a] -> [a]
+mapHead fun (x:xs) = (fun x:xs)
+
+type Heap = Map.Map Location ReferencedValue
+heap0 :: Heap
+heap0 = Map.singleton location0 VNothing
+
+data RunState = RunState {
+    runenvStack :: [StackFrame]
+  , runenvHeap :: Heap
+}
+
+runstate0 :: RunState
+runstate0 = RunState {
+    runenvStack = [stackframe0]
+  , runenvHeap = heap0
+}
 
 -- DATA REPRESENTATION --
 -------------------------
 type Location = Int
+
+location0 :: Location
 location0 = 0
 
 data Composite = Composite {
@@ -56,6 +67,7 @@ data Composite = Composite {
   , runtimeType :: TypeComposed
 } deriving (Show)
 
+composite0 :: Composite
 composite0 = Composite {
     fields = Map.empty
   , runtimeType = undefined
@@ -65,12 +77,12 @@ type Array = Map.Map Int PrimitiveValue
 
 -- Result of executing a statement
 data Result =
-  -- Value returned from a function
+    -- Value returned from a function
     RValue PrimitiveValue
-  -- This is an exception, which can be thrown and caught by a user
+    -- This is an exception, which can be thrown and caught by a user
   | RException PrimitiveValue
-  -- This error can be thrown only by an interpreter itself when irrecoverable
-  -- error occurs (null pointer exception, zero division etc.)
+    -- This error can be thrown only by an interpreter itself when irrecoverable
+    -- error occurs (null pointer exception, zero division etc.)
   | RError ErrorInfo
   deriving (Show)
 
@@ -78,7 +90,7 @@ instance Error Result where
   strMsg = RError . Err.Bare
 
 data PrimitiveValue =
-  -- Things stored on stack are passed by value
+    -- Things stored on stack are passed by value
     VInt Int
   | VChar Char
   | VBool Bool
@@ -86,7 +98,7 @@ data PrimitiveValue =
   | VVoid
   deriving (Eq, Ord, Show)
 
--- Null reference
+nullReference :: PrimitiveValue
 nullReference = VRef location0
 
 data ReferencedValue =
@@ -105,60 +117,30 @@ defaultValue typ = return $ case typ of
   TPrimitive TVoid -> VVoid
   TComposed _ -> nullReference
 
--- RUNTIME ENVIRONMENT --
--------------------------
-data GCConf = GCConf {
-  gcthresh :: Int
-}
-
-gcconf0 = GCConf {
-  gcthresh = 100
-}
-
-data RunEnv = RunEnv {
-    runenvClasses :: ClassHierarchy
-  , gcconf :: GCConf
-}
-
-buildRunEnv :: ClassHierarchy -> RunEnv
-buildRunEnv hierarchy = RunEnv hierarchy gcconf0
-
--- RUNTIME STATE --
--------------------
-type StackFrame = Map.Map VariableNum PrimitiveValue
-stackframe0 = Map.empty
-
-mapHead :: (a -> a) -> [a] -> [a]
-mapHead fun (x:xs) = (fun x:xs)
-
-type Heap = Map.Map Location ReferencedValue
-heap0 = Map.singleton location0 VNothing
-
-data RunState = RunState {
-  stack :: [StackFrame],
-  heap :: Heap
-}
-
-runstate0 = RunState {
-  stack = [stackframe0],
-  -- Reference with location == 0 is a null reference
-  heap = heap0
-}
-
 -- THE MONAD --
 ---------------
 -- We need to be able to catch an exception without loosing the state -- this
 -- is why we have to reverse the order of ErrorT and StateT
--- Lack of a stack in ReaderT monad (compare with StateT) is caused by the fact
--- that we will never have to inspect hidden part of it
 type InterpreterM = ReaderT RunEnv (ErrorT Result (StateT RunState IO))
 runInterpreterM :: RunEnv -> InterpreterM a -> IO (Either Result a, RunState)
 runInterpreterM r m = runStateT (runErrorT (runReaderT m r)) runstate0
 
--- Map lookups handler
+-- MONADIC HELPERS --
+---------------------
+findStaticMethod :: TypeComposed -> MethodName -> InterpreterM Method
+findStaticMethod ctyp name = undefined
+
+findImplementation :: TypeComposed -> MethodName -> InterpreterM Method
+findImplementation rtyp name = undefined
+
+findClass :: TypeComposed -> InterpreterM Class
+findClass ctyp = undefined
+
 fromJust :: (Show b) => b -> Maybe a -> a
 fromJust ctx Nothing = Err.fromJustFailure ctx
 fromJust ctx (Just val) = val
+
+-- FIXME/
 
 -- Executes given action in a new 'stack frame', restores old one afterwards
 -- The assumption that there is no syntactic hiding is EXTREMELY strong and
@@ -168,11 +150,11 @@ newFrame :: InterpreterM a -> InterpreterM a
 newFrame action = do
   -- Note that all functions have global scope as their base and cannot access
   -- scope of their callers
-  modify (\state -> state { stack = [stackframe0] ++ stack state })
+  modify (\state -> state { runenvStack = [stackframe0] ++ runenvStack state })
   tryFinally action $
     -- Pop stack frame no matter what happened (exception/error/return),
     -- note that the stack might be modified due to GC runs
-    modify (\state -> state { stack = tail $ stack state })
+    modify (\state -> state { runenvStack = tail $ runenvStack state })
 -- When it comes to GC -- note that we cannot really benefit from running gc
 -- when exiting from functions (with exception or result). In a good scenario
 -- we will immediately pass many stack frames and invoking GC on each one is a
@@ -180,6 +162,8 @@ newFrame action = do
 -- It is much better to wait for seqential processing statements as returning
 -- from a function does not utilize more memory than we were using inside of a
 -- function body.
+
+-- /FIXME
 
 getResult :: InterpreterM () -> InterpreterM PrimitiveValue
 getResult action = do
@@ -191,13 +175,13 @@ getResult action = do
       _ -> throwError err
 
 tryCatch :: InterpreterM () -> VariableNum -> InterpreterM () -> InterpreterM ()
-tryCatch atry id acatch = do
+tryCatch atry num acatch = do
   atry `catchError` handler
   where
     handler :: Result -> InterpreterM ()
     handler err = case err of
       RException val -> do
-        store id val
+        store num val
         acatch
       _ -> throwError err
 
@@ -212,39 +196,44 @@ tryFinally atry afinally = do
 
 -- MEMORY MODEL --
 ------------------
--- We should look for references in these places:
--- - stack variables from all frames (be careful with stack variables hiding)
--- - thrown exceptions
--- - returned values
--- - referenced objects (fixpoint)
--- ACHTUNG this requires catching all returns and exceptions (to obtain
--- references) and rethrowing them after GC phase with appropriately changed
--- references
--- ACHTUNG at the moment we only know current stack frame, there might be some
--- references hidden in lower stack frames
+-- If one uses bytecode monadic instruction only, the garbage collection is
+-- automatic, these functions should not be invoked directly.
+alloc :: ReferencedValue -> InterpreterM PrimitiveValue
+alloc val = do
+  loc <- gets freeloc
+  let ref = VRef loc
+  update ref val
+  return ref
+  where
+    freeloc :: RunState -> Location
+    freeloc = (+1) . fst . Map.findMax . runenvHeap -- TODO this is imperfect since we have GC
 
-dumpHeap :: InterpreterM ()
-dumpHeap = do
-  hp <- gets heap
-  liftIO $ IO.hPutStrLn IO.stderr $ "| Heap size: " ++ (show $ Map.size hp)
+deref :: PrimitiveValue -> InterpreterM ReferencedValue
+deref (VRef 0) = throwError (RError Err.nullPointerException)
+deref (VRef loc) = gets (fromJust (VRef loc) . Map.lookup loc . runenvHeap)
 
+update :: PrimitiveValue -> ReferencedValue -> InterpreterM ()
+update (VRef loc) val = modify (\state -> state { runenvHeap = Map.insert loc val (runenvHeap state) })
+
+-- GARBAGE COLLECTION --
+------------------------
 -- Allows running GC in between statements, might silently refuse to make a gc
 -- phase if the heap is small enough
 runGC :: InterpreterM ()
 runGC = do
-  hp <- gets heap
+  hp <- gets runenvHeap
   gcc <- asks gcconf
   when (doGCNow gcc hp) $ do
-    st <- gets stack
-    modify (\state -> state { heap = compactHeap (findRefs st) hp })
+    st <- gets runenvStack
+    modify (\state -> state { runenvHeap = compactHeap (findTopLevelRefs st) hp })
 
 doGCNow :: GCConf -> Heap -> Bool
-doGCNow gcconf heap = Map.size heap > gcthresh gcconf
+doGCNow gcconf runenvHeap = Map.size runenvHeap > gcthresh gcconf
 
 -- Extracts referred locations from stack variables, does not recurse into
 -- objects in any way
-findRefs :: [StackFrame] -> Set.Set Location
-findRefs = Set.unions . map (Set.fromList . map mp . filter flt . Map.elems)
+findTopLevelRefs :: [StackFrame] -> Set.Set Location
+findTopLevelRefs = Set.unions . map (Set.fromList . map mp . filter flt . Map.elems)
   where
     flt :: PrimitiveValue -> Bool
     flt (VRef _) = True
@@ -283,29 +272,10 @@ compactHeap pinned heap =
                   _ -> grey''
         in fun (grey''', black')
 
--- If one uses bytecode monadic instruction only, the garbage collection is
--- automatic, these functions should not be invoked directly.
-alloc :: ReferencedValue -> InterpreterM PrimitiveValue
-alloc val = do
-  loc <- gets freeloc
-  let ref = VRef loc
-  update ref val
-  return ref
-  where
-    freeloc :: RunState -> Location
-    freeloc = (+1) . fst . Map.findMax . heap -- TODO this is imperfect since we have GC
-
-deref :: PrimitiveValue -> InterpreterM ReferencedValue
-deref (VRef 0) = throwError (RError Err.nullPointerException)
-deref (VRef loc) = gets (fromJust (VRef loc) . Map.lookup loc . heap)
-
-update :: PrimitiveValue -> ReferencedValue -> InterpreterM ()
-update (VRef loc) val = modify (\state -> state { heap = Map.insert loc val (heap state) })
-
--- MONADIC HELPERS --
----------------------
-findMethod :: TypeComposed -> MethodName -> Bool -> InterpreterM Method
-findMethod ctyp name static = undefined
+dumpHeap :: InterpreterM ()
+dumpHeap = do
+  hp <- gets runenvHeap
+  liftIO $ IO.hPutStrLn IO.stderr $ "| Heap size: " ++ (show $ Map.size hp)
 
 -- MONADIC BYTECODE --
 ----------------------
@@ -315,7 +285,7 @@ nop :: InterpreterM ()
 nop = return ()
 
 load :: VariableNum -> InterpreterM PrimitiveValue
-load id = gets (fromJust id . Map.lookup id . head . stack)
+load num = gets (fromJust num . Map.lookup num . head . runenvStack)
 
 aload :: PrimitiveValue -> PrimitiveValue -> InterpreterM PrimitiveValue
 aload ref (VInt ind) = do
@@ -325,8 +295,8 @@ aload ref (VInt ind) = do
     Just val -> return val
 
 store :: VariableNum -> PrimitiveValue -> InterpreterM ()
-store id val = do
-  modify $ \state -> state { stack = mapHead (Map.insert id val) (stack state) }
+store num val = do
+  modify $ \st -> st { runenvStack = mapHead (Map.insert num val) (runenvStack st) }
   runGC --TODO move to some more sensible place
 
 astore :: PrimitiveValue -> PrimitiveValue -> PrimitiveValue -> InterpreterM ()
@@ -469,6 +439,24 @@ instance Interpretable Expr PrimitiveValue where
       aload val1 val2
     EGetField expr _ num _ -> interpret expr >>= getfield num
     -- Method calls
+    EInvokeStatic _ (MethodName "printInt") _ [expr] -> do
+      VInt val <- interpret expr
+      liftIO $ putStrLn (show val)
+      return VVoid
+    EInvokeStatic _ (MethodName "readInt") _ [] -> do
+      val <- liftIO (readLn :: IO Int)
+      return $ VInt val
+    EInvokeStatic _ (MethodName "printString") _ [expr] -> do
+      ref <- interpret expr
+      VString str <- deref ref
+      liftIO (putStrLn str)
+      return VVoid
+    EInvokeStatic _ (MethodName "readString") _ [] -> do
+      val <- liftIO (getLine :: IO String)
+      ref <- alloc (VString val)
+      return ref
+    EInvokeStatic _ (MethodName "error") _ [] ->
+      throwError $ RError Err.userIssuedError
     EInvokeStatic _ name _ exprs -> mapM interpret exprs >>= (getResult . invokestatic TObject name)
     EInvokeVirtual expr _ name _ exprs -> do
       ref <- interpret expr
