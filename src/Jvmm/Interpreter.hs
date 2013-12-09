@@ -1,4 +1,6 @@
-module Jvmm.Interpreter (runUnit) where
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FunctionalDependencies #-}
+module Jvmm.Interpreter where
 
 import qualified System.IO as IO
 
@@ -6,26 +8,17 @@ import Control.Monad.Identity
 import Control.Monad.Error
 import Control.Monad.Reader
 import Control.Monad.State
-import Control.Monad.Writer
-import Control.Monad.Cont
-import Control.Applicative
 
 import qualified Data.Set as Set
 import qualified Data.Map as Map
-import qualified Data.Maybe as Maybe
 
-import Jvmm.Errors (rethrow, ErrorInfoT)
+import Jvmm.Errors (ErrorInfo)
 import qualified Jvmm.Errors as Err
 import Jvmm.Trans.Output
 import Jvmm.Hierarchy.Output
-import qualified Jvmm.Scope as Scope
 
--- Implements runtime semantics and memory model, note that all type magic
--- should be moved to type cheking phase. Interpreter polimorphism (virtual
--- functions) requires knowledge of runtime type.
-
--- BUILTINS --
---------------
+-- BUILTIN STATIC METHODS --
+----------------------------
 builtinGlobal = map (\(name, fun) -> (MethodName name, \vals -> fun vals >> nop)) [
   ("printInt",
       \[VInt val] -> do
@@ -59,13 +52,13 @@ type Location = Int
 location0 = 0
 
 data Composite = Composite {
-  fields :: Map.Map FieldName PrimitiveValue,
-  methods :: Map.Map MethodName Stmt
-} deriving (Show, Eq, Ord)
+    fields :: Map.Map FieldName PrimitiveValue
+  , runtimeType :: TypeComposed
+} deriving (Show)
 
 composite0 = Composite {
-  fields = Map.empty,
-  methods = Map.empty
+    fields = Map.empty
+  , runtimeType = undefined
 }
 
 type Array = Map.Map Int PrimitiveValue
@@ -78,11 +71,11 @@ data Result =
   | RException PrimitiveValue
   -- This error can be thrown only by an interpreter itself when irrecoverable
   -- error occurs (null pointer exception, zero division etc.)
-  | RError String
-  deriving (Eq, Ord, Show)
+  | RError ErrorInfo
+  deriving (Show)
 
 instance Error Result where
-  strMsg s = RError s
+  strMsg = RError . Err.Bare
 
 data PrimitiveValue =
   -- Things stored on stack are passed by value
@@ -94,14 +87,7 @@ data PrimitiveValue =
   deriving (Eq, Ord, Show)
 
 -- Null reference
-ref0 = VRef location0
-
-instance Functor PrimitiveValue where
-  fmap f (VInt x) = VInt $ f x
-  fmap f (VChar x) = VChar $ f x
-  fmap f (VBool x) = VBool $ f x
-  fmap f (VRef x) = VRef $ f x
-  fmap _ x = x
+nullReference = VRef location0
 
 data ReferencedValue =
   -- Things stored on heap are accessible through references
@@ -109,7 +95,7 @@ data ReferencedValue =
   | VString String
   | VObject Composite
   | VNothing
-  deriving (Eq, Ord, Show)
+  deriving (Show)
 
 defaultValue :: TypeBasic -> InterpreterM PrimitiveValue
 defaultValue typ = return $ case typ of
@@ -117,12 +103,12 @@ defaultValue typ = return $ case typ of
   TPrimitive TChar -> VChar '\0'
   TPrimitive TBool -> VBool False
   TPrimitive TVoid -> VVoid
-  TComposed _ -> ref0
+  TComposed _ -> nullReference
 
 -- STATIC ENVIRONMENT --
 ------------------------
-type Func = [PrimitiveValue] -> InterpreterM ()
-type FuncEnv = Map.Map MethodName Func
+type MethodActivation = [PrimitiveValue] -> InterpreterM ()
+type FuncEnv = Map.Map MethodName MethodActivation
 funcenv0 = Map.fromList builtinGlobal
 
 data GCConf = GCConf {
@@ -177,7 +163,7 @@ runInterpreterM r s m = runStateT (runErrorT (runReaderT m r)) s
 
 -- Map lookups handler
 fromJust :: (Show b) => b -> Maybe a -> a
-fromJust ctx Nothing = error (Err.fromJustFailure ctx)
+fromJust ctx Nothing = Err.fromJustFailure ctx
 fromJust ctx (Just val) = val
 
 -- Executes given action in a new 'stack frame', restores old one afterwards
@@ -364,7 +350,7 @@ return_ = throwError . RValue
 return'_ :: InterpreterM ()
 return'_ = return_ VVoid
 
-newarray :: Type -> PrimitiveValue -> InterpreterM PrimitiveValue
+newarray :: TypeBasic -> PrimitiveValue -> InterpreterM PrimitiveValue
 newarray typ (VInt len) = do
   val <- defaultValue typ
   alloc $ VArray $ foldl (\m i -> Map.insert i val m) Map.empty [0..(len - 1)]
@@ -372,7 +358,7 @@ newarray typ (VInt len) = do
 arraylength :: PrimitiveValue -> InterpreterM PrimitiveValue
 arraylength ref = deref ref >>= (\(VArray arr) -> return $ VInt $ Map.size arr)
 
-newobject :: Type -> InterpreterM PrimitiveValue
+newobject :: TypeComposed -> InterpreterM PrimitiveValue
 newobject typ = alloc $ VObject composite0
 
 getfield :: FieldName -> PrimitiveValue -> InterpreterM PrimitiveValue
@@ -384,10 +370,8 @@ getfield id ref = do
     VString str -> return $ VInt (length str)
     VObject obj -> case Map.lookup id (fields obj) of
       Just val -> return val
-      Nothing -> do
-        --FIXME need type information, ps. findWithDefault
-        throwError (RError $ "usage of uninitialized class field: " ++ (show id))
-    _ -> error $ Err.unreachable lval
+      Nothing -> undefined
+    _ -> Err.unreachable lval
 
 putfield :: FieldName -> PrimitiveValue -> PrimitiveValue -> InterpreterM ()
 -- Types are already checked, we can simply store value in a map
@@ -399,17 +383,19 @@ putfield id val ref = do
     VObject obj -> do
       update ref (VObject $ obj { fields = Map.insert id val (fields obj) })
       runGC --TODO move to some more sensible place
-    _ -> error $ Err.unreachable lval
+    _ -> Err.unreachable lval
 
 invokevirtual :: MethodName -> PrimitiveValue -> [PrimitiveValue] -> InterpreterM ()
 invokevirtual (MethodName "charAt$0") ref [VInt ind] = do
   VString str <- deref ref
   unless (0 <= ind && ind < length str) $ throwError (RError $ Err.indexOutOfBounds ind)
   return_ $ VChar (head $ drop ind str)
-invokevirtual id _ _ = error $ Err.unreachable id
+invokevirtual id _ _ = Err.unreachable id
 
--- TREE TRAVERSAL --
---------------------
+-- /FIXME
+
+-- EXECUTION --
+---------------
 println :: String -> IO ()
 println = IO.hPutStrLn IO.stderr
 
@@ -417,8 +403,8 @@ runUnit :: Bool -> Stmt -> IO Int
 runUnit debug stmt = do
   (x, state) <- runtime stmt
   case x of
-    Left (RError err) -> ioError $ Err.userIssuedError err
-    Left (RException err) -> ioError $ Err.userIssuedError (Err.uncaughtTopLevel err)
+    Left (RError err) -> ioError $ userError $ show err
+    Left (RException err) -> ioError $ userError $ show $ Err.uncaughtTopLevel err
     Left (RValue res) -> do
       when debug $ do
         println $ "+----------------------------------"
@@ -428,90 +414,62 @@ runUnit debug stmt = do
       -- Main function shoul have integer return value
       let VInt ret = res
       return ret
-    Right _ -> error $ Err.unreachable x
+    Right _ -> Err.unreachable x
 
 -- Executes _int main()_ function in given translation unit
-runtime :: Stmt -> IO ((Either Result (), RunState))
-runtime = runInterpreterM runenv0 runstate0 . interp
+runtime :: Stmt -> IO (Either Result (), RunState)
+runtime = runInterpreterM runenv0 runstate0 . interpret
 
--- Declarations
-funD :: Stmt -> InterpreterM a -> InterpreterM a
-funD (SDefFunc typ id args excepts stmt) =
-  -- Functions are defined in global scope, we first scan this scope, collect
-  -- definitions and then, using environment with all global scope symbols, we
-  -- run our program. As a side effect we obtain mutually recursive functions.
-  -- NOTE there is no explicit fixpoint
-  local (\env -> env { funcs = Map.insert id fun (funcs env) })
-  where
-    fun :: Func
-    fun vals = newFrame $ do
-      -- We will once again use temp variables, this time we do not rewrite code
-      -- Note that temporary variables wre present in newFrame, they will
-      -- automatically vanish on function exit
-      zipWithM_ (\(SDeclVar _ id) var -> store (argId id) var) args vals
-      -- This is a hack, but it's extremenly refined one, we get garbage
-      -- collection and all shit connected with that for free, it's exactly the
-      -- same code as in interp (SLocal ...)
-      interp $ SLocal args ((map (\(SDeclVar _ id) -> SAssign id (EVar $ argId id)) args) ++ [stmt])
-      -- If function has _void_ return type (but only then) and does not return
-      -- explicitly we do it here
-      defval <- defaultValue typ
-      when (typ == TVoid) (return_ defval)
-      where
-        argId id = Scope.tempIdent id "arg"
-funD (SDeclVar typ id) = (>>) (defaultValue typ >>= store id)
--- TODO declare all member functions when dealing with real classes
-funD (SDefClass id super (SGlobal stmts)) = Prelude.id
-funD x = error $ Err.unreachable x
-
--- /FIXME
-
+-- TREE TRAVERSAL --
+--------------------
 class Interpretable a b | a -> b where
-  interp :: a -> InterpreterM b
+  interpret :: a -> InterpreterM b
 
 instance Interpretable Stmt () where
-  interp x = case x of
+  interpret x = case x of
     SEmpty -> nop
-    SBlock stmts -> mapM_ interp stmts
-    SExpr expr -> interp expr >> nop
+    SBlock stmts -> mapM_ interpret stmts
+    SExpr expr -> interpret expr >> nop
     -- Memory access
-    SStore num expr _ -> interp expr >>= store num
+    SStore num expr _ -> interpret expr >>= store num
     SStoreArray num expr1 expr2 _ -> do
       ref <- load num
-      ind <- interp expr1
-      val <- interp expr2
+      ind <- interpret expr1
+      val <- interpret expr2
       astore ref ind val
-    SPutField num _ name _ expr _ -> do
-      val <- interp expr
+    SPutField num _ name expr _ -> do
+      val <- interpret expr
       ref <- load num
       putfield name val ref
     -- Control statements
-    SReturn expr _ -> interp expr >>= return_
+    SReturn expr _ -> interpret expr >>= return_
     SReturnV -> return'_
     SIf expr stmt -> do
-      VBool val <- interp expr
-      if val then interp stmt else nop
+      VBool val <- interpret expr
+      if val then interpret stmt else nop
     SIfElse expr stmt1 stmt2 -> do
-      VBool val <- interp expr
-      if val then interp stmt1 else interp stmt2
+      VBool val <- interpret expr
+      if val then interpret stmt1 else interpret stmt2
     -- Note that (once again) there is no lexical variable hiding, after one
     -- iteration of a loop all variables declared inside fall out of the scope,
     -- which means we can dispose them.
     SWhile expr stmt -> do
-      VBool val <- interp expr
+      VBool val <- interpret expr
       -- This is a bit hackish, but there is no reason why it won't work and we
       -- want to apply normal chaining rules without too much ifology
       -- Note that GC works fine here because stmt creates heap objects in its own scope
-      when val $ interp $ SBlock [stmt, SWhile expr stmt]
+      when val $ interpret $ SBlock [stmt, SWhile expr stmt]
     SThrow expr -> do
-      ref <- interp expr
+      ref <- interpret expr
       throw ref
-    STryCatch stmt1 typ num stmt2 -> tryCatch (interp stmt1) num (interp stmt2)
+    STryCatch stmt1 typ num stmt2 -> tryCatch (interpret stmt1) num (interpret stmt2)
     -- Special function bodies
     SBuiltin -> Err.unreachable x
-    SInherited -> undefined
+    SInherited -> Err.unreachable x
     -- Metainformation carriers
-    SMetaLocation loc stmts -> stmtMetaLocation loc $ mapM interp stmts
+    SMetaLocation loc stmts ->
+      -- We ignore error location for now
+      mapM_ interpret stmts
     -- These statements will be replaced with ones caring more context in subsequent phases
     T_SDeclVar {} -> Err.unreachable x
     T_SAssign {} -> Err.unreachable x
@@ -523,58 +481,65 @@ instance Interpretable Expr PrimitiveValue where
   -- Using JVMM monadic bytecode here might be misleading but during
   -- compilation process we actually turn expression into series of
   -- statements
-  interp x = case x of
+  interpret x = case x of
     -- Literals
-    ENull -> return ref0
+    ENull -> return nullReference
     ELitTrue -> return (VBool True)
     ELitFalse -> return (VBool False)
     ELitChar c -> return (VChar c)
     ELitString str -> alloc (VString str)
-    ELitInt n -> VInt <$> fromInteger n
+    ELitInt n -> return $ VInt $ fromInteger n
     -- Memory access
     ELoad num _ -> load num
-    EArrayLoad expr1 expr2 -> aload <$> interp expr1 <*> interp expr2
-    EGetField expr _ num _ -> interp expr >>= getfield num
+    EArrayLoad expr1 expr2 _ -> do
+      val1 <- interpret expr1
+      val2 <- interpret expr2
+      aload val1 val2
+    EGetField expr _ num _ -> interpret expr >>= getfield num
     -- Method calls
-    EInvokeStatic _ name _ exprs -> mapM interp exprs >>= (getResult . invokestatic name)
+    EInvokeStatic _ name _ exprs -> mapM interpret exprs >>= (getResult . invokestatic name)
     EInvokeVirtual expr _ name _ exprs -> do
-      ref <- interp expr
-      vals <- mapM interp exprs
+      ref <- interpret expr
+      vals <- mapM interpret exprs
       getResult $ invokevirtual name ref vals
     -- Object creation
     ENewObj typ -> newobject typ
-    ENewArr typ expr -> interp expr >>= newarray typ
+    ENewArr typ expr -> interpret expr >>= newarray typ
     -- Operations
-    EUnary OuNot expr _ -> not <$> interp expr
-    EUnary OuNeg expr _ -> negate <$> interp expr
-    EBinary ObPlus expr1 expr2 TString -> do
-      VString str1 <- deref <$> interp expr1
-      VString str2 <- deref <$> interp expr2
+    EUnary OuNot expr _ -> do
+      VBool val <- interpret expr
+      return $ VBool $ not val
+    EUnary OuNeg expr _ -> do
+      VInt val <- interpret expr
+      return $ VInt $ negate val
+    EBinary ObPlus expr1 expr2 (TComposed TString) -> do
+      VString str1 <- deref =<< interpret expr1
+      VString str2 <- deref =<< interpret expr2
       alloc $ VString (str1 ++ str2)
-    EBinary opbin expr1 expr2 TInt -> do
-      VInt val1 <- interp expr1
-      VInt val2 <- interp expr2
+    EBinary opbin expr1 expr2 (TPrimitive TInt) -> do
+      VInt val1 <- interpret expr1
+      VInt val2 <- interpret expr2
       when (opbin `elem` [ObDiv, ObMod] && val2 == 0) $ throwError $ RError Err.zeroDivision
       return $ VInt $ case opbin of
         ObPlus -> val1 + val2
         ObMinus -> val1 - val2
         ObTimes -> val1 * val2
         ObDiv -> val1 `div` val2
-        ObMod -> val1 `rem` val2 -- I'mma hipst'a!
-        _ -> error $ Err.unreachable opbin
-    EBinary ObAnd expr1 expr2 TBool -> do
-      VBool val1 <- interp expr1
+        ObMod -> val1 `rem` val2
+        _ -> Err.unreachable opbin
+    EBinary ObAnd expr1 expr2 (TPrimitive TBool) -> do
+      VBool val1 <- interpret expr1
       case val1 of
-        True -> interp expr2
+        True -> interpret expr2
         False -> return $ VBool False
-    EBinary ObOr expr1 expr2 TBool -> do
-      VBool val1 <- interp expr1
+    EBinary ObOr expr1 expr2 (TPrimitive TBool) -> do
+      VBool val1 <- interpret expr1
       case val1 of
         True -> return $ VBool True
-        False -> interp expr2
-    EBinary opbin expr1 expr2 TBool -> do
-      val1 <- interp expr1
-      val2 <- interp expr2
+        False -> interpret expr2
+    EBinary opbin expr1 expr2 (TPrimitive TBool) -> do
+      val1 <- interpret expr1
+      val2 <- interpret expr2
       return $ VBool $ case opbin of
         -- This works because of 'deriving (Eq, Ord)'
         -- Note that references handling is automatic
@@ -584,7 +549,7 @@ instance Interpretable Expr PrimitiveValue where
         ObLEQ -> val1 <= val2
         ObGTH -> val1 > val2
         ObGEQ -> val1 >= val2
-        _ -> error $ Err.unreachable opbin
+        _ -> Err.unreachable opbin
     -- These expressions will be replaced with ones caring more context in subsequent phases
     T_EVar _ -> Err.unreachable x
 

@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -fno-warn-missing-signatures #-}
 {-# LANGUAGE FlexibleContexts #-}
 module Jvmm.Errors where
 
@@ -14,7 +15,7 @@ data Location =
 
 instance Show Location where
   show Unknown = "unknown location"
-  show (Line no) = concat ["near line ", show no]
+  show (Line no) = "near line " ++ show no
   show (Range start end) = concat ["between lines ", show start, " and ", show end]
 
 -- CUSTOM ERROR TYPE --
@@ -22,10 +23,12 @@ instance Show Location where
 data ErrorInfo =
     Located Location String
   | Dangling String
+  | Bare String
 
 instance Show ErrorInfo where
   show (Located loc msg) = concat [show loc, ", error: ", msg]
   show (Dangling msg) = concat [show Unknown, ", error: ",  msg]
+  show (Bare msg) = msg
 
 instance Error ErrorInfo where
   noMsg = Dangling "unknown error"
@@ -43,7 +46,7 @@ action `rethrow` err = action `catchError` (\_ -> throwError err)
 
 -- Discards error and throws provided one
 orThrow :: (MonadError e m) => e -> m a -> m a
-orThrow = flip (rethrow)
+orThrow = flip rethrow
 
 -- Discards error and returns provided value
 orReturn :: (MonadError e m) => m a -> a -> m a
@@ -64,27 +67,27 @@ withLocation :: (MonadError ErrorInfo m) => Location -> m a -> m a
 withLocation loc action = action `catchError` handler
   where
     handler (Dangling msg) = throwError $ Located loc msg
-    handler err@(Located _ _) = throwError err
+    handler err = throwError err
 
 -- ERROR MESSAGES --
 --------------------
 -- Class hierarchy computation errors
-redeclaredInSuper ids = Dangling $ "fields redeclared in super classes: " ++ (unwords $ map show ids)
-redeclaredWithDifferentType ids = Dangling $ "method redeclared in super classes with not mathing type: " ++ (unwords $ map show ids)
+redeclaredInSuper ids = Dangling $ "fields redeclared in super classes: " ++ unwords (map show ids)
+redeclaredWithDifferentType ids = Dangling $ "method redeclared in super classes with not mathing type: " ++ unwords (map show ids)
 
 -- Scope resolution errors
-staticNonStaticConflict id = Dangling $ "static and non-static symbol conflict: " ++ (show id)
-duplicateArg id = Dangling $ concat ["duplicated argument identifier in function definition: ", show id]
-unboundSymbol id = Dangling $ "unbound symbol: " ++ (show id)
-redeclaredSymbol id = Dangling $ "redeclared symbol in the same scope: " ++ (show id)
+staticNonStaticConflict x = Dangling $ "static and non-static symbol conflict: " ++ show x
+duplicateArg x = Dangling $ "duplicated argument identifier in function definition: " ++ show x
+unboundSymbol x = Dangling $ "unbound symbol: " ++ show x
+redeclaredSymbol x = Dangling $ "redeclared symbol in the same scope: " ++ show x
 globalForbidden = Dangling $ "statement not allowed in global scope"
-repeatedDeclaration id = Dangling $ "repeated declaration for: " ++ (show id)
-redefinedBuiltin id = Dangling $ "redefined built-in method: " ++ (show id)
+repeatedDeclaration x = Dangling $ "repeated declaration for: " ++ show x
+redefinedBuiltin x = Dangling $ "redefined built-in method: " ++ show x
 
 -- Type resolution errors
-notAComposedType typ = Dangling $ concat ["expected composeed type, got ", show typ]
-unknownMemberType typ id = Dangling $ concat ["unknown member type: ", show typ, " . ", show id]
-unknownSymbolType id = Dangling $ "unknown symbol type: " ++ (show id)
+notAComposedType typ = Dangling $ "expected composed type, got " ++ show typ
+unknownMemberType typ x = Dangling $ concat ["unknown member type: ", show typ, " . ", show x]
+unknownSymbolType x = Dangling $ "unknown symbol type: " ++ show x
 subscriptNonArray = Dangling $ "not an array subscripted"
 indexType = Dangling $ "invalid array index type"
 unexpectedType expected actual = Dangling $ concat ["not matching type, expected: ", show expected, " actual ", show actual]
@@ -92,39 +95,35 @@ argumentsNotMatch expected actual = Dangling $ concat ["arguments do not match, 
 badArithType = Dangling $ "bad operands type for arithmetic operator"
 danglingReturn = Dangling $ "dangling return"
 missingReturn = Dangling $ "missing return"
-voidVar id = Dangling $ "a variable cannot have void type: " ++ (show id)
-voidField id = Dangling $ "a field cannot have void type: " ++ (show id)
+voidVar x = Dangling $ "a variable cannot have void type: " ++ show x
+voidField x = Dangling $ "a field cannot have void type: " ++ show x
 voidArg = Dangling $ "an argument cannot have void type"
 voidNotIgnored = Dangling $ "void value not ignored as it should be"
 incompatibleMain = Dangling $ "incompatible main() type"
 missingMain = Dangling $ "missing main() function"
-redeclaredType id = Dangling $ "redeclared type name: " ++ (show id)
-referencedPrimitive typ = Dangling $ "primitive type cannot be referenced: " ++ (show typ)
+redeclaredType x = Dangling $ "redeclared type name: " ++ show x
+referencedPrimitive typ = Dangling $ "primitive type cannot be referenced: " ++ show typ
 danglingThis = Dangling $ "dangling this"
-noSuperType typ = Dangling $ "cannot determine super type for: " ++ (show typ)
-intValueOutOfBounds n = Dangling $ "int constant out of bounds: " ++ (show n)
+noSuperType typ = Dangling $ "cannot determine super type for: " ++ show typ
+intValueOutOfBounds n = Dangling $ "int constant out of bounds: " ++ show n
+uncaughtException typ = Dangling $ "uncaught, undeclared exception " ++ show typ
 
--- Static exception checking
-uncaughtException typ = Dangling $ "uncaught, undeclared exception " ++ (show typ)
+-- Runtime errors (not throwable by user)
+noDefaultValue typ = Bare $ "type " ++ show typ ++ " has no default value"
+nullPointerException = Bare $ "attempt to dereference null"
+indexOutOfBounds x = Bare $ "index out of bounds: " ++ show x
+nonVoidNoReturn = Bare $ "no return value from non-void function"
+zeroDivision = Bare $ "divided by zero"
+intOverflow = Bare $ "integer overflow"
+isConstant x = Bare $ "constant cannot be modified: " ++ show x
 
--- Runtime errors (not user-visible exceptions)
-noDefaultValue typ = Dangling $ "type " ++ (show typ) ++ " has no default value"
-nullPointerException = Dangling $ "attempt to dereference null"
-indexOutOfBounds ind = Dangling $ "index out of bounds: " ++ (show ind)
-nonVoidNoReturn = Dangling $ "no return value from non-void function"
-zeroDivision = Dangling $ "divided by zero"
-intOverflow = Dangling $ "integer overflow"
-isConstant id = Dangling $ "constant cannot be modified: " ++ (show id)
+-- Terminal errors issued by a user
+userIssuedError = Bare $ "runtime error"
+uncaughtTopLevel x = Bare $ "uncaught top level exception: " ++ show x
 
--- Terminal error issued by a user
-userIssuedError = Dangling $ "error called"
-uncaughtTopLevel obj = Dangling $ "uncaught top level exception: " ++ (show obj)
-
--- Impossible situations
-danglingReference loc = Dangling $ "location: " ++ (show loc) ++ " does not exist"
-fromJustFailure ctx = Dangling $ "fromJust failed in context: " ++ (show ctx)
-
--- LOGIC ERRORS --
-------------------
-unreachable ctx = error $ "unused pattern branch entered: " ++ (show ctx)
+-- INTERNAL ERRORS --
+---------------------
+unreachable ctx = error $ "unused pattern branch entered: " ++ show ctx
+danglingReference loc = error $ "location: " ++ show loc ++ " does not exist"
+fromJustFailure ctx = error $ "fromJust failed in context: " ++ show ctx
 
