@@ -61,6 +61,9 @@ compileJvm = checkT =?> compile
           lift $ appendFile file $ "; eof\n"
       emitJvm config =>> mapM_ writeOne =>| classes
 
+execute :: Interaction String
+execute = checkT =?> interpret
+
 -- Defaault workflow
 defaultInteraction :: Interaction String
 defaultInteraction = compileJvm
@@ -73,7 +76,8 @@ optionsDef = [
   , Option "q" [] (NoArg $ \opts -> opts { configurationVerbosity = Warn }) "quiet output"
   , Option "p" [] (NoArg $ \opts -> opts { configurationWorkflow = parse }) "parse code"
   , Option "c" [] (NoArg $ \opts -> opts { configurationWorkflow = check }) "preform static analysis"
-  , Option "j" [] (NoArg $ \opts -> opts { configurationWorkflow = compileJvm }) "preform static analysis"
+  , Option "j" [] (NoArg $ \opts -> opts { configurationWorkflow = compileJvm }) "compile to Jasmin"
+  , Option "i" [] (NoArg $ \opts -> opts { configurationWorkflow = execute }) "preform execution"
   , Option "g" [] (NoArg $ \opts -> opts { configurationDebug = True }) "include debug comments in code"
   ]
 
