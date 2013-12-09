@@ -261,7 +261,9 @@ instance Emitable Class JasminAsm where
         dir "method public static main([Ljava/lang/String;)V"
         dir "limit locals 1"
         dir "limit stack 1"
-        ins $ "invokestatic " ++ str ++ "/main()I"
+        tdesc <- emit entrypointType
+        let (MethodName name) = entrypointName
+        ins $ "invokestatic " ++ str ++ "/" ++ name ++ tdesc
         ins "return"
         dir "end method"
         nl

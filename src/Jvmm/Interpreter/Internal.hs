@@ -336,8 +336,8 @@ astore ref (VInt ind) val = do
   update ref (VArray $ Map.insert ind val arr)
   runGC --TODO move to some more sensible place
 
-invokestatic :: MethodName -> [PrimitiveValue] -> InterpreterM ()
-invokestatic name args = undefined
+invokestatic :: TypeComposed -> MethodName -> [PrimitiveValue] -> InterpreterM ()
+invokestatic ctype name args = undefined
 
 throw :: PrimitiveValue -> InterpreterM ()
 throw = throwError . RException
@@ -469,7 +469,7 @@ instance Interpretable Expr PrimitiveValue where
       aload val1 val2
     EGetField expr _ num _ -> interpret expr >>= getfield num
     -- Method calls
-    EInvokeStatic _ name _ exprs -> mapM interpret exprs >>= (getResult . invokestatic name)
+    EInvokeStatic _ name _ exprs -> mapM interpret exprs >>= (getResult . invokestatic TObject name)
     EInvokeVirtual expr _ name _ exprs -> do
       ref <- interpret expr
       vals <- mapM interpret exprs
