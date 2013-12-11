@@ -1,6 +1,5 @@
 module Jvmm.Hierarchy where
 import Jvmm.Hierarchy.Internal
-import Jvmm.Hierarchy.Output
 
 import Control.Monad.Identity
 import Data.List as List

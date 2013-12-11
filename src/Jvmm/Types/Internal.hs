@@ -21,7 +21,6 @@ import qualified Jvmm.Errors as Err
 import Jvmm.Errors (orThrow, rethrow, ErrorInfoT)
 import Jvmm.Builtins
 import Jvmm.Trans.Output
-import Jvmm.Hierarchy.Output
 
 -- WEIRD STUFF --
 -----------------

@@ -4,7 +4,7 @@ import Jvmm.Analyser.Internal as Internal
 import Control.Monad.Identity
 
 import Jvmm.Errors (ErrorInfoT)
-import Jvmm.Hierarchy.Output
+import Jvmm.Trans.Output
 
 -- MAIN --
 ----------

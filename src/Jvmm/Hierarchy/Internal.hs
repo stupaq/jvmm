@@ -1,8 +1,9 @@
 module Jvmm.Hierarchy.Internal where
-import Jvmm.Hierarchy.Output
 
 import Control.Monad
 import Control.Monad.Identity
+
+import qualified Data.Tree as Tree
 import qualified Data.List as List
 
 import qualified Jvmm.Errors as Err
@@ -53,8 +54,8 @@ objectSuperClass = Class {
 
 visit :: Class -> [(TypeComposed, ClassDiff)] -> ClassDiff -> HierarchyM ClassHierarchy
 visit super classes diff = do
-  current@Class {} <- diff super
+  current <- diff super
   children <- mapM (visit current classes)
       [ diff | (typ, diff) <- classes, typ == classType current ]
-  return $ Node current children
+  return $ Tree.Node current children
 

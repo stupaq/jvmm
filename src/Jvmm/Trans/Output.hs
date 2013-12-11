@@ -8,6 +8,7 @@ module Jvmm.Trans.Output where
 import Control.Monad.Identity
 import Control.Monad.Error
 
+import Data.Tree as Tree
 import Data.List as List
 
 import qualified Jvmm.Errors as Err
@@ -17,6 +18,10 @@ import Jvmm.Errors (ErrorInfo, ErrorInfoT, runErrorInfoM, withLocation, Location
 -- carries error reporting metadata, type information and many more.
 -- We call this representation Abstract Program Tree to distinguish from the
 -- ... that parser outputs.
+
+-- CLASS HIERARCHY --
+---------------------
+type ClassHierarchy = Tree.Tree Class
 
 -- CLASS --
 -----------

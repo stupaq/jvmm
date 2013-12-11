@@ -24,7 +24,6 @@ import qualified Jvmm.Errors as Err
 import Jvmm.Errors (ErrorInfoT)
 import Jvmm.Builtins
 import Jvmm.Trans.Output
-import Jvmm.Hierarchy.Output
 
 -- A class that holds builtins
 builtinsClassName :: String

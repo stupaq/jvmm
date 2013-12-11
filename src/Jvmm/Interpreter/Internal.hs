@@ -18,7 +18,6 @@ import qualified Data.Map as Map
 import Jvmm.Errors (ErrorInfo)
 import qualified Jvmm.Errors as Err
 import Jvmm.Trans.Output
-import Jvmm.Hierarchy.Output
 
 -- RUNTIME ENVIRONMENT --
 -------------------------
@@ -27,15 +26,22 @@ data GCConf = GCConf {
 }
 
 data RunEnv = RunEnv {
-    runenvClasses :: ClassHierarchy
-  , runenvGCConf :: GCConf
+    runenvGCConf :: GCConf
+  , runenvStatics :: Map.Map TypeComposed Method
+  , runenvInstances :: Map.Map TypeComposed Composite
 }
 
 buildRunEnv :: ClassHierarchy -> RunEnv
-buildRunEnv hierarchy = RunEnv {
-    runenvClasses = hierarchy
-  , runenvGCConf = GCConf 100
-}
+buildRunEnv hierarchy =
+  RunEnv {
+      runenvGCConf = GCConf 100
+    , runenvStatics = statics
+    , runenvInstances = instances
+  }
+  where
+    -- FIXME
+    instances = Map.empty
+    statics = Map.empty
 
 -- RUNTIME STATE --
 -------------------
@@ -131,15 +137,6 @@ runInterpreterM r m = runStateT (runErrorT (runReaderT m r)) runstate0
 
 -- MONADIC HELPERS --
 ---------------------
-findStaticMethod :: TypeComposed -> MethodName -> InterpreterM Method
-findStaticMethod ctyp name = undefined
-
-findImplementation :: TypeComposed -> MethodName -> InterpreterM Method
-findImplementation rtyp name = undefined
-
-findClass :: TypeComposed -> InterpreterM Class
-findClass ctyp = undefined
-
 -- Executes given action in a new 'stack frame', restores old one afterwards.
 newFrame :: InterpreterM a -> InterpreterM a
 newFrame action = do

@@ -9,7 +9,6 @@ import Control.Monad.Identity
 import Jvmm.Workflows
 import Jvmm.Errors (ErrorInfoT)
 import Jvmm.Trans.Output
-import Jvmm.Hierarchy.Output
 
 -- MAIN --
 ----------

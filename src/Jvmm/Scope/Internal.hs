@@ -16,7 +16,6 @@ import qualified Data.Traversable as Traversable
 import qualified Jvmm.Errors as Err
 import Jvmm.Errors (rethrow, orReturn, finally, ErrorInfoT)
 import Jvmm.Trans.Output
-import Jvmm.Hierarchy.Output
 
 -- SCOPE REPRESENTATION --
 --------------------------

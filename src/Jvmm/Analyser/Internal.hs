@@ -15,11 +15,6 @@ import qualified Data.Traversable as Traversable
 import qualified Jvmm.Errors as Err
 import Jvmm.Errors (ErrorInfoT)
 import Jvmm.Trans.Output
-import Jvmm.Hierarchy.Output
-
--- Implements static program transformations, for now it includes:
--- - partial evaluation of constant expressions
--- - prunning of unreachable branches and no-op loops
 
 -- THE STATE --
 ---------------

@@ -10,7 +10,6 @@ import Jvmm.Builtins (isEntrypoint)
 import qualified Jvmm.Errors as Err
 import Jvmm.Errors (rethrow, ErrorInfoT)
 import Jvmm.Trans.Output
-import Jvmm.Hierarchy.Output
 
 -- THE STATE --
 ---------------

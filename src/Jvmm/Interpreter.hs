@@ -10,8 +10,7 @@ import qualified Data.Map as Map
 import Jvmm.Workflows
 import qualified Jvmm.Errors as Err
 import Jvmm.Builtins (entrypointName)
-import Jvmm.Trans.Output (TypeComposed(TObject))
-import Jvmm.Hierarchy.Output
+import Jvmm.Trans.Output
 
 interpret :: ClassHierarchy -> InteractionM ()
 interpret hierarchy = let runenv0 = buildRunEnv hierarchy in do

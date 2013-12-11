@@ -17,8 +17,8 @@ import Syntax.ErrM (Err(..))
 import Jvmm.Workflows
 import Jvmm.Errors
 import Jvmm.Trans
+import Jvmm.Trans.Output
 import Jvmm.Hierarchy
-import Jvmm.Hierarchy.Output
 import Jvmm.Scope
 import Jvmm.Types
 import Jvmm.Analyser
