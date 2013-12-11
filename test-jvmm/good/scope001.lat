@@ -14,5 +14,5 @@ int main() {
   printInt(a);
   a+=100;
   printInt(a);
-  return a;
+  return 0;
 }

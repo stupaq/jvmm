@@ -2,6 +2,7 @@
 
 # configuration
 pattern_good="*/good/*.lat"
+pattern_bad_exec="*/errors/*.lat"
 pattern_bad_check="*/bad/*.lat"
 pattern_bad_parse="*/bad/*.txt"
 
@@ -23,9 +24,9 @@ command_find="find $tests_root -type f \
     ! -name *.output -a ! -name *.input -a ! -name *.class -a ! -name *.j -a ! -name *.jar "
 
 # test cases
-tests_good=`$command_find -path "$pattern_good" | sort | uniq`
-tests_bad_check=`$command_find -path "$pattern_bad_check" | sort | uniq`
-tests_bad_exec=`$command_find -path "$pattern_bad_parse" | sort | uniq`
+tests_exec=`$command_find -path "$pattern_good" | sort | uniq`
+tests_check=`$command_find -path "$pattern_bad_check" | sort | uniq`
+tests_parse=`$command_find -path "$pattern_bad_parse" | sort | uniq`
 
 # assertions
 function fatal() {
@@ -156,16 +157,16 @@ if [[ $# -eq 0 ]]; then
   }
 
   # run all found tests
-  for f in $tests_bad_parse; do
+  for f in $tests_parse; do
     incTotal
     testcase_parse $f || incFails
   done
-  for f in $tests_bad_check; do
+  for f in $tests_check; do
     incTotal
     testcase_parse $f
     testcase_check $f || incFails
   done
-  for f in $tests_good; do
+  for f in $tests_exec; do
     incTotal
     testcase_parse $f
     testcase_check $f

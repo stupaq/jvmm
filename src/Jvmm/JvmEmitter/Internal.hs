@@ -263,6 +263,7 @@ instance Emitable Class JasminAsm where
         tdesc <- emit entrypointType
         let (MethodName name) = entrypointName
         ins $ "invokestatic " ++ str ++ "/" ++ name ++ tdesc
+        ins "invokestatic java/lang/System/exit(I)V"
         ins "return"
         dir "end method"
         nl
