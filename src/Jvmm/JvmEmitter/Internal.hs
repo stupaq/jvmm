@@ -453,8 +453,8 @@ instance Emitable Expr TypeBasic where
       emit expr
       emit expr1
       cdesc <- classPath <$> emit TString
-      fdesc <- emit ftyp
-      inss ("invokevirtual " ++ cdesc ++ "/charAt" ++ fdesc) id
+      -- We do the manual overridde of method descriptor here
+      inss ("invokevirtual " ++ cdesc ++ "/charAt(I)C") dec1
       return (TPrimitive TChar)
     EInvokeVirtual {} -> notImplemented
     -- Object creation
