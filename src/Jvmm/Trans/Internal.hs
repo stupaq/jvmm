@@ -3,6 +3,8 @@ import qualified Jvmm.Trans.Output as O
 
 import Control.Monad.Identity
 
+import Prelude hiding (id)
+
 import qualified Syntax.AbsJvmm as I
 
 import qualified Jvmm.Errors as Err
@@ -58,8 +60,8 @@ tFunction inst (I.Function typ id args exceptions lbr stmts rbr) =
     , O.methodInstance = inst
   }
   where
-    arguments = map (\(I.Argument typ id) -> O.Variable (tTBasic typ) undefined (tVIdent id))  args
-    argTypes = map (\(I.Argument typ id) -> tTBasic typ) args
+    arguments = map (\(I.Argument vtyp vid) -> O.Variable (tTBasic vtyp) undefined (tVIdent vid)) args
+    argTypes = map (\(I.Argument vtyp _) -> tTBasic vtyp) args
     funType = O.TypeMethod (tTBasic typ) argTypes exceptionTypes
     exceptionTypes = case exceptions of
       I.Exceptions elist -> map tTComposed elist
@@ -128,7 +130,7 @@ brToLoc (I.LeftBrace ((start, _), _)) (I.RightBrace ((end, _), _))
 tBraces :: I.LeftBrace -> I.RightBrace -> [O.Stmt] -> [O.Stmt]
 tBraces lbr rbr stmts = let rng = brToLoc lbr rbr in case rng of
   Err.Range _ _ -> [O.SMetaLocation rng stmts]
-  Err.Unknown -> stmts
+  _ -> stmts
 
 noSem :: I.Semicolon
 noSem = I.Semicolon ((-1, -1), ";")
@@ -161,7 +163,7 @@ tItem t x =
       _ -> O.ENull
 
 refersTo :: O.VariableName -> O.Expr -> Bool
-refersTo var expr = case expr of
+refersTo var x = case x of
   -- Literals
   O.ENull -> False
   O.ELitTrue -> False

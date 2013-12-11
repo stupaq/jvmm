@@ -125,5 +125,5 @@ uncaughtTopLevel x = Bare $ "uncaught top level exception: " ++ show x
 ---------------------
 unreachable ctx = error $ "unused pattern branch entered: " ++ show ctx
 danglingReference loc = error $ "location: " ++ show loc ++ " does not exist"
-fromJustFailure ctx = error $ "fromJust failed in context: " ++ show ctx
+fromJustFailure = error $ "fromJust failed"
 

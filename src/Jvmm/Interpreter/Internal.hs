@@ -1,5 +1,7 @@
+{-# OPTIONS_GHC -fno-warn-incomplete-patterns #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE LambdaCase #-}
 module Jvmm.Interpreter.Internal where
 
 import qualified System.IO as IO
@@ -9,6 +11,7 @@ import Control.Monad.Error
 import Control.Monad.Reader
 import Control.Monad.State
 
+import Data.Maybe (fromJust)
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 
@@ -25,11 +28,14 @@ data GCConf = GCConf {
 
 data RunEnv = RunEnv {
     runenvClasses :: ClassHierarchy
-  , gcconf :: GCConf
+  , runenvGCConf :: GCConf
 }
 
 buildRunEnv :: ClassHierarchy -> RunEnv
-buildRunEnv hierarchy = RunEnv hierarchy (GCConf 100)
+buildRunEnv hierarchy = RunEnv {
+    runenvClasses = hierarchy
+  , runenvGCConf = GCConf 100
+}
 
 -- RUNTIME STATE --
 -------------------
@@ -64,13 +70,11 @@ location0 = 0
 
 data Composite = Composite {
     fields :: Map.Map FieldName PrimitiveValue
-  , runtimeType :: TypeComposed
 } deriving (Show)
 
 composite0 :: Composite
 composite0 = Composite {
     fields = Map.empty
-  , runtimeType = undefined
 }
 
 type Array = Map.Map Int PrimitiveValue
@@ -136,25 +140,14 @@ findImplementation rtyp name = undefined
 findClass :: TypeComposed -> InterpreterM Class
 findClass ctyp = undefined
 
-fromJust :: (Show b) => b -> Maybe a -> a
-fromJust ctx Nothing = Err.fromJustFailure ctx
-fromJust ctx (Just val) = val
-
--- FIXME/
-
--- Executes given action in a new 'stack frame', restores old one afterwards
--- The assumption that there is no syntactic hiding is EXTREMELY strong and
--- important, we can push new stack frame only when we CALL a function
--- ACHTUNG once again, we do NOT use newFrame outside of a function call!
+-- Executes given action in a new 'stack frame', restores old one afterwards.
 newFrame :: InterpreterM a -> InterpreterM a
 newFrame action = do
-  -- Note that all functions have global scope as their base and cannot access
-  -- scope of their callers
-  modify (\state -> state { runenvStack = [stackframe0] ++ runenvStack state })
+  modify (\st -> st { runenvStack = [stackframe0] ++ runenvStack st })
   tryFinally action $
     -- Pop stack frame no matter what happened (exception/error/return),
     -- note that the stack might be modified due to GC runs
-    modify (\state -> state { runenvStack = tail $ runenvStack state })
+    modify (\st -> st { runenvStack = tail $ runenvStack st })
 -- When it comes to GC -- note that we cannot really benefit from running gc
 -- when exiting from functions (with exception or result). In a good scenario
 -- we will immediately pass many stack frames and invoking GC on each one is a
@@ -163,13 +156,10 @@ newFrame action = do
 -- from a function does not utilize more memory than we were using inside of a
 -- function body.
 
--- /FIXME
-
 getResult :: InterpreterM () -> InterpreterM PrimitiveValue
 getResult action = do
   (action >> throwError (RError Err.nonVoidNoReturn)) `catchError` handler
   where
-    handler :: Result -> InterpreterM PrimitiveValue
     handler err = case err of
       RValue val -> return val
       _ -> throwError err
@@ -178,7 +168,6 @@ tryCatch :: InterpreterM () -> VariableNum -> InterpreterM () -> InterpreterM ()
 tryCatch atry num acatch = do
   atry `catchError` handler
   where
-    handler :: Result -> InterpreterM ()
     handler err = case err of
       RException val -> do
         store num val
@@ -189,7 +178,6 @@ tryFinally :: InterpreterM a -> InterpreterM () -> InterpreterM a
 tryFinally atry afinally = do
   atry `catchError` handler
   where
-    handler :: Result -> InterpreterM a
     handler err = do
       afinally
       throwError err
@@ -205,15 +193,14 @@ alloc val = do
   update ref val
   return ref
   where
-    freeloc :: RunState -> Location
-    freeloc = (+1) . fst . Map.findMax . runenvHeap -- TODO this is imperfect since we have GC
+    freeloc = (+1) . fst . Map.findMax . runenvHeap
 
 deref :: PrimitiveValue -> InterpreterM ReferencedValue
 deref (VRef 0) = throwError (RError Err.nullPointerException)
-deref (VRef loc) = gets (fromJust (VRef loc) . Map.lookup loc . runenvHeap)
+deref (VRef loc) = gets (fromJust . Map.lookup loc . runenvHeap)
 
 update :: PrimitiveValue -> ReferencedValue -> InterpreterM ()
-update (VRef loc) val = modify (\state -> state { runenvHeap = Map.insert loc val (runenvHeap state) })
+update (VRef loc) val = modify (\st -> st { runenvHeap = Map.insert loc val (runenvHeap st) })
 
 -- GARBAGE COLLECTION --
 ------------------------
@@ -221,25 +208,18 @@ update (VRef loc) val = modify (\state -> state { runenvHeap = Map.insert loc va
 -- phase if the heap is small enough
 runGC :: InterpreterM ()
 runGC = do
-  hp <- gets runenvHeap
-  gcc <- asks gcconf
-  when (doGCNow gcc hp) $ do
-    st <- gets runenvStack
-    modify (\state -> state { runenvHeap = compactHeap (findTopLevelRefs st) hp })
+  heap <- gets runenvHeap
+  gcconf <- asks runenvGCConf
+  when (doGCNow gcconf heap) $
+    modify (\st -> st { runenvHeap = compactHeap (findTopLevelRefs $ runenvStack st) heap })
 
 doGCNow :: GCConf -> Heap -> Bool
-doGCNow gcconf runenvHeap = Map.size runenvHeap > gcthresh gcconf
+doGCNow conf heap = Map.size heap > gcthresh conf
 
 -- Extracts referred locations from stack variables, does not recurse into
 -- objects in any way
 findTopLevelRefs :: [StackFrame] -> Set.Set Location
-findTopLevelRefs = Set.unions . map (Set.fromList . map mp . filter flt . Map.elems)
-  where
-    flt :: PrimitiveValue -> Bool
-    flt (VRef _) = True
-    flt _ = False
-    mp :: PrimitiveValue -> Location
-    mp (VRef loc) = loc
+findTopLevelRefs = Set.unions . map (Set.fromList . concatMap (\case { VRef loc -> [loc]; _ -> [] }) . Map.elems)
 
 -- Returns garbage-collected heap, each object under location present in
 -- provided set is present in the new heap (if it was in the old one)
@@ -264,11 +244,8 @@ compactHeap pinned heap =
               _ -> grey'
               where
                 extract :: Set.Set Location -> PrimitiveValue -> Set.Set Location
-                extract grey'' elem = case elem of
-                  VRef loc -> case Set.member loc black' of
-                    -- Do not search again if already searched
-                    True -> grey''
-                    False -> Set.insert loc grey''
+                extract grey'' el = case el of
+                  VRef loc -> if Set.member loc black' then grey'' else Set.insert loc grey''
                   _ -> grey''
         in fun (grey''', black')
 
@@ -285,7 +262,7 @@ nop :: InterpreterM ()
 nop = return ()
 
 load :: VariableNum -> InterpreterM PrimitiveValue
-load num = gets (fromJust num . Map.lookup num . head . runenvStack)
+load num = gets (fromJust . Map.lookup num . head . runenvStack)
 
 aload :: PrimitiveValue -> PrimitiveValue -> InterpreterM PrimitiveValue
 aload ref (VInt ind) = do
@@ -297,14 +274,14 @@ aload ref (VInt ind) = do
 store :: VariableNum -> PrimitiveValue -> InterpreterM ()
 store num val = do
   modify $ \st -> st { runenvStack = mapHead (Map.insert num val) (runenvStack st) }
-  runGC --TODO move to some more sensible place
+  runGC
 
 astore :: PrimitiveValue -> PrimitiveValue -> PrimitiveValue -> InterpreterM ()
 astore ref (VInt ind) val = do
   VArray arr <- deref ref
   unless (0 <= ind && ind < Map.size arr) $ throwError (RError $ Err.indexOutOfBounds ind)
   update ref (VArray $ Map.insert ind val arr)
-  runGC --TODO move to some more sensible place
+  runGC
 
 invokestatic :: TypeComposed -> MethodName -> [PrimitiveValue] -> InterpreterM ()
 invokestatic ctype name args = undefined
@@ -335,10 +312,8 @@ getfield name ref = do
   lval <- deref ref
   case lval of
     VArray _ -> arraylength ref
-    VString str -> return $ VInt (length str)
-    VObject obj -> case Map.lookup name (fields obj) of
-      Just val -> return val
-      Nothing -> undefined
+    VString str -> return $ VInt $ length str
+    VObject obj -> return $ fromJust $ Map.lookup name $ fields obj
     _ -> Err.unreachable lval
 
 putfield :: FieldName -> PrimitiveValue -> PrimitiveValue -> InterpreterM ()
@@ -350,17 +325,15 @@ putfield name val ref = do
     VString _ -> throwError (RError $ Err.isConstant name)
     VObject obj -> do
       update ref (VObject $ obj { fields = Map.insert name val (fields obj) })
-      runGC --TODO move to some more sensible place
+      runGC
     _ -> Err.unreachable lval
 
 invokevirtual :: MethodName -> PrimitiveValue -> [PrimitiveValue] -> InterpreterM ()
 invokevirtual (MethodName "charAt") ref [VInt ind] = do
   VString str <- deref ref
-  unless (0 <= ind && ind < length str) $ throwError (RError $ Err.indexOutOfBounds ind)
-  return_ $ VChar (head $ drop ind str)
+  unless (0 <= ind && ind < length str) $ throwError $ RError $ Err.indexOutOfBounds ind
+  return_ $ VChar $ head $ drop ind str
 invokevirtual _ _ _ = undefined
-
--- /FIXME
 
 -- TREE TRAVERSAL --
 --------------------
