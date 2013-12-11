@@ -15,8 +15,8 @@ run_jvm="java -jar"
 env_memlimit=60000
 env_verbosity=1
 
-compile_output="test.err"
-exec_output="test.out"
+compile_output="compile.err"
+exec_output="exec.out"
 exec_error="exec.err"
 
 command_find="find $tests_root -type f \
