@@ -1,5 +1,5 @@
-// Author: Tomasz Wysocki 277696
 int main() {
     error();
+    printString("niedobrze!");
     return 0;
 }

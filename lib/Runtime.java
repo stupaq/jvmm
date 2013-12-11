@@ -17,7 +17,7 @@ public class Runtime {
 
   public static void error() {
     System.out.println("runtime error");
-    System.exit(-1);
+    System.exit(0);
   }
 
   public static int readInt() {
