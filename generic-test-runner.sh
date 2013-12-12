@@ -64,30 +64,34 @@ function assert_exec() {
 
 function test_result() {
     echo
+    TotalCount=`expr $TotalCount + 1`
+    if [[ $1 -ne 0 ]]; then
+      FailsCount=`expr $FailsCount + 1`
+    fi
     return $1
 }
 
 # reporting
 function show_results() {
-    if [[ $2 == -*c* ]] || [[ $2 == -*v* ]]; then
+    if [[ $2 == -*c* || $2 == -*v* ]]; then
         echo -e ":: COMPILER:"
         cat "$compile_output" 2>/dev/null
     fi
-    if [[ $2 == -*o* ]] || [[ $2 == -*v* ]]; then
+    if [[ $2 == -*o* || $2 == -*v* ]]; then
         echo -e ":: OUTPUT (actual):"
         cat "$exec_output" 2>/dev/null
         echo -e ":: OUTPUT (expected):"
         cat "${1%.*}.output" 2>/dev/null
     fi
-    if [[ $2 == -*i* ]] || [[ $2 == -*v* ]]; then
+    if [[ $2 == -*i* || $2 == -*v* ]]; then
         echo -e ":: INPUT:"
         cat "${1%.*}.input" 2>/dev/null
     fi
-    if [[ $2 == -*s* ]] || [[ $2 == -*v* ]]; then
+    if [[ $2 == -*s* || $2 == -*v* ]]; then
         echo -e ":: SOURCE:"
         cat "$1"
     fi
-    if [[ $2 == -*j* ]] || [[ $2 == -*v* ]]; then
+    if [[ $2 == -*j* || $2 == -*v* ]]; then
         echo -e "\n:: JASMIN:"
         cat "${1%.*}.j" 2>/dev/null
     fi
@@ -95,6 +99,8 @@ function show_results() {
 
 # testers
 function testcase_interpreter() {
+  [[ $2 == *I* || $2 == *A* ]] || return 0
+
   Input="${1%.*}.input"
   [[ -f $Input ]] || Input=/dev/null
   Output="${1%.*}.output"
@@ -116,6 +122,8 @@ function testcase_interpreter() {
 }
 
 function testcase_jvm() {
+  [[ $2 == *J* || $2 == *A* ]] || return 0
+
   Input="${1%.*}.input"
   [[ -f $Input ]] || Input=/dev/null
   Output="${1%.*}.output"
@@ -137,6 +145,8 @@ function testcase_jvm() {
 }
 
 function testcase_check() {
+  [[ $2 == *C* || $2 == *A* ]] || return 0
+
   echo -ne "CHECK\t$1: "
   $compile_check $1 2>$compile_output
   Status=$?
@@ -152,6 +162,8 @@ function testcase_check() {
 }
 
 function testcase_parse() {
+  [[ $2 == *P* || $2 == *A* ]] || return 0
+
   echo -ne "PARSE\t$1: "
   $compile_parse $1 2>$compile_output
   Status=$?
@@ -168,32 +180,23 @@ function testcase_parse() {
 
 
 # main()
-if [[ $# -eq 0 ]]; then
+if [[ $# -eq 0 || $1 == -* ]]; then
   TotalCount=0
-  function incTotal() {
-    TotalCount=`expr $TotalCount + 1`
-  }
   FailsCount=0
-  function incFails() {
-    FailsCount=`expr $FailsCount + 1`
-  }
 
   # run all found tests
   for f in $tests_parse; do
-    incTotal
-    testcase_parse $f || incFails
+    testcase_parse $f $1
   done
   for f in $tests_check; do
-    incTotal
-    testcase_parse $f
-    testcase_check $f || incFails
+    testcase_parse $f $1
+    testcase_check $f $1
   done
   for f in $tests_exec; do
-    incTotal
-    testcase_parse $f || incFails
-    testcase_check $f || incFails
-    testcase_jvm $f || incFails
-    testcase_interpreter $f || incFails
+    testcase_parse $f $1
+    testcase_check $f $1
+    testcase_jvm $f $1
+    testcase_interpreter $f $1
   done
 
   echo -e "FAILED: $FailsCount\tTOTAL:  $TotalCount"
@@ -208,10 +211,10 @@ else
   fi
 
   # run found test
-  testcase_parse $File
-  testcase_check $File
-  testcase_jvm $File
-  testcase_interpreter $File
+  testcase_parse $File $2
+  testcase_check $File $2
+  testcase_jvm $File $2
+  testcase_interpreter $File $2
   show_results $File $2
 fi
 

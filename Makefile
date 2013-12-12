@@ -17,7 +17,7 @@ $(DOCS): %.pdf : %.md
 	pandoc $< -o $@
 
 $(TESTSUITES): % : all
-	@./$@/test-run.sh
+	@./$@/test-run.sh -A
 
 clean:
 	-$(MAKE) -C src/ clean
