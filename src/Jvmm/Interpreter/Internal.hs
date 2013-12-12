@@ -10,10 +10,12 @@ import Control.Monad.Identity
 import Control.Monad.Error
 import Control.Monad.Reader
 import Control.Monad.State
+import Control.Monad.Writer
 
 import Data.Maybe (fromJust)
 import qualified Data.Set as Set
 import qualified Data.Map as Map
+import qualified Data.Traversable as Traversable
 
 import Jvmm.Errors (ErrorInfo)
 import qualified Jvmm.Errors as Err
@@ -25,23 +27,36 @@ data GCConf = GCConf {
     gcthresh :: Int
 }
 
+type StaticMethods = Map.Map (TypeComposed, MethodName) Method
+type InstancePrototypes = Map.Map TypeComposed Composite
 data RunEnv = RunEnv {
     runenvGCConf :: GCConf
-  , runenvStatics :: Map.Map TypeComposed Method
-  , runenvInstances :: Map.Map TypeComposed Composite
+  , runenvStatics :: StaticMethods
+  , runenvInstances :: InstancePrototypes
 }
 
+-- BUILDING ENVIRONMENT --
+--------------------------
 buildRunEnv :: ClassHierarchy -> RunEnv
 buildRunEnv hierarchy =
   RunEnv {
       runenvGCConf = GCConf 100
-    , runenvStatics = statics
-    , runenvInstances = instances
+    , runenvStatics = buildStatics hierarchy
+    , runenvInstances = buildInstances hierarchy
   }
+
+buildStatics :: ClassHierarchy -> StaticMethods
+buildStatics hierarchy = execWriter (Traversable.mapM collect hierarchy)
   where
-    -- FIXME
-    instances = Map.empty
-    statics = Map.empty
+    collect :: Class -> WriterT StaticMethods Identity ()
+    collect (Class { classAllMethods = methods, classType = typ@TObject }) = forM_ methods $ \case
+        method@Method { methodInstance = False } -> tell (Map.singleton (typ, methodName method) method)
+        _ -> return ()
+    -- We do not support static methods defined in classes other than TObject
+    collect _ = return ()
+
+buildInstances :: ClassHierarchy -> InstancePrototypes
+buildInstances = undefined -- keep super in state and emit to writer
 
 -- RUNTIME STATE --
 -------------------
@@ -141,7 +156,7 @@ runInterpreterM r m = runStateT (runErrorT (runReaderT m r)) runstate0
 newFrame :: InterpreterM a -> InterpreterM a
 newFrame action = do
   modify (\st -> st { runenvStack = [stackframe0] ++ runenvStack st })
-  tryFinally action $
+  Err.finally action $
     -- Pop stack frame no matter what happened (exception/error/return),
     -- note that the stack might be modified due to GC runs
     modify (\st -> st { runenvStack = tail $ runenvStack st })
@@ -155,29 +170,9 @@ newFrame action = do
 
 getResult :: InterpreterM () -> InterpreterM PrimitiveValue
 getResult action = do
-  (action >> throwError (RError Err.nonVoidNoReturn)) `catchError` handler
-  where
-    handler err = case err of
+  (action >> throwError (RError Err.nonVoidNoReturn)) `catchError` \case
       RValue val -> return val
-      _ -> throwError err
-
-tryCatch :: InterpreterM () -> VariableNum -> InterpreterM () -> InterpreterM ()
-tryCatch atry num acatch = do
-  atry `catchError` handler
-  where
-    handler err = case err of
-      RException val -> do
-        store num val
-        acatch
-      _ -> throwError err
-
-tryFinally :: InterpreterM a -> InterpreterM () -> InterpreterM a
-tryFinally atry afinally = do
-  atry `catchError` handler
-  where
-    handler err = do
-      afinally
-      throwError err
+      err -> throwError err
 
 -- MEMORY MODEL --
 ------------------
@@ -241,7 +236,7 @@ compactHeap pinned heap =
               _ -> grey'
               where
                 extract :: Set.Set Location -> PrimitiveValue -> Set.Set Location
-                extract grey'' el = case el of
+                extract grey'' = \case
                   VRef loc -> if Set.member loc black' then grey'' else Set.insert loc grey''
                   _ -> grey''
         in fun (grey''', black')
@@ -259,6 +254,7 @@ nop :: InterpreterM ()
 nop = return ()
 
 load :: VariableNum -> InterpreterM PrimitiveValue
+load VariableThis = load (VariableNum 0)
 load num = gets (fromJust . Map.lookup num . head . runenvStack)
 
 aload :: PrimitiveValue -> PrimitiveValue -> InterpreterM PrimitiveValue
@@ -269,6 +265,7 @@ aload ref (VInt ind) = do
     Just val -> return val
 
 store :: VariableNum -> PrimitiveValue -> InterpreterM ()
+store VariableThis val = store (VariableNum 0) val
 store num val = do
   modify $ \st -> st { runenvStack = mapHead (Map.insert num val) (runenvStack st) }
   runGC
@@ -281,7 +278,11 @@ astore ref (VInt ind) val = do
   runGC
 
 invokestatic :: TypeComposed -> MethodName -> [PrimitiveValue] -> InterpreterM ()
-invokestatic ctype name args = undefined
+invokestatic ctype name args = do
+  method <- asks $ fromJust . Map.lookup (ctype, name) . runenvStatics
+  newFrame $ do
+    zipWithM_ (\num val -> store (VariableNum num) val) [0..] args
+    interpret $ methodBody method
 
 throw :: PrimitiveValue -> InterpreterM ()
 throw = throwError . RException
@@ -301,7 +302,9 @@ arraylength :: PrimitiveValue -> InterpreterM PrimitiveValue
 arraylength ref = deref ref >>= (\(VArray arr) -> return $ VInt $ Map.size arr)
 
 newobject :: TypeComposed -> InterpreterM PrimitiveValue
-newobject typ = alloc $ VObject composite0
+newobject ctyp = do
+  inst <- asks (fromJust . Map.lookup ctyp . runenvInstances)
+  alloc $ VObject inst
 
 getfield :: FieldName -> PrimitiveValue -> InterpreterM PrimitiveValue
 -- Types are already checked, we can simply get value from a map
@@ -325,11 +328,7 @@ putfield name val ref = do
       runGC
     _ -> Err.unreachable lval
 
-invokevirtual :: MethodName -> PrimitiveValue -> [PrimitiveValue] -> InterpreterM ()
-invokevirtual (MethodName "charAt") ref [VInt ind] = do
-  VString str <- deref ref
-  unless (0 <= ind && ind < length str) $ throwError $ RError $ Err.indexOutOfBounds ind
-  return_ $ VChar $ head $ drop ind str
+invokevirtual :: PrimitiveValue -> MethodName -> [PrimitiveValue] -> InterpreterM ()
 invokevirtual _ _ _ = undefined
 
 -- TREE TRAVERSAL --
@@ -374,12 +373,16 @@ instance Interpretable Stmt () where
     SThrow expr -> do
       ref <- interpret expr
       throw ref
-    STryCatch stmt1 typ num stmt2 -> tryCatch (interpret stmt1) num (interpret stmt2)
+    STryCatch stmt1 _ num stmt2 -> interpret stmt1 `catchError` \case
+        RException val -> do
+          store num val
+          interpret stmt2
+        err -> throwError err
     -- Special function bodies
     SBuiltin -> Err.unreachable x
     SInherited -> Err.unreachable x
     -- Metainformation carriers
-    SMetaLocation loc stmts ->
+    SMetaLocation _ stmts ->
       -- We ignore error location for now
       mapM_ interpret stmts
     -- These statements will be replaced with ones caring more context in subsequent phases
@@ -427,11 +430,16 @@ instance Interpretable Expr PrimitiveValue where
       return ref
     EInvokeStatic _ (MethodName "error") _ [] ->
       throwError $ RError Err.userIssuedError
-    EInvokeStatic _ name _ exprs -> mapM interpret exprs >>= (getResult . invokestatic TObject name)
+    EInvokeStatic _ name _ exprs -> mapM interpret exprs >>= getResult . invokestatic TObject name
+    EInvokeVirtual eref (TString) (MethodName "charAt") _ [eind] -> do
+      VString str <- deref =<< interpret eref
+      VInt ind <- interpret eind
+      unless (0 <= ind && ind < length str) $ throwError $ RError $ Err.indexOutOfBounds ind
+      return $ VChar $ head $ drop ind str
     EInvokeVirtual expr _ name _ exprs -> do
       ref <- interpret expr
       vals <- mapM interpret exprs
-      getResult $ invokevirtual name ref vals
+      getResult (invokevirtual ref name vals)
     -- Object creation
     ENewObj typ -> newobject typ
     ENewArr typ expr -> interpret expr >>= newarray typ
