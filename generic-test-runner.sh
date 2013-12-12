@@ -11,6 +11,7 @@ compile_jvm_opts="-p"
 compile_check="./jvmmc_check"
 compile_parse="./jvmmc_parse"
 
+run_interpreter="./jvmmi "
 run_jvm="java -jar"
 
 env_memlimit=60000
@@ -93,6 +94,27 @@ function show_results() {
 }
 
 # testers
+function testcase_interpreter() {
+  Input="${1%.*}.input"
+  [[ -f $Input ]] || Input=/dev/null
+  Output="${1%.*}.output"
+  [[ -f $Output ]] || Output=/dev/null
+
+  echo -ne "INTERP\t$1: "
+  ulimit -Sv $env_memlimit
+  $run_interpreter $1 <$Input 1>$exec_output 2>$exec_error
+  Status=$?
+  if [[ $1 == $pattern_bad_exec ]]; then
+    negate $Status
+    assert_status $?
+    assert_exec $Output
+  else
+    assert_status $Status
+    assert_exec $Output
+  fi
+  test_result $?
+}
+
 function testcase_jvm() {
   Input="${1%.*}.input"
   [[ -f $Input ]] || Input=/dev/null
@@ -168,9 +190,10 @@ if [[ $# -eq 0 ]]; then
   done
   for f in $tests_exec; do
     incTotal
-    testcase_parse $f
-    testcase_check $f
+    testcase_parse $f || incFails
+    testcase_check $f || incFails
     testcase_jvm $f || incFails
+    testcase_interpreter $f || incFails
   done
 
   echo -e "FAILED: $FailsCount\tTOTAL:  $TotalCount"
@@ -188,6 +211,7 @@ else
   testcase_parse $File
   testcase_check $File
   testcase_jvm $File
+  testcase_interpreter $File
   show_results $File $2
 fi
 

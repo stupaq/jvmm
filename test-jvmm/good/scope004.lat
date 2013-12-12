@@ -5,6 +5,11 @@ int a() {
 
 int main() {
   string[] arr = new string[3];
+  int i = 0;
+  while (i < 3) {
+    arr[i] = "null";
+    i++;
+  }
   int a = 1;
   printInt(a);
   a++;

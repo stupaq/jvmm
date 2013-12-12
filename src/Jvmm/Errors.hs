@@ -24,6 +24,7 @@ data ErrorInfo =
     Located Location String
   | Dangling String
   | Bare String
+  deriving (Eq)
 
 instance Show ErrorInfo where
   show (Located loc msg) = concat [show loc, ", error: ", msg]
@@ -80,7 +81,7 @@ staticNonStaticConflict x = Dangling $ "static and non-static symbol conflict: "
 duplicateArg x = Dangling $ "duplicated argument identifier in function definition: " ++ show x
 unboundSymbol x = Dangling $ "unbound symbol: " ++ show x
 redeclaredSymbol x = Dangling $ "redeclared symbol in the same scope: " ++ show x
-globalForbidden = Dangling $ "statement not allowed in global scope"
+globalForbidden = Dangling "statement not allowed in global scope"
 repeatedDeclaration x = Dangling $ "repeated declaration for: " ++ show x
 redefinedBuiltin x = Dangling $ "redefined built-in method: " ++ show x
 
@@ -88,42 +89,41 @@ redefinedBuiltin x = Dangling $ "redefined built-in method: " ++ show x
 notAComposedType typ = Dangling $ "expected composed type, got " ++ show typ
 unknownMemberType typ x = Dangling $ concat ["unknown member type: ", show typ, " . ", show x]
 unknownSymbolType x = Dangling $ "unknown symbol type: " ++ show x
-subscriptNonArray = Dangling $ "not an array subscripted"
-indexType = Dangling $ "invalid array index type"
+subscriptNonArray = Dangling "not an array subscripted"
+indexType = Dangling "invalid array index type"
 unexpectedType expected actual = Dangling $ concat ["not matching type, expected: ", show expected, " actual ", show actual]
 argumentsNotMatch expected actual = Dangling $ concat ["arguments do not match, expected: ", show expected, " actual: ", show actual]
-badArithType = Dangling $ "bad operands type for arithmetic operator"
-danglingReturn = Dangling $ "dangling return"
-missingReturn = Dangling $ "missing return"
+badArithType = Dangling "bad operands type for arithmetic operator"
+danglingReturn = Dangling "dangling return"
+missingReturn = Dangling "missing return"
 voidVar x = Dangling $ "a variable cannot have void type: " ++ show x
 voidField x = Dangling $ "a field cannot have void type: " ++ show x
-voidArg = Dangling $ "an argument cannot have void type"
-voidNotIgnored = Dangling $ "void value not ignored as it should be"
-incompatibleMain = Dangling $ "incompatible main() type"
-missingMain = Dangling $ "missing main() function"
+voidArg = Dangling "an argument cannot have void type"
+voidNotIgnored = Dangling "void value not ignored as it should be"
+incompatibleMain = Dangling "incompatible main() type"
+missingMain = Dangling "missing main() function"
 redeclaredType x = Dangling $ "redeclared type name: " ++ show x
 referencedPrimitive typ = Dangling $ "primitive type cannot be referenced: " ++ show typ
-danglingThis = Dangling $ "dangling this"
+danglingThis = Dangling "dangling this"
 noSuperType typ = Dangling $ "cannot determine super type for: " ++ show typ
 intValueOutOfBounds n = Dangling $ "int constant out of bounds: " ++ show n
 uncaughtException typ = Dangling $ "uncaught, undeclared exception " ++ show typ
 
 -- Runtime errors (not throwable by user)
 noDefaultValue typ = Bare $ "type " ++ show typ ++ " has no default value"
-nullPointerException = Bare $ "attempt to dereference null"
+nullPointerException = Bare "attempt to dereference null"
 indexOutOfBounds x = Bare $ "index out of bounds: " ++ show x
-nonVoidNoReturn = Bare $ "no return value from non-void function"
-zeroDivision = Bare $ "divided by zero"
-intOverflow = Bare $ "integer overflow"
+zeroDivision = Bare "divided by zero"
+intOverflow = Bare "integer overflow"
 isConstant x = Bare $ "constant cannot be modified: " ++ show x
 
 -- Terminal errors issued by a user
-userIssuedError = Bare $ "runtime error"
+userIssuedError = Bare "runtime error"
 uncaughtTopLevel x = Bare $ "uncaught top level exception: " ++ show x
 
 -- INTERNAL ERRORS --
 ---------------------
 unreachable ctx = error $ "unused pattern branch entered: " ++ show ctx
 danglingReference loc = error $ "location: " ++ show loc ++ " does not exist"
-fromJustFailure = error $ "fromJust failed"
+fromJustFailure = error "fromJust failed"
 

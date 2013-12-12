@@ -17,10 +17,8 @@ interpret hierarchy = let runenv = buildRunEnv hierarchy in do
   (x, runstate1) <- lift $ runInterpreterM runenv $ do
       -- Invoke main method
       invokestatic TObject entrypointName []
-  case x of
-    Left (RError err) -> execFailure err
-    Left (RException err) -> execFailure $ Err.uncaughtTopLevel err
-    Left (RValue (VInt res)) -> do
+  let execFailure = liftIO . ioError . userError . show
+  let execEnd res = do
       -- Output heap status
       printl Debug $ "+----------------------------------"
       printl Debug $ "| Main returned:\t" ++ show res
@@ -29,7 +27,12 @@ interpret hierarchy = let runenv = buildRunEnv hierarchy in do
       printl Debug $ "+----------------------------------"
       -- Main result will become the return code of interpreter process
       liftIO $ exitWith $ if res == 0 then ExitSuccess else ExitFailure res
+  case x of
+    Left (RError err) ->
+      if err == Err.userIssuedError
+      then liftIO (putStrLn $ show err) >> execEnd 1
+      else execFailure err
+    Left (RException err) -> execFailure $ Err.uncaughtTopLevel err
+    Left (RValue (VInt res)) -> execEnd res
     _ -> Err.unreachable x
-  where
-    execFailure = liftIO . ioError . userError . show
 

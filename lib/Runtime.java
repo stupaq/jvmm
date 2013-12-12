@@ -8,10 +8,12 @@ public class Runtime {
   }
 
   public static void printInt(int a) {
+    isNotNull(a);
     System.out.println(a);
   }
 
   public static void printString(String a) {
+    isNotNull(a);
     System.out.println(a);
   }
 
@@ -28,5 +30,11 @@ public class Runtime {
 
   public static String readString() {
     return stdin.nextLine();
+  }
+
+  private static void isNotNull(Object object) {
+    if (object == null) {
+      throw new NullPointerException("Notion of nullity is a total disaster, kill it with fire!");
+    }
   }
 }

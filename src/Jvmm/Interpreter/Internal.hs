@@ -169,10 +169,9 @@ newFrame action = do
 -- function body.
 
 getResult :: InterpreterM () -> InterpreterM PrimitiveValue
-getResult action = do
-  (action >> throwError (RError Err.nonVoidNoReturn)) `catchError` \case
-      RValue val -> return val
-      err -> throwError err
+getResult action = (action >> return VVoid) `catchError` (\case
+    RValue val -> return val
+    err -> throwError err)
 
 -- MEMORY MODEL --
 ------------------
@@ -237,7 +236,7 @@ compactHeap pinned heap =
               where
                 extract :: Set.Set Location -> PrimitiveValue -> Set.Set Location
                 extract grey'' = \case
-                  VRef loc -> if Set.member loc black' then grey'' else Set.insert loc grey''
+                  VRef loc' -> if Set.member loc' black' then grey'' else Set.insert loc' grey''
                   _ -> grey''
         in fun (grey''', black')
 
