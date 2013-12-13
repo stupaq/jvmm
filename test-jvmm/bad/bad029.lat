@@ -1,0 +1,11 @@
+// Unchecked exception
+
+int main () {
+    f();
+    return 0;
+}
+int f() {
+  throw "ASADS";
+}
+
+

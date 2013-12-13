@@ -26,12 +26,12 @@ int main() throws string {
       length--;
     }
     if (length != 0)
-      throw "ARRAY IS FUCKED UP!";
+      throw "ARRAY IS DOES NOT WORK!";
     printString("ARRAY OK");
     int ret = b(5);
     printInt(ret);
     if (ret != 25 || def(1241321) != 0)
-      throw "RETURNING IS FUCKED UP!";
+      throw "RETURNING IS DOES NOT WORK!";
     try {
       printString("Trying a()");
       a++;

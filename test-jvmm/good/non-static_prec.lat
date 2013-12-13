@@ -2,6 +2,7 @@ class Show {
   int x;
 
   void main() {
+    printString("dynamic show");
     string s = show();
   }
 
@@ -14,6 +15,7 @@ class Show {
 }
 
 int show() {
+  printString("static show");
   return 0;
 }
 
