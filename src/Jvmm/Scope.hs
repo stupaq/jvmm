@@ -10,5 +10,5 @@ import Jvmm.Trans.Output
 -----------------------
 -- Creates scoped tree from translated AST.
 scope :: ClassHierarchy -> ErrorInfoT Identity ClassHierarchy
-scope classes = fmap fst $ fmap fst $ runScopeM (enterHierarchy classes $ Internal.scope classes)
+scope classes = fmap (fst . fst) $ runScopeM (enterHierarchy classes $ Internal.scope classes)
 

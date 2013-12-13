@@ -16,7 +16,7 @@ import Jvmm.Trans.Output
 prepareClassDiff :: Err.Location -> Class -> ClassDiff
 prepareClassDiff loc clazz@(Class { classType = typ }) super = Err.withLocation loc $ do
     guard (classType super == classSuper clazz)
-    guard (clashing == []) `rethrow` Err.staticNonStaticConflict (head clashing)
+    guard (null clashing) `rethrow` Err.staticNonStaticConflict (head clashing)
     fields' <- fieldsClosure fields (classFields super)
     instanceMethods' <- methodsClosure instanceMethods (classInstanceMethods super)
     staticMethods' <- methodsClosure staticMethods (classStaticMethods super)
@@ -27,7 +27,7 @@ prepareClassDiff loc clazz@(Class { classType = typ }) super = Err.withLocation 
     }
   where
     clashing :: [MethodName]
-    clashing = (List.map methodName instanceMethods) `intersect` (List.map methodName staticMethods)
+    clashing = List.map methodName instanceMethods `intersect` List.map methodName staticMethods
     fields :: [Field]
     fields = [ field { fieldOrigin = typ } | field <- classFields clazz]
     methodsWithOrigin :: (Class -> [Method]) -> [Method]
@@ -48,8 +48,8 @@ hierarchy (CompilationUnit allClasses) = case allClasses of
 ------------------
 objectClassDiff :: [Method] -> ErrorInfoT Identity ClassDiff
 objectClassDiff functions = do
-  guard (repeated == []) `rethrow` Err.repeatedDeclaration (head repeated)
-  guard (redefined == []) `rethrow` Err.redefinedBuiltin (head redefined)
+  guard (null repeated) `rethrow` Err.repeatedDeclaration (head repeated)
+  guard (null redefined) `rethrow` Err.redefinedBuiltin (head redefined)
   return $ prepareClassDiff Err.Unknown Class {
       -- Object is its own supertype
         classType = TObject
@@ -60,7 +60,7 @@ objectClassDiff functions = do
     }
   where
     repeated, idents, redefined :: [MethodName]
-    repeated = idents \\ (nub idents)  -- This can be done faster but not funnier
+    repeated = idents \\ nub idents  -- This can be done faster but not funnier
     idents = List.map methodName functions
     redefined = let builtinIdents = List.map methodName builtinFunctions
       in builtinIdents `intersect` idents

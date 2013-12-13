@@ -296,6 +296,22 @@ astore ref (VInt ind) val = do
   runGC
 
 invokestatic :: TypeComposed -> MethodName -> [PrimitiveValue] -> InterpreterM ()
+invokestatic TObject (MethodName "printInt") [VInt val] = do
+  liftIO $ print val
+  return'_
+invokestatic TObject (MethodName "readInt") [] = do
+  val <- liftIO (readLn :: IO Int)
+  return_ $ VInt val
+invokestatic TObject (MethodName "printString") [ref] = do
+  VString str <- deref ref
+  liftIO (putStrLn str)
+  return_ VVoid
+invokestatic TObject (MethodName "readString") [] = do
+  val <- liftIO (getLine :: IO String)
+  ref <- alloc (VString val)
+  return_ ref
+invokestatic TObject (MethodName "error") [] =
+  throwError $ RError Err.userIssuedError
 invokestatic ctype name args = do
   method <- asks $ fromJust . Map.lookup (ctype, name) . runenvStatics
   newFrame $ do
@@ -438,23 +454,6 @@ instance Interpretable Expr PrimitiveValue where
       aload val1 val2
     EGetField expr _ name _ -> interpret expr >>= getfield name
     -- Method calls
-    EInvokeStatic _ (MethodName "printInt") _ [expr] -> do
-      VInt val <- interpret expr
-      liftIO $ print val
-      return VVoid
-    EInvokeStatic _ (MethodName "readInt") _ [] -> do
-      val <- liftIO (readLn :: IO Int)
-      return $ VInt val
-    EInvokeStatic _ (MethodName "printString") _ [expr] -> do
-      ref <- interpret expr
-      VString str <- deref ref
-      liftIO (putStrLn str)
-      return VVoid
-    EInvokeStatic _ (MethodName "readString") _ [] -> do
-      val <- liftIO (getLine :: IO String)
-      alloc (VString val)
-    EInvokeStatic _ (MethodName "error") _ [] ->
-      throwError $ RError Err.userIssuedError
     EInvokeStatic _ name _ exprs -> do
       vals <- mapM interpret exprs
       getResult $ invokestatic TObject name vals

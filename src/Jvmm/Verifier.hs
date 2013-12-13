@@ -9,5 +9,5 @@ import Jvmm.Trans.Output
 -- MAIN --
 ----------
 verify :: ClassHierarchy -> ErrorInfoT Identity ClassHierarchy
-verify classes = (runVerifierM $ Internal.verify classes) >> return classes
+verify classes = runVerifierM (Internal.verify classes) >> return classes
 

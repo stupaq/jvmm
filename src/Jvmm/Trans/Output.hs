@@ -222,8 +222,8 @@ stmtMetaLocation loc action = do
   stmts' <- withLocation loc action
   return $ SMetaLocation loc stmts'
 
-stmtMetaLocation' :: (MonadError ErrorInfo m) => Location -> m [a] -> m ()
-stmtMetaLocation' loc action = stmtMetaLocation loc (action >> return []) >> return ()
+stmtMetaLocation' :: (MonadError ErrorInfo m, Functor m) => Location -> m [a] -> m ()
+stmtMetaLocation' loc action = void $ stmtMetaLocation loc (action >> return [])
 
 -- TOP LEVEL --
 ---------------

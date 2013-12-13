@@ -58,7 +58,7 @@ compileJvm = checkT =?> compile
           let file = dest </> clazz ++ ".j"
           lift $ writeFile file $ "; source: " ++ source
           mapM_ (lift . appendFile file . toJasmin) code
-          lift $ appendFile file $ "; eof\n"
+          lift $ appendFile file "; eof\n"
       emitJvm config =>> mapM_ writeOne =>| classes
 
 execute :: Interaction String
