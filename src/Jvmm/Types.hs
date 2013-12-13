@@ -6,8 +6,9 @@ import Control.Monad.Identity
 import Jvmm.Errors (ErrorInfoT)
 import Jvmm.Trans.Output
 
--- MAIN --
-----------
+-- TYPE CHECKER ---------------------------------------------------------------
+--  The layer that checks types and annotates APT with type information.
+-------------------------------------------------------------------------------
 typing :: ClassHierarchy -> ErrorInfoT Identity ClassHierarchy
 typing classes = do
   env <- collectTypes classes

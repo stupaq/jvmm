@@ -8,7 +8,11 @@ import Syntax.AbsJvmm (Program)
 
 import Jvmm.Errors (ErrorInfoT)
 
--- Translates AST into APT performing several simplifications and syntactic sugar removal.
+-- TRANSLATION LAYER ----------------------------------------------------------
+--  Rewrites parser output into frontend-agnostic format that can be processed
+--  by next layer(s). Resolves syntactic sugar and grammar irregularities.
+-------------------------------------------------------------------------------
+
 trans :: Program -> ErrorInfoT Identity O.CompilationUnit
 trans = tProgram
 

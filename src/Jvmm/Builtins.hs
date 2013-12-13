@@ -1,12 +1,11 @@
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE KindSignatures #-}
 module Jvmm.Builtins where
 
-import Control.Monad.Identity
 import Control.Monad.Error
 
 import qualified Jvmm.Errors as Err
-import Jvmm.Errors (ErrorInfoT, Location)
 import Jvmm.Trans.Output
-import qualified Jvmm.Scope as Scope
 
 -- FUNCTIONS --
 ---------------
@@ -22,8 +21,14 @@ builtinFunctions = map fun [
 
 -- ENTRYPOINT --
 ----------------
+entrypointType :: TypeMethod
 entrypointType = TypeMethod (TPrimitive TInt) [] []
+
+
+entrypointName :: MethodName
 entrypointName = MethodName "main"
+
+isEntrypoint :: Method -> Bool
 isEntrypoint method =
   entrypointName == methodName method
   && methodOrigin method == TObject
@@ -31,16 +36,19 @@ isEntrypoint method =
 
 -- TYPES --
 -----------
+isBuiltinType :: TypeComposed -> Bool
 isBuiltinType (TUser (ClassName str)) = str `elem` ["int", "char", "boolean", "string"]
 isBuiltinType TObject = False
 isBuiltinType (TArray _) = True
 isBuiltinType _ = Err.unreachable TNull
 
+builtinFieldType :: forall (m :: * -> *) e. (MonadError e m, Error e) => (TypeComposed, [Char]) -> m Type
 builtinFieldType desc = case desc of
   (TArray _, "length") -> return $ toType TInt
   (TString, "length") -> return $ toType TInt
   _ -> throwError noMsg
 
+builtinMethodType :: forall (m :: * -> *) e. (MonadError e m, Error e) => (TypeComposed, [Char]) -> m Type
 builtinMethodType desc = case desc of
   (TString, "charAt") -> return $ toType $ TypeMethod (TPrimitive TChar) [TPrimitive TInt] []
   _ -> throwError noMsg

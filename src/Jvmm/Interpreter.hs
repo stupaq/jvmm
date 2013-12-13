@@ -12,6 +12,11 @@ import qualified Jvmm.Errors as Err
 import Jvmm.Builtins (entrypointName)
 import Jvmm.Trans.Output
 
+-- INTERPRETER ----------------------------------------------------------------
+--  The interpreter backend layer. Implements full JVMM semantics including
+--  runtime polymorphism and exceptions.
+-------------------------------------------------------------------------------
+
 interpret :: ClassHierarchy -> InteractionM ()
 interpret hierarchy = let runenv = buildRunEnv hierarchy in do
   (x, runstate1) <- lift $ runInterpreterM runenv $

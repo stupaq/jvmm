@@ -9,8 +9,12 @@ import qualified Jvmm.Errors as Err
 import Jvmm.Errors (rethrow, ErrorInfoT)
 import Jvmm.Trans.Output
 
--- CLASSES DIFFERENCE --
-------------------------
+-- HIERARCHY ------------------------------------------------------------------
+--  The layer responsible for determining inheritance hierarhyc, propagating
+--  inherited fields and methods down the tree and verifying that there is no
+--  ambiguity when refering a field or method.
+-------------------------------------------------------------------------------
+
 -- Prepares class diff, a function which returns full class description (inclluding superclass
 -- members) when provided with superclass description.
 prepareClassDiff :: Err.Location -> Class -> ClassDiff
@@ -37,15 +41,12 @@ prepareClassDiff loc clazz@(Class { classType = typ }) super = Err.withLocation 
     instanceMethods = methodsWithOrigin classInstanceMethods
     staticMethods = methodsWithOrigin classStaticMethods
 
--- CLASS HIERARCHY --
----------------------
 hierarchy :: CompilationUnit -> ErrorInfoT Identity ClassHierarchy
 hierarchy (CompilationUnit allClasses) = case allClasses of
   (_, objectDiff):classes -> visit objectSuperClass classes objectDiff
   _ -> Err.unreachable "no primary object diff"
 
--- OBJECT CLASS --
-------------------
+-- TObject class, an ancestor for every other class in the hierarchy
 objectClassDiff :: [Method] -> ErrorInfoT Identity ClassDiff
 objectClassDiff functions = do
   guard (null repeated) `rethrow` Err.repeatedDeclaration (head repeated)
