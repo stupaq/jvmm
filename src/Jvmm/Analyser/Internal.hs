@@ -1,19 +1,19 @@
-{-# LANGUAGE TypeSynonymInstances #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleInstances      #-}
 {-# LANGUAGE FunctionalDependencies #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE KindSignatures         #-}
+{-# LANGUAGE MultiParamTypeClasses  #-}
+{-# LANGUAGE RankNTypes             #-}
+{-# LANGUAGE TypeSynonymInstances   #-}
 module Jvmm.Analyser.Internal where
 
+import Control.Applicative
 import Control.Monad.Identity
 import Control.Monad.State
-import Control.Applicative
 
 import qualified Data.Traversable as Traversable
 
-import qualified Jvmm.Errors as Err
 import Jvmm.Errors (ErrorInfoT)
+import qualified Jvmm.Errors as Err
 import Jvmm.Trans.Output
 
 -- THE STATE --
@@ -70,11 +70,7 @@ instance Analysable Stmt [Stmt] where
      consecutive stmts
     SExpr expr -> single $ SExpr <$> analyse expr
     -- Memory access
-    SStore num expr typ -> single $ SStore num <$> analyse expr <#> typ
-    SStoreArray num expr1 expr2 telem -> single $
-      SStoreArray num <$> analyse expr1 <*> analyse expr2 <#> telem
-    SPutField num ctyp name expr ftyp -> single $
-      SPutField num ctyp name <$> analyse expr <#> ftyp
+    SAssign lval expr -> single $ SAssign <$> analyse lval <*> analyse expr
     -- Control statements
     SReturn expr typ -> do
       expr' <- analyse expr
@@ -125,10 +121,6 @@ instance Analysable Stmt [Stmt] where
     SMetaLocation loc stmts -> Err.withLocation loc (consecutive stmts)
     -- These statements will be replaced with ones caring more context in subsequent phases
     T_SDeclVar {} -> Err.unreachable x
-    T_SAssign {} -> Err.unreachable x
-    T_SAssignArr {} -> Err.unreachable x
-    T_SAssignFld {} -> Err.unreachable x
-    T_STryCatch {} -> Err.unreachable x
     where
       original, nothing :: AnalyserM [Stmt]
       original = return [x]
@@ -141,11 +133,11 @@ instance Analysable Stmt [Stmt] where
       block [] = SEmpty
       block [stmt] = stmt
       block stmts = SBlock stmts
-      isLitTrue :: Expr -> Bool
+      isLitTrue :: RValue -> Bool
       isLitTrue ELitTrue = True
       isLitTrue _ = False
 
-instance Analysable Expr Expr where
+instance Analysable RValue RValue where
   analyse x = case x of
     -- Literals
     -- Memory access
@@ -167,7 +159,7 @@ instance Analysable Expr Expr where
         _ -> return $ EUnary op expr' tret
     EBinary op expr1 expr2 tret -> do
       option <- liftM3 (,,) (return op) (analyse expr1) (analyse expr2)
-      -- Note that comparint subtrees is meaningless here (this is one of the reasons for Expr
+      -- Note that comparint subtrees is meaningless here (this is one of the reasons for RValue
       -- not being instance of Eq) as the language is not purely functional
       case option of
         (ObAnd, ELitFalse, _) -> return ELitFalse
@@ -181,12 +173,12 @@ instance Analysable Expr Expr where
     -- Fallback to original value
     _ -> original
     where
-      original :: AnalyserM Expr
+      original :: AnalyserM RValue
       original = return x
 
--- PORN --
-----------
-infixl 4 <#>
-(<#>) :: forall (f :: * -> *) a b. Applicative f => f (a -> b) -> a -> f b
-(<#>) x y = x <*> pure y
+instance Analysable LValue LValue where
+  analyse x = case x of
+    LVariable _ _ -> return x
+    LArrayElement lval expr telem -> LArrayElement <$> analyse lval <*> analyse expr <#> telem
+    LField lval ctyp name ftyp -> LField <$> analyse lval <#> ctyp <#> name <#> ftyp
 

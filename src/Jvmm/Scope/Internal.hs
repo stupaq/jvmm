@@ -1,20 +1,22 @@
+{-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE TypeSynonymInstances #-}
-{-# LANGUAGE FlexibleInstances #-}
 module Jvmm.Scope.Internal where
 
+import Control.Applicative
 import Control.Exception (assert)
-import Control.Monad.Identity
 import Control.Monad.Error
+import Control.Monad.Identity
 import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Writer
+
+import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Set as Set
-import qualified Data.List as List
 import qualified Data.Traversable as Traversable
 
+import Jvmm.Errors (ErrorInfoT, finally, orReturn, rethrow)
 import qualified Jvmm.Errors as Err
-import Jvmm.Errors (rethrow, orReturn, finally, ErrorInfoT)
 import Jvmm.Trans.Output
 
 -- SCOPE REPRESENTATION --
@@ -39,7 +41,7 @@ variablenum0 = VariableNum declarationid0
 
 data ScopeState = ScopeState {
     scopestateVariables :: Variables
-  , scopestateNextId :: DeclarationId
+  , scopestateNextId    :: DeclarationId
 } deriving (Show)
 scopestate0 = ScopeState variables0 declarationid0
 
@@ -47,8 +49,8 @@ scopestate0 = ScopeState variables0 declarationid0
 -----------------------
 data ScopeEnv = ScopeEnv {
     scopeenvInstance :: Scope
-  , scopeenvStatic :: Scope
-  , scopeenvParent :: Variables
+  , scopeenvStatic   :: Scope
+  , scopeenvParent   :: Variables
 } deriving (Show)
 scopeenv0 = ScopeEnv scope0 scope0 variables0
 
@@ -247,13 +249,7 @@ instance Scopeable Stmt where
         [stmt'] -> return stmt'
         _ -> return $ SBlock stmts'
     -- Memory access
-    SStore {} -> Err.unreachable x
-    SStoreArray {} -> Err.unreachable x
-    SPutField VariableThis _ field expr _ -> do
-      expr' <- scope expr
-      dynamic field
-      return $ SPutField VariableThis undefined field expr' undefined
-    SPutField {} -> Err.unreachable x
+    SAssign lval expr -> SAssign <$> scope lval <*> scope expr
     -- Control statements
     SReturn expr _ -> do
       expr' <- scope expr
@@ -291,23 +287,6 @@ instance Scopeable Stmt where
       num <- current name
       tell [Variable typ num name]
       return SEmpty
-    -- We replace all assignments that actually refer to instance fields but give precedence to local
-    -- variables (like in Java), to referencee hidden field self.<field_name> construct can be used
-    T_SAssign name expr -> do
-      expr' <- scope expr
-      varOrField name
-        (\num -> SStore num expr' undefined)
-        (\name' -> SPutField VariableThis undefined name' expr' undefined)
-    T_SAssignArr name expr1 expr2 -> do
-      expr1' <- scope expr1
-      expr2' <- scope expr2
-      num <- current name
-      return $ SStoreArray num expr1' expr2' undefined
-    T_SAssignFld name field expr2 -> do
-      expr2' <- scope expr2
-      num <- current name
-      -- The field name we see here cannot be verified without type information
-      return $ SPutField num undefined field expr2' undefined
     T_STryCatch stmt1 typ name stmt2 -> do
       stmt1' <- newLocalScope (scope stmt1)
       newLocalScope $ do
@@ -318,7 +297,7 @@ instance Scopeable Stmt where
         stmt2' <- newLocalScope (scope stmt2)
         return $ STryCatch stmt1' typ num stmt2'
 
-instance Scopeable Expr where
+instance Scopeable RValue where
   scope x = case x of
     -- Literals
     ENull -> return x
@@ -374,6 +353,31 @@ instance Scopeable Expr where
       varOrField name
         (`ELoad` undefined)
         (\field -> EGetField (ELoad VariableThis undefined) undefined field undefined)
+
+instance Scopeable LValue where
+  scope x = case x of
+    LVariable {} -> return x
+    LArrayElement lval _ -> do
+      EArrayLoad _ expr' _ <- scope $ toRValue x
+      lval' <- scope lval
+      return $ LArrayElement lval' expr' undefined
+    LField lval@(LVariable VariableThis _) _ name _ -> do
+      -- We can resolve the field since it should belong to the instance scope we are in
+      dynamic name
+      return $ LField lval undefined name undefined
+    LField lval _ name _ -> do
+      lval' <- scope lval
+      -- The field name we see here cannot be verified without type information
+      return $ LField lval' undefined name undefined
+    -- These expressions will be replaced with ones caring more context in subsequent phases
+    T_LVar name -> do
+      num <- current name
+      return $ LVariable num undefined
+      -- We replace all assignments that actually refer to instance fields but give precedence to local
+      -- variables (like in Java), to referencee hidden field self.<field_name> construct can be used
+      varOrField name
+        (\num' -> LVariable num' undefined)
+        (\name' -> LField (LVariable VariableThis undefined) undefined name' undefined)
 
 -- HELPERS --
 -------------

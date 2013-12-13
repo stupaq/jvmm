@@ -1,28 +1,28 @@
-{-# LANGUAGE TypeSynonymInstances #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE FlexibleInstances      #-}
 {-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE MultiParamTypeClasses  #-}
+{-# LANGUAGE ScopedTypeVariables    #-}
+{-# LANGUAGE TupleSections          #-}
+{-# LANGUAGE TypeSynonymInstances   #-}
 module Jvmm.JvmEmitter.Internal where
 import Jvmm.JvmEmitter.Output
 
+import Control.Applicative
 import Control.Exception
-import Control.Monad.Identity
 import Control.Monad.Error
+import Control.Monad.Identity
 import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Writer
-import Control.Applicative
 
-import Data.Text (pack, unpack, replace)
 import qualified Data.Char as Char
 import qualified Data.List as List
+import Data.Text (pack, replace, unpack)
 import qualified Data.Traversable as Traversable
 
-import qualified Jvmm.Errors as Err
-import Jvmm.Errors (ErrorInfoT)
 import Jvmm.Builtins
+import Jvmm.Errors (ErrorInfoT)
+import qualified Jvmm.Errors as Err
 import Jvmm.Trans.Output
 
 -- A class that holds builtins
@@ -43,8 +43,8 @@ emitTopLevelStatics env = execWriterT . Traversable.mapM processClass
 -------------------
 data EmitterState = EmitterState {
     emitterstateStackCurrent :: Int
-  , emitterstateStackMax :: Int
-  , emitterstateNextLabel :: Int
+  , emitterstateStackMax     :: Int
+  , emitterstateNextLabel    :: Int
 } deriving (Show)
 
 emitterstate0 :: EmitterState
@@ -54,7 +54,7 @@ emitterstate0 = EmitterState 0 0 0
 -------------------------
 data EmitterEnv = EmitterEnv {
     emitterenvOverrideClass :: Maybe ClassName
-  , emitterenvDebugStack :: Bool
+  , emitterenvDebugStack    :: Bool
 } deriving (Show)
 
 emitterenv0 :: EmitterEnv
@@ -189,6 +189,7 @@ element, variable :: TypeBasic -> String -> String
 element (TPrimitive TChar) = ('c':)
 element (TPrimitive TInt) = ('i':)
 element (TPrimitive TBool) = ('b':)
+element (TPrimitive TVoid) = Err.unreachable "cannot determine opcode prefix for void type"
 element (TComposed _) = ('a':)
 variable (TPrimitive _) = ('i':)
 variable (TComposed _) = ('a':)
@@ -309,7 +310,7 @@ instance Emitable Method () where
   emit Method { methodBody = SBuiltin } = return ()
   emit Method { methodBody = SInherited } = return ()
   -- Static method
-  emit method@Method { methodName = MethodName name, methodType = typ@(TypeMethod tret _ _),
+  emit Method { methodName = MethodName name, methodType = typ@(TypeMethod tret _ _),
        methodBody = stmt, methodArgs = args, methodVariables = vars, methodInstance = False } = do
     -- The prologue
     tdesc <- emit typ
@@ -342,15 +343,15 @@ instance Emitable Stmt () where
       n <- getStack
       replicateM_ n $ inss "pop" dec1
     -- Memory access
-    SStore num expr typ -> do
+    SAssign (LVariable num typ) expr -> do
       emit expr
       inssv (variable typ "store") dec1 num
-    SStoreArray num expr1 expr2 telem -> do
-      emit $ ELoad num (TComposed $ TArray telem)
+    SAssign (LArrayElement lval expr1 telem) expr2 -> do
+      emit $ toRValue lval
       emit expr1
       emit expr2
       inss (element telem "astore") dec3
-    SPutField {} -> notImplemented
+    SAssign {} -> notImplemented
     -- Control statements
     SReturn expr typ -> do
       emit expr
@@ -389,12 +390,8 @@ instance Emitable Stmt () where
     SMetaLocation loc stmts -> stmtMetaLocation' loc (mapM emit stmts)
     -- These statements will be replaced with ones caring more context in subsequent phases
     T_SDeclVar {} -> Err.unreachable x
-    T_SAssign {} -> Err.unreachable x
-    T_SAssignArr {} -> Err.unreachable x
-    T_SAssignFld {} -> Err.unreachable x
-    T_STryCatch {} -> Err.unreachable x
 
-instance Emitable Expr TypeBasic where
+instance Emitable RValue TypeBasic where
   emit x = case x of
     -- Literals
     ENull -> do
@@ -519,7 +516,7 @@ class EmitableConditional a where
     lab lend
     return (TPrimitive TBool)
 
-instance EmitableConditional Expr where
+instance EmitableConditional RValue where
   emitCond x ltrue lfalse lnext = case x of
     -- Literals
     ELitTrue -> jmp id ltrue

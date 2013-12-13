@@ -1,24 +1,23 @@
 {-# OPTIONS_GHC -fno-warn-incomplete-patterns #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE MultiParamTypeClasses  #-}
 module Jvmm.Interpreter.Internal where
 
 import qualified System.IO as IO
 
-import Control.Monad.Identity
 import Control.Monad.Error
 import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Writer
 
-import Data.Maybe (fromJust)
-import Data.Tree
-import qualified Data.Set as Set
 import qualified Data.List as List
 import qualified Data.Map as Map
+import Data.Maybe (fromJust)
+import qualified Data.Set as Set
 import qualified Data.Traversable as Traversable
+import Data.Tree
 
-import Jvmm.Errors (rethrow, ErrorInfo)
+import Jvmm.Errors (ErrorInfo, rethrow)
 import qualified Jvmm.Errors as Err
 import Jvmm.Trans.Output
 
@@ -31,8 +30,8 @@ data GCConf = GCConf {
 type StaticMethods = Map.Map (TypeComposed, MethodName) Method
 type InstancePrototypes = Map.Map TypeComposed Composite
 data RunEnv = RunEnv {
-    runenvGCConf :: GCConf
-  , runenvStatics :: StaticMethods
+    runenvGCConf    :: GCConf
+  , runenvStatics   :: StaticMethods
   , runenvInstances :: InstancePrototypes
 }
 
@@ -87,7 +86,7 @@ heap0 = Map.singleton location0 VNothing
 
 data RunState = RunState {
     runenvStack :: [StackFrame]
-  , runenvHeap :: Heap
+  , runenvHeap  :: Heap
 }
 
 runstate0 :: RunState
@@ -104,9 +103,9 @@ location0 :: Location
 location0 = 0
 
 data Composite = Composite {
-    compositeFields :: Map.Map FieldName PrimitiveValue
+    compositeFields  :: Map.Map FieldName PrimitiveValue
   , compositeMethods :: Map.Map MethodName Method
-  , compositeType :: TypeComposed
+  , compositeType    :: TypeComposed
 } deriving (Show)
 
 composite0 :: Composite
@@ -393,15 +392,15 @@ instance Interpretable Stmt () where
     SBlock stmts -> mapM_ interpret stmts
     SExpr expr -> interpret expr >> nop
     -- Memory access
-    SStore num expr _ -> interpret expr >>= store num
-    SStoreArray num expr1 expr2 _ -> do
-      ref <- load num
-      ind <- interpret expr1
+    SAssign (LVariable num _) expr -> interpret expr >>= store num
+    SAssign (LArrayElement lval expr1 _) expr2 -> do
       val <- interpret expr2
+      ind <- interpret expr1
+      ref <- interpret $ toRValue lval
       astore ref ind val
-    SPutField num _ name expr _ -> do
+    SAssign (LField lval _ name _) expr -> do
       val <- interpret expr
-      ref <- load num
+      ref <- interpret $ toRValue lval
       putfield name val ref
     -- Control statements
     SReturn expr _ -> interpret expr >>= return_
@@ -436,12 +435,8 @@ instance Interpretable Stmt () where
       mapM_ interpret stmts
     -- These statements will be replaced with ones caring more context in subsequent phases
     T_SDeclVar {} -> Err.unreachable x
-    T_SAssign {} -> Err.unreachable x
-    T_SAssignArr {} -> Err.unreachable x
-    T_SAssignFld {} -> Err.unreachable x
-    T_STryCatch {} -> Err.unreachable x
 
-instance Interpretable Expr PrimitiveValue where
+instance Interpretable RValue PrimitiveValue where
   -- Using JVMM monadic bytecode here might be misleading but during
   -- compilation process we actually turn expression into series of
   -- statements

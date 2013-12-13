@@ -1,25 +1,26 @@
-{-# LANGUAGE TypeSynonymInstances #-}
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TupleSections         #-}
+{-# LANGUAGE TypeSynonymInstances  #-}
+{-# LANGUAGE UndecidableInstances  #-}
 module Jvmm.Types.Internal where
 
-import Control.Monad.Identity
+import Control.Applicative
 import Control.Monad.Error
+import Control.Monad.Identity
 import Control.Monad.Reader
 import Control.Monad.State
 
 import Data.Int (Int32)
+import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Set as Set
-import qualified Data.List as List
 import qualified Data.Traversable as Traversable
 
-import qualified Jvmm.Errors as Err
-import Jvmm.Errors (orThrow, rethrow, ErrorInfoT)
 import Jvmm.Builtins
+import Jvmm.Errors (ErrorInfoT, orThrow, rethrow)
+import qualified Jvmm.Errors as Err
 import Jvmm.Trans.Output
 
 -- WEIRD STUFF --
@@ -58,17 +59,17 @@ membertypes0 = Map.empty
 
 data TypeEnv = TypeEnv {
     -- Type of a function currently executed
-    typeenvFunction :: Maybe TypeMethod
+    typeenvFunction     :: Maybe TypeMethod
     -- This type
-  , typeenvThis :: Maybe TypeComposed
+  , typeenvThis         :: Maybe TypeComposed
     -- Set of exceptions that are caught when throw in current context
-  , typeenvExceptions :: Set.Set TypeComposed
+  , typeenvExceptions   :: Set.Set TypeComposed
     -- Types of symbols
-  , typeenvSymbols :: Types
+  , typeenvSymbols      :: Types
     -- Definitions of types
-  , typeenvTypes :: MemberTypes
+  , typeenvTypes        :: MemberTypes
     -- Mapping from type to super
-  , typeenvSuper :: Map.Map TypeComposed TypeComposed
+  , typeenvSuper        :: Map.Map TypeComposed TypeComposed
     -- Origin of visible static methods
   , typeenvStaticOrigin :: TypeComposed
 } deriving (Show)
@@ -395,25 +396,11 @@ instance TypeCheckable Stmt where
       (expr', _) <- tcheck' expr
       return $ SExpr expr'
     -- Memory access
-    SStore num expr _ -> do
+    SAssign lval expr -> do
+      (lval', ltyp) <- tcheck' lval
       (expr', etyp) <- tcheck' expr
-      vtyp <- typeof num
-      vtyp =| etyp
-      return $ SStore num expr' vtyp
-    SStoreArray num expr1 expr2 _ -> do
-      (expr1', etyp1) <- tcheck' expr1
-      (expr2', etyp2) <- tcheck' expr2
-      TPrimitive TInt =| etyp1 `rethrow` Err.indexType
-      atyp <- typeof num
-      atyp =| TArray etyp2
-      let (TArray eltyp) = atyp
-      return $ SStoreArray num expr1' expr2' eltyp
-    SPutField num _ name expr _ -> do
-      (expr', etyp) <- tcheck' expr
-      vtyp :: TypeComposed <- typeof num
-      ftyp <- typeof' vtyp name
-      ftyp =| etyp
-      return $ SPutField num vtyp name expr' ftyp
+      ltyp =| etyp
+      return $ SAssign lval' expr'
     -- Control statements
     SReturn expr _ -> do
       (expr', etyp) <- tcheck' expr
@@ -457,15 +444,11 @@ instance TypeCheckable Stmt where
     SMetaLocation loc stmts -> stmtMetaLocation loc $ mapM tcheck stmts
     -- These statements will be replaced with ones caring more context in subsequent phases
     T_SDeclVar {} -> Err.unreachable x
-    T_SAssign {} -> Err.unreachable x
-    T_SAssignArr {} -> Err.unreachable x
-    T_SAssignFld {} -> Err.unreachable x
-    T_STryCatch {} -> Err.unreachable x
 
 class TypeCheckable' a where
   tcheck' :: a -> TypeM (a, TypeBasic)
 
-instance TypeCheckable' Expr where
+instance TypeCheckable' RValue where
   tcheck' x = case x of
     -- Literals
     ENull -> return (x, TComposed TNull)
@@ -548,4 +531,18 @@ instance TypeCheckable' Expr where
           return (EBinary opbin expr1' expr2' rett, rett)
     -- These expressions will be replaced with ones caring more context in subsequent phases
     T_EVar _ -> Err.unreachable x
+
+instance TypeCheckable' LValue where
+  tcheck' x = case x of
+    LVariable _ _ -> do
+      ELoad num typ <- fst <$> tcheck' (toRValue x)
+      return (LVariable num typ, typ)
+    LArrayElement lval _ _ -> do
+      EArrayLoad _ expr2 telem <- fst <$> tcheck' (toRValue x)
+      lval' <- fst <$> tcheck' lval
+      return (LArrayElement lval' expr2 telem, telem)
+    LField lval _ _ _ -> do
+      EGetField _ ctyp name ftyp <- fst <$> tcheck' (toRValue x)
+      lval' <- fst <$> tcheck' lval
+      return (LField lval' ctyp name ftyp, ftyp)
 

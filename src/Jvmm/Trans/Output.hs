@@ -1,23 +1,41 @@
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE TypeSynonymInstances #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE DisambiguateRecordFields #-}
+{-# LANGUAGE FlexibleContexts         #-}
+{-# LANGUAGE FlexibleInstances        #-}
+{-# LANGUAGE KindSignatures           #-}
+{-# LANGUAGE MultiParamTypeClasses    #-}
+{-# LANGUAGE RankNTypes               #-}
+{-# LANGUAGE TypeSynonymInstances     #-}
 module Jvmm.Trans.Output where
 
-import Control.Monad.Identity
+import Control.Applicative
 import Control.Monad.Error
+import Control.Monad.Identity
 
-import Data.Tree as Tree
 import Data.List as List
+import Data.Tree as Tree
 
+import Jvmm.Errors (ErrorInfo, ErrorInfoT, Location, runErrorInfoM, withLocation)
 import qualified Jvmm.Errors as Err
-import Jvmm.Errors (ErrorInfo, ErrorInfoT, runErrorInfoM, withLocation, Location)
 
--- This module provides internal representation of abstract syntax tree that
--- carries error reporting metadata, type information and many more.
--- We call this representation Abstract Program Tree to distinguish from the
--- ... that parser outputs.
+-- COMPILATION UNIT --
+----------------------
+data CompilationUnit =
+    -- Convention: (super type, constructs class from super class)
+    CompilationUnit [(TypeComposed, ClassDiff)]
+  deriving (Show)
+
+type ClassDiff = Class -> ErrorInfoT Identity Class
+
+instance Show ClassDiff where
+  show diff = show $ runErrorInfoM $ diff Class {
+      -- Since we are way before resolving inheritance hierarchy here,
+      -- we are not aware of some class' traits.
+        classType = TObject
+      , classSuper = TObject
+      , classFields = []
+      , classAllMethods = []
+      , classLocation = Err.Unknown
+    }
 
 -- CLASS HIERARCHY --
 ---------------------
@@ -26,11 +44,11 @@ type ClassHierarchy = Tree.Tree Class
 -- CLASS --
 -----------
 data Class = Class {
-    classType :: TypeComposed
-  , classSuper :: TypeComposed
-  , classFields :: [Field]
+    classType       :: TypeComposed
+  , classSuper      :: TypeComposed
+  , classFields     :: [Field]
   , classAllMethods :: [Method]
-  , classLocation :: Location
+  , classLocation   :: Location
 } deriving (Show)
 
 classStaticMethods, classInstanceMethods :: Class -> [Method]
@@ -38,25 +56,25 @@ classStaticMethods = List.filter (not . methodInstance) . classAllMethods
 classInstanceMethods = List.filter methodInstance . classAllMethods
 
 data Field = Field {
-    fieldType :: TypeBasic
-  , fieldName :: FieldName
+    fieldType   :: TypeBasic
+  , fieldName   :: FieldName
   , fieldOrigin :: TypeComposed
 } deriving (Show)
 
 data Method = Method {
-    methodType :: TypeMethod
-  , methodName :: MethodName
-  , methodArgs :: [Variable]
-  , methodBody :: Stmt
-  , methodOrigin :: TypeComposed
-  , methodLocation :: Location
+    methodType      :: TypeMethod
+  , methodName      :: MethodName
+  , methodArgs      :: [Variable]
+  , methodBody      :: Stmt
+  , methodOrigin    :: TypeComposed
+  , methodLocation  :: Location
   , methodVariables :: [Variable]
-  , methodInstance :: Bool
+  , methodInstance  :: Bool
 } deriving (Show)
 
 data Variable = Variable {
     variableType :: TypeBasic
-  , variableNum :: VariableNum
+  , variableNum  :: VariableNum
   , variableName :: VariableName
 } deriving (Show)
 
@@ -91,18 +109,16 @@ newtype MethodName = MethodName String
 data Stmt =
     SEmpty
   | SBlock [Stmt]
-  | SExpr Expr
+  | SExpr RValue
   -- Memory access
-  | SStore VariableNum Expr TypeBasic
-  | SStoreArray VariableNum Expr Expr TypeBasic
-  | SPutField VariableNum TypeComposed FieldName Expr TypeBasic
+  | SAssign LValue RValue
   -- Control statements
-  | SReturn Expr TypeBasic
+  | SReturn RValue TypeBasic
   | SReturnV
-  | SIf Expr Stmt
-  | SIfElse Expr Stmt Stmt
-  | SWhile Expr Stmt
-  | SThrow Expr
+  | SIf RValue Stmt
+  | SIfElse RValue Stmt Stmt
+  | SWhile RValue Stmt
+  | SThrow RValue
   | STryCatch Stmt TypeComposed VariableNum Stmt
   -- Special function bodies
   | SBuiltin
@@ -111,11 +127,84 @@ data Stmt =
   | SMetaLocation Location [Stmt]
   -- These statements will be replaced with ones caring more context in subsequent phases
   | T_SDeclVar TypeBasic VariableName
-  | T_SAssign VariableName Expr
-  | T_SAssignArr VariableName Expr Expr
-  | T_SAssignFld VariableName FieldName Expr
   | T_STryCatch Stmt TypeComposed VariableName Stmt
   deriving (Show)
+
+-- EXPRESSIONS --
+-----------------
+data RValue =
+  -- Literals
+    ENull
+  | ELitTrue
+  | ELitFalse
+  | ELitChar Char
+  | ELitString String
+  | ELitInt Integer
+  -- Memory access
+  | ELoad VariableNum TypeBasic
+  | EArrayLoad RValue RValue TypeBasic
+  | EGetField RValue TypeComposed FieldName TypeBasic
+  -- Method calls
+  | EInvokeStatic TypeComposed MethodName TypeMethod [RValue]
+  | EInvokeVirtual RValue TypeComposed MethodName TypeMethod [RValue]
+  -- Object creation
+  | ENewObj TypeComposed
+  | ENewArr TypeBasic RValue
+  -- Operations
+  | EUnary OpUn RValue TypeBasic
+  | EBinary OpBin RValue RValue TypeBasic
+  -- These expressions will be replaced with ones caring more context in subsequent phases
+  | T_EVar VariableName
+  deriving (Show)
+
+data LValue =
+    LVariable VariableNum TypeBasic
+  | LArrayElement LValue RValue TypeBasic
+  | LField LValue TypeComposed FieldName TypeBasic
+  -- These expressions will be replaced with ones caring more context in subsequent phases
+  | T_LVar VariableName
+  deriving (Show)
+
+class InheritsRValue a where
+  toRValue :: a -> RValue
+instance InheritsRValue RValue where
+  toRValue = Prelude.id
+instance InheritsRValue LValue where
+  toRValue (LVariable num typ) = ELoad num typ
+  toRValue (LArrayElement lval expr typ) = EArrayLoad (toRValue lval) expr typ
+  toRValue (LField lval ctyp name typ) = EGetField (toRValue lval) ctyp name typ
+  toRValue (T_LVar name) = T_EVar name
+
+-- This is a very restricted morphism, use wisely
+toLValue :: RValue -> LValue
+toLValue (ELoad num typ) = LVariable num typ
+toLValue (EArrayLoad rval expr2 typ) = LArrayElement (toLValue rval) expr2 typ
+toLValue (EGetField rval ctyp name typ) = LField (toLValue rval) ctyp name typ
+toLValue (T_EVar name) = T_LVar name
+toLValue _ = Err.unreachable "provided expression is not a l-value"
+
+-- OPERATIONS --
+----------------
+data OpUn =
+   OuNeg
+ | OuNot
+  deriving (Show, Eq, Ord)
+
+data OpBin =
+   ObTimes
+ | ObDiv
+ | ObMod
+ | ObPlus
+ | ObMinus
+ | ObLTH
+ | ObLEQ
+ | ObGTH
+ | ObGEQ
+ | ObEQU
+ | ObNEQ
+ | ObAnd
+ | ObOr
+  deriving (Show, Eq, Ord)
 
 -- TYPES --
 -----------
@@ -163,58 +252,6 @@ instance InheritsType TypePrimitive where
 instance InheritsType TypeComposed where
   toType = toType . TComposed
 
--- EXPRESSIONS --
------------------
-data Expr =
-  -- Literals
-    ENull
-  | ELitTrue
-  | ELitFalse
-  | ELitChar Char
-  | ELitString String
-  | ELitInt Integer
-  -- Memory access
-  | ELoad VariableNum TypeBasic
-  | EArrayLoad Expr Expr TypeBasic
-  | EGetField Expr TypeComposed FieldName TypeBasic
-  -- Method calls
-  | EInvokeStatic TypeComposed MethodName TypeMethod [Expr]
-  | EInvokeVirtual Expr TypeComposed MethodName TypeMethod [Expr]
-  -- Object creation
-  | ENewObj TypeComposed
-  | ENewArr TypeBasic Expr
-  -- Operations
-  | EUnary OpUn Expr TypeBasic
-  | EBinary OpBin Expr Expr TypeBasic
-  -- These expressions will be replaced with ones caring more context in subsequent phases
-  | T_EVar VariableName
-  deriving (Show)
-
--- BINARY OPERATIONS --
------------------------
-data OpUn =
-   OuNeg
- | OuNot
-  deriving (Show, Eq, Ord)
-
--- UNARY OPERATIONS --
-----------------------
-data OpBin =
-   ObTimes
- | ObDiv
- | ObMod
- | ObPlus
- | ObMinus
- | ObLTH
- | ObLEQ
- | ObGTH
- | ObGEQ
- | ObEQU
- | ObNEQ
- | ObAnd
- | ObOr
-  deriving (Show, Eq, Ord)
-
 -- AUXILIARY --
 ---------------
 stmtMetaLocation :: (MonadError ErrorInfo m) => Location -> m [Stmt] -> m Stmt
@@ -225,24 +262,9 @@ stmtMetaLocation loc action = do
 stmtMetaLocation' :: (MonadError ErrorInfo m, Functor m) => Location -> m [a] -> m ()
 stmtMetaLocation' loc action = void $ stmtMetaLocation loc (action >> return [])
 
--- TOP LEVEL --
----------------
-data CompilationUnit =
-  -- Type is a superclass,
-  -- ClassDiff maps superclass into class
-  CompilationUnit [(TypeComposed, ClassDiff)]
-  deriving (Show)
-
-type ClassDiff = Class -> ErrorInfoT Identity Class
-
-instance Show ClassDiff where
-  show diff = show $ runErrorInfoM $ diff Class {
-      -- Since we are way before resolving inheritance hierarchy here,
-      -- we are not aware of some class' traits.
-        classType = TObject
-      , classSuper = TObject
-      , classFields = []
-      , classAllMethods = []
-      , classLocation = Err.Unknown
-    }
+-- PORN --
+----------
+infixl 4 <#>
+(<#>) :: forall (f :: * -> *) a b. Applicative f => f (a -> b) -> a -> f b
+(<#>) x y = x <*> pure y
 

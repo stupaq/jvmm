@@ -49,8 +49,7 @@ class Edges {
             destinations = expand(destinations);
         if (nextFree >= destinations.length)
             error();
-        int[] tmp = destinations;
-        tmp[nextFree] = dest;
+        destinations[nextFree] = dest;
         nextFree++;
     }
 }

@@ -1,5 +1,5 @@
+{-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE TypeSynonymInstances #-}
-{-# LANGUAGE FlexibleInstances #-}
 module Jvmm.Verifier.Internal where
 
 import Control.Monad.Identity
@@ -7,8 +7,8 @@ import Control.Monad.State
 import qualified Data.Traversable as Traversable
 
 import Jvmm.Builtins (isEntrypoint)
+import Jvmm.Errors (ErrorInfoT, rethrow)
 import qualified Jvmm.Errors as Err
-import Jvmm.Errors (rethrow, ErrorInfoT)
 import Jvmm.Trans.Output
 
 -- THE STATE --
@@ -17,7 +17,7 @@ data VerifierState = VerifierState {
     -- This keeps trach whether functions actually returned
     verifierstateReturned :: Bool
     -- Determine whether entrypoint is present
-  , verifierstateMain :: Bool
+  , verifierstateMain     :: Bool
 }
 
 verifierstate0 :: VerifierState
@@ -117,10 +117,6 @@ instance Verifiable Stmt where
     SMetaLocation loc stmts -> Err.withLocation loc (mapM_ verify stmts)
     -- These statements will be replaced with ones caring more context in subsequent phases
     T_SDeclVar {} -> Err.unreachable x
-    T_SAssign {} -> Err.unreachable x
-    T_SAssignArr {} -> Err.unreachable x
-    T_SAssignFld {} -> Err.unreachable x
-    T_STryCatch {} -> Err.unreachable x
     -- Nothing to do here
     _ -> return ()
     where
