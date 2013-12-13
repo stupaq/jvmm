@@ -412,14 +412,10 @@ instance Interpretable Stmt () where
     SIfElse expr stmt1 stmt2 -> do
       VBool val <- interpret expr
       interpret $ if val then stmt1 else stmt2
-    -- Note that (once again) there is no lexical variable hiding, after one
-    -- iteration of a loop all variables declared inside fall out of the scope,
-    -- which means we can dispose them.
     SWhile expr stmt -> do
       VBool val <- interpret expr
       -- This is a bit hackish, but there is no reason why it won't work and we
       -- want to apply normal chaining rules without too much ifology
-      -- Note that GC works fine here because stmt creates heap objects in its own scope
       when val $ interpret $ SBlock [stmt, SWhile expr stmt]
     SThrow expr -> do
       ref <- interpret expr

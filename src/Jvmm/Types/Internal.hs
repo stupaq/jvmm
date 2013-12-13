@@ -73,6 +73,7 @@ data TypeEnv = TypeEnv {
   , typeenvStaticOrigin :: TypeComposed
 } deriving (Show)
 
+typeenv0 :: TypeEnv
 typeenv0 = TypeEnv {
     typeenvFunction = Nothing
   , typeenvThis = Nothing
@@ -80,6 +81,7 @@ typeenv0 = TypeEnv {
   , typeenvSymbols = types0
   , typeenvTypes = membertypes0
   , typeenvSuper = Map.empty
+  , typeenvStaticOrigin = undefined
 }
 
 typeenvNewSymbol :: Symbol -> Type -> TypeEnv -> TypeEnv
@@ -95,11 +97,11 @@ collectTypes :: ClassHierarchy -> ErrorInfoT Identity TypeEnv
 collectTypes classes = fmap snd $ runStateT (Traversable.mapM decClass classes) typeenv0
   where
     decClass :: Class -> StateT TypeEnv (ErrorInfoT Identity) ()
-    decClass clazz@Class { classType = typ, classSuper = super } = do
+    decClass clazz@Class { classType = typ } = do
       when (isBuiltinType typ) $ throwError (Err.redeclaredType typ)
       modify $ \env -> env {
           typeenvTypes = Map.insert typ typeDef (typeenvTypes env)
-        , typeenvSuper = Map.insert typ super (typeenvSuper env)
+        , typeenvSuper = Map.insert typ (classSuper clazz) (typeenvSuper env)
         , typeenvSymbols = Map.fromList staticMethods
       }
       where
@@ -108,10 +110,6 @@ collectTypes classes = fmap snd $ runStateT (Traversable.mapM decClass classes) 
         typeDef = Map.fromList $ fields ++ methods
         staticMethods = List.map (\x -> (SFunction $ methodName x, toType $ methodType x)) $ classStaticMethods clazz
 
--- Typing is fully static. TObject type is a superclass of every non-primitive.
--- Note that after scope resolution we can't throw undeclared errors (also for
--- user defined types)
-
 -- TYPE MONAD --
 ----------------
 type TypeM = ReaderT TypeEnv (ErrorInfoT Identity)
@@ -119,7 +117,7 @@ runTypeM :: TypeEnv -> TypeM a -> ErrorInfoT Identity a
 runTypeM env m = runReaderT m env
 
 lookupM :: (Ord a) => a -> Map.Map a b -> TypeM b
-lookupM key map = case Map.lookup key map of
+lookupM key aMap = case Map.lookup key aMap of
   Just val -> return val
   Nothing -> throwError noMsg
 
@@ -203,7 +201,7 @@ throws typ = do
   unless (Set.member typ excepts) $ throwError $ Err.uncaughtException typ
 
 called :: TypeMethod -> [Variable] -> [Variable] -> TypeM a -> TypeM a
-called typ@(TypeMethod returnType argumentTypes exceptions) arguments localVariables action = do
+called typ@(TypeMethod _ argumentTypes exceptions) arguments localVariables action = do
   forM_ argumentTypes $ \argt -> notAVoid (toType argt) `rethrow` Err.voidArg
   catches exceptions . declareAll arguments . declareAll localVariables . enterFunction typ $ action
 called _ _ _ _ = Err.unreachable "attempt to call not a functional type"
@@ -295,6 +293,7 @@ instance Arithmetizable TypeMethod where
         zipWithM_ (=|) argt1 argt2
         ok
       _ -> bad
+  super = Err.unreachable "method type is not hierarchical"
 
 instance Arithmetizable TypeBasic where
   (=|) typ1 typ2 = do
@@ -316,6 +315,7 @@ instance Arithmetizable TypePrimitive where
       (TBool, TBool) -> ok
       (TVoid, TVoid) -> ok
       _ -> bad
+  super = Err.unreachable "primitive type is not hierarchical"
 
 instance Arithmetizable TypeComposed where
   (=|) typ1 typ2 = do
@@ -408,7 +408,7 @@ instance TypeCheckable Stmt where
       atyp =| TArray etyp2
       let (TArray eltyp) = atyp
       return $ SStoreArray num expr1' expr2' eltyp
-    SPutField num undefined name expr _ -> do
+    SPutField num _ name expr _ -> do
       (expr', etyp) <- tcheck' expr
       vtyp :: TypeComposed <- typeof num
       ftyp <- typeof' vtyp name

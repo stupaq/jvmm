@@ -62,10 +62,10 @@ checkEntrypoint _ = return ()
 
 -- TREE TRANSVERSAL --
 ----------------------
--- It is critical for verifier not to performa any simplifications (for the sake of verification)
+-- It is critical for verifier not to perform any simplifications (for the sake of verification)
 -- because they cannot be persisted in the tree (in other words verifier is read-only).
 -- Result of any semantic transformation that might validate/invalidate program MUST be present
--- in APT in explicit for for further layers (e.g. JVM emitter).
+-- in APT in explicit form for further layers (e.g. JVM emitter).
 class Verifiable a where
   verify :: a -> VerifierM ()
 

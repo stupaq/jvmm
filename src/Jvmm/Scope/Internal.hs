@@ -101,7 +101,9 @@ enterMethod action = newLocalScope action `finally` resetDeclarationId
 -- SCOPE QUERING --
 ------------------------------
 class Resolvable a where
+  -- Resolves reference dynamically (in local scope or instance scope)
   dynamic :: a -> ScopeM ()
+  -- Resolves reference statically (in static scope)
   static :: a -> ScopeM ()
   tryDynamic, tryStatic :: a -> ScopeM Bool
   tryDynamic x = (dynamic x >> return True) `orReturn` False
@@ -164,8 +166,11 @@ isStatic name = do
 -- SCOPE UPDATING --
 --------------------
 class Redeclarable a where
+  -- Declares reference
   declare :: a -> ScopeM VariableNum
+  -- Resolves reference in current scope
   current :: a -> ScopeM VariableNum
+  -- Resolves reference in the scope from parent block (before entering current scope)
   parent :: a -> ScopeM VariableNum
   tryCurrent, tryParent :: a -> ScopeM Bool
   tryCurrent x = (current x >> return True) `orReturn` False
