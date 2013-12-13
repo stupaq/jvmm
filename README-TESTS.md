@@ -17,6 +17,7 @@ Test cases that MUST FAIL in current implementation:
         -   shapes
         -   list
     *   test-jvmm
+        -   dfs
         -   exceptions001
         -   exceptions002
         -   exceptions003

@@ -1,0 +1,90 @@
+
+class Graph {
+    Edges[] vertices;
+
+    void init(int size) {
+        Edges[] tmp = new Edges[size];
+        int i = 0;
+        while (i < size) {
+            tmp[i] = new Edges;
+            i++;
+        }
+        vertices = tmp;
+    }
+
+    void add(int src, int dest) {
+        (vertices[src]).add(dest);
+        (vertices[dest]).add(src);
+    }
+
+    void dfs(int src) {
+        dfsRec(src, new boolean[vertices.length]);
+    }
+
+    void dfsRec(int src, boolean[] visited) {
+        if (visited[src]) {
+            return;
+        }
+        visited[src] = true;
+        printString("visiting:");
+        printInt(src);
+        Edges edges = vertices[src];
+        int i = edges.nextFree;
+        int[] neigh = edges.destinations;
+        while (i > 0) {
+            i--;
+            printString("considering:");
+            printInt(neigh[i]);
+            dfsRec(neigh[i], visited);
+        }
+    }
+}
+
+class Edges {
+    int[] destinations;
+    int nextFree; // 0 by default
+
+    void add(int dest) {
+        if (destinations == null || nextFree >= destinations.length)
+            destinations = expand(destinations);
+        if (nextFree >= destinations.length)
+            error();
+        int[] tmp = destinations;
+        tmp[nextFree] = dest;
+        nextFree++;
+    }
+}
+
+int[] expand(int[] tab) {
+    int[] res;
+    if (tab == null)
+        res = new int[5];
+    else {
+        res = new int[tab.length * 2];
+        int i = 0;
+        for (int x : tab) {
+            res[i] = x;
+            i++;
+        }
+    }
+    return res;
+}
+
+int main () {
+    Graph g = new Graph;
+    g.init(9);
+    g.add(0, 1);
+    g.add(1, 2);
+    g.add(2, 3);
+    g.add(3, 4);
+    g.add(4, 5);
+    g.add(5, 6);
+    g.add(5, 2);
+    g.add(3, 6);
+    g.add(7, 8);
+    printString("-------");
+    g.dfs(8);
+    printString("-------");
+    g.dfs(1);
+    return 0;
+}
