@@ -9,9 +9,29 @@ Tests that are relevant to the current implementation are located in good/, bad/
 
 Test cases that MUST FAIL in current implementation:
 +   JVM backend
-    *   test-jvmm (the following tests fail due to disabled exceptions)
-        - exceptions001
-        - exceptions002
-        - gchiddenstack
+    *   test-latte
+        -   counter
+        -   linked
+        -   points
+        -   queue
+        -   shapes
+        -   list
+    *   test-jvmm
+        -   exceptions001
+        -   exceptions002
+        -   exceptions003
+        -   gchiddenstack
+        -   non-static_prec
+        -   this_semantics
+    *   test-mrjp
+        -   bfs
+        -   calculator
+        -   lista2Kierunkowa
+        -   mergeSort
+        -   tail_call_optimization
+        -   polymorphism
++   INTERPRETER backend
+    *   test-mrjp
+        -   tail_call_optimization
 
 All other test cases MUST PASS with current implementation.
