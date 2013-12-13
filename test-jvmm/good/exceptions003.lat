@@ -1,0 +1,48 @@
+int main () {
+    int a = 0;
+    while (a < 2) {
+      try {
+        try {
+            if (a == 0) {
+                throw c(3);
+            } else {
+                throw d(4);
+            }
+        } catch (C e) {
+          e.print();
+        }
+      } catch (D e) {
+        e.print();
+      }
+      a++;
+    }
+    return 0;
+}
+
+C c(int x) {
+    C c = new C;
+    c.x = x;
+    return c;
+}
+
+D d(int x) {
+    D d = new D;
+    d.x = x;
+    return d;
+}
+
+class C {
+    int x;
+    void print() {
+        printString("C");
+        printInt(x);
+    }
+}
+
+class D {
+    int x;
+    void print() {
+        printString("D");
+        printInt(x);
+    }
+}
