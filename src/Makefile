@@ -29,4 +29,4 @@ distclean: clean
 	-rm -f Syntax/*.{tex,txt,pdf,x,y,info}
 	-rm -f $(MAIN)
 
-.PHONY: clean distclean $(MAIN)
+.PHONY: parserclean clean distclean $(MAIN)

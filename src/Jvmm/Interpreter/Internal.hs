@@ -62,9 +62,10 @@ buildInstances = collect composite0
     collect super (Node clazz@(Class { classType = typ }) children) =
       let composite = collectClass super clazz
       in Map.insert typ composite $ Map.unions $ List.map (collect composite) children
-    collectClass super (Class { classFields = fields, classAllMethods = methods }) = Composite {
-          compositeFields = List.foldr insertField (compositeFields super) fields
-        , compositeMethods = List.foldr insertMethod (compositeMethods super) methods
+    collectClass super clazz = Composite {
+          compositeFields = foldr insertField (compositeFields super) $ classFields clazz
+        , compositeMethods = foldr insertMethod (compositeMethods super) $ classAllMethods clazz
+        , compositeType = classType clazz
       }
       where
         insertField (Field { fieldType = typ, fieldName = name }) = Map.insert name (defaultValue typ)
@@ -105,12 +106,14 @@ location0 = 0
 data Composite = Composite {
     compositeFields :: Map.Map FieldName PrimitiveValue
   , compositeMethods :: Map.Map MethodName Method
+  , compositeType :: TypeComposed
 } deriving (Show)
 
 composite0 :: Composite
 composite0 = Composite {
     compositeFields = Map.empty
   , compositeMethods = Map.empty
+  , compositeType = undefined
 }
 
 type Array = Map.Map Int PrimitiveValue
@@ -143,7 +146,7 @@ nullReference = VRef location0
 
 data ReferencedValue =
   -- Things stored on heap are accessible through references
-    VArray Array
+    VArray Array TypeBasic
   | VString String
   | VObject Composite
   | VNothing
@@ -156,6 +159,12 @@ defaultValue typ = case typ of
   TPrimitive TBool -> VBool False
   TPrimitive TVoid -> VVoid
   TComposed _ -> nullReference
+
+runtimeType :: ReferencedValue -> TypeComposed
+runtimeType (VString _) = TString
+runtimeType (VArray _ typ) = TArray typ
+runtimeType (VObject composite) = compositeType composite
+runtimeType VNothing = Err.unreachable "nothing has no type"
 
 -- THE MONAD --
 ---------------
@@ -210,8 +219,8 @@ update (VRef loc) val = modify (\st -> st { runenvHeap = Map.insert loc val (run
 
 -- GARBAGE COLLECTION --
 ------------------------
--- Allows running GC in between statements, might silently refuse to make a gc
--- phase if the heap is small enough
+-- Allows running GC in between statements, might silently refuse to make a gc phase if the heap is small enough.
+-- This can only be called when there is no pending return or exception popping out the stack.
 runGC :: InterpreterM ()
 runGC = do
   heap <- gets runenvHeap
@@ -248,7 +257,7 @@ compactHeap pinned heap =
             black' = Set.insert loc black
             grey''' = case Map.lookup loc heap of
               Nothing -> error $ Err.danglingReference loc
-              Just (VArray arr) -> Map.fold (flip extract) grey' arr
+              Just (VArray arr _) -> Map.fold (flip extract) grey' arr
               Just (VObject obj) -> Map.fold (flip extract) grey' (compositeFields obj)
               -- We do not recurse (add to grey) in all other cases
               _ -> grey'
@@ -277,7 +286,7 @@ load num = gets (fromJust . Map.lookup num . head . runenvStack)
 
 aload :: PrimitiveValue -> PrimitiveValue -> InterpreterM PrimitiveValue
 aload ref (VInt ind) = do
-  VArray arr <- deref ref
+  VArray arr _ <- deref ref
   case Map.lookup ind arr of
     Nothing -> throwError (RError $ Err.indexOutOfBounds ind)
     Just val -> return val
@@ -290,9 +299,9 @@ store num val = do
 
 astore :: PrimitiveValue -> PrimitiveValue -> PrimitiveValue -> InterpreterM ()
 astore ref (VInt ind) val = do
-  VArray arr <- deref ref
+  VArray arr typ <- deref ref
   unless (0 <= ind && ind < Map.size arr) $ throwError (RError $ Err.indexOutOfBounds ind)
-  update ref (VArray $ Map.insert ind val arr)
+  update ref $ VArray (Map.insert ind val arr) typ
   runGC
 
 invokestatic :: TypeComposed -> MethodName -> [PrimitiveValue] -> InterpreterM ()
@@ -330,10 +339,10 @@ return'_ = return_ VVoid
 newarray :: TypeBasic -> PrimitiveValue -> InterpreterM PrimitiveValue
 newarray typ (VInt len) = do
   let val = defaultValue typ
-  alloc $ VArray $ foldl (\m i -> Map.insert i val m) Map.empty [0..(len - 1)]
+  alloc $ VArray (foldl (\m i -> Map.insert i val m) Map.empty [0..(len - 1)]) typ
 
 arraylength :: PrimitiveValue -> InterpreterM PrimitiveValue
-arraylength ref = deref ref >>= (\(VArray arr) -> return $ VInt $ Map.size arr)
+arraylength ref = deref ref >>= (\(VArray arr _) -> return $ VInt $ Map.size arr)
 
 newobject :: TypeComposed -> InterpreterM PrimitiveValue
 newobject ctyp = do
@@ -343,7 +352,7 @@ newobject ctyp = do
 getfield :: FieldName -> PrimitiveValue -> InterpreterM PrimitiveValue
 -- Types are already checked, we can simply get value from a map
 getfield name ref = deref ref >>= \obj -> case obj of
-    VArray _ -> arraylength ref
+    VArray _ _ -> arraylength ref
     VString str -> return $ VInt $ length str
     VObject composite -> return $ fromJust $ Map.lookup name $ compositeFields composite
     _ -> Err.unreachable obj
@@ -351,7 +360,7 @@ getfield name ref = deref ref >>= \obj -> case obj of
 putfield :: FieldName -> PrimitiveValue -> PrimitiveValue -> InterpreterM ()
 -- Types are already checked, we can simply store value in a map
 putfield name@(FieldName y) val ref = deref ref >>= \x -> case (x, y) of
-    (VArray _, "length") -> throwError (RError $ Err.isConstant name)
+    (VArray _ _, "length") -> throwError (RError $ Err.isConstant name)
     (VString _, "length") -> throwError (RError $ Err.isConstant name)
     (VObject composite, _) -> do
       update ref (VObject $ composite {
@@ -415,11 +424,13 @@ instance Interpretable Stmt () where
     SThrow expr -> do
       ref <- interpret expr
       throw ref
-    STryCatch stmt1 _ num stmt2 -> interpret stmt1 `catchError` \e -> case e of
+    STryCatch stmt1 typ num stmt2 -> interpret stmt1 `catchError` \e -> case e of
         RException val -> do
-          store num val
-          interpret stmt2
-        err -> throwError err
+          obj <- deref val
+          if runtimeType obj == typ
+          then store num val >> interpret stmt2
+          else throwError e
+        _ -> throwError e
     -- Special function bodies
     SBuiltin -> Err.unreachable x
     SInherited -> Err.unreachable x
