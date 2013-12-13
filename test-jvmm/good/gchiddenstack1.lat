@@ -1,7 +1,7 @@
 int main() {
   string hidden = "hidden OK";
-  checkHidden(100);
-  string r = checkReturn(100);
+  checkHidden(20);
+  string r = checkReturn(21);
   printString(r);
   printString(hidden);
   return 0;

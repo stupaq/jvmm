@@ -26,8 +26,7 @@ separator Argument ",";
 NoExceptions. Exceptions ::= ;
 
 -- EXTENSIONS/
--- This extension is termporarily disabled
-internal Exceptions.   Exceptions ::= "throws" [TypeComposed];
+Exceptions.   Exceptions ::= "throws" [TypeComposed];
 -- /EXTENSIONS
 
 -- CLASS --
@@ -84,10 +83,9 @@ separator nonempty TypePrimitive ",";
 ----------------
 
 -- EXTENSIONS/
--- This extension is termporarily disabled
-internal SThrow.         Stmt ::= "throw" Expr Semicolon;
+SThrow.         Stmt ::= "throw" Expr Semicolon;
 
-internal STryCatch.      Stmt ::= "try" Stmt "catch" "(" TypeComposed Ident ")" Stmt;
+STryCatch.      Stmt ::= "try" Stmt "catch" "(" TypeComposed Ident ")" Stmt;
 -- /EXTENSIONS
 
 SBlock.         Stmt ::= LeftBrace [Stmt] RightBrace;
