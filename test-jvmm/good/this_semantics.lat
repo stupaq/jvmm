@@ -2,7 +2,8 @@ int main() {
   int a = show();
   Show instance = new Show;
   string s = instance.show();
-  return a;
+  printInt(a);
+  return 0;
 }
 
 int show() {

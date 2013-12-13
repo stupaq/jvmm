@@ -62,6 +62,8 @@ function assert_exec() {
     assert_status $?
 }
 
+TotalCount=0
+FailsCount=0
 function test_result() {
     echo
     TotalCount=`expr $TotalCount + 1`
@@ -71,6 +73,10 @@ function test_result() {
     return $1
 }
 
+function test_prepare() {
+    rm -f $compile_output $exec_output $exec_error
+}
+
 # reporting
 function show_results() {
     if [[ $2 == -*c* || $2 == -*v* ]]; then
@@ -78,6 +84,10 @@ function show_results() {
         cat "$compile_output" 2>/dev/null
     fi
     if [[ $2 == -*o* || $2 == -*v* ]]; then
+        echo -e ":: OUTPUT (difference):"
+        diff "$exec_output" "${1%.*}.output"
+    fi
+    if [[ $2 == -*oo* || $2 == -*v* ]]; then
         echo -e ":: OUTPUT (actual):"
         cat "$exec_output" 2>/dev/null
         echo -e ":: OUTPUT (expected):"
@@ -100,6 +110,7 @@ function show_results() {
 # testers
 function testcase_interpreter() {
   [[ $2 == *I* || $2 == *A* ]] || return 0
+  test_prepare
 
   Input="${1%.*}.input"
   [[ -f $Input ]] || Input=/dev/null
@@ -123,6 +134,7 @@ function testcase_interpreter() {
 
 function testcase_jvm() {
   [[ $2 == *J* || $2 == *A* ]] || return 0
+  test_prepare
 
   Input="${1%.*}.input"
   [[ -f $Input ]] || Input=/dev/null
@@ -146,6 +158,7 @@ function testcase_jvm() {
 
 function testcase_check() {
   [[ $2 == *C* || $2 == *A* ]] || return 0
+  test_prepare
 
   echo -ne "CHECK\t$1: "
   $compile_check $1 2>$compile_output
@@ -163,6 +176,7 @@ function testcase_check() {
 
 function testcase_parse() {
   [[ $2 == *P* || $2 == *A* ]] || return 0
+  test_prepare
 
   echo -ne "PARSE\t$1: "
   $compile_parse $1 2>$compile_output
@@ -181,9 +195,6 @@ function testcase_parse() {
 
 # main()
 if [[ $# -eq 0 || $1 == -* ]]; then
-  TotalCount=0
-  FailsCount=0
-
   # run all found tests
   for f in $tests_parse; do
     testcase_parse $f $1
@@ -202,6 +213,7 @@ if [[ $# -eq 0 || $1 == -* ]]; then
   echo -e "FAILED: $FailsCount\tTOTAL:  $TotalCount"
   exit $FailsCount
 else
+  # find test
   File=
   for f in $1 `$command_find -path "*$1*"`; do
     [[ -f $f ]] && File=$f;

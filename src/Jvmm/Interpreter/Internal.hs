@@ -1,7 +1,6 @@
 {-# OPTIONS_GHC -fno-warn-incomplete-patterns #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FunctionalDependencies #-}
-{-# LANGUAGE LambdaCase #-}
 module Jvmm.Interpreter.Internal where
 
 import qualified System.IO as IO
@@ -13,11 +12,13 @@ import Control.Monad.State
 import Control.Monad.Writer
 
 import Data.Maybe (fromJust)
+import Data.Tree
 import qualified Data.Set as Set
+import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Traversable as Traversable
 
-import Jvmm.Errors (ErrorInfo)
+import Jvmm.Errors (rethrow, ErrorInfo)
 import qualified Jvmm.Errors as Err
 import Jvmm.Trans.Output
 
@@ -48,15 +49,27 @@ buildRunEnv hierarchy =
 buildStatics :: ClassHierarchy -> StaticMethods
 buildStatics hierarchy = execWriter (Traversable.mapM collect hierarchy)
   where
-    collect :: Class -> WriterT StaticMethods Identity ()
-    collect (Class { classAllMethods = methods, classType = typ@TObject }) = forM_ methods $ \case
+    collect (Class { classAllMethods = methods, classType = typ@TObject }) =
+      forM_ methods $ \x -> case x of
         method@Method { methodInstance = False } -> tell (Map.singleton (typ, methodName method) method)
         _ -> return ()
     -- We do not support static methods defined in classes other than TObject
     collect _ = return ()
 
 buildInstances :: ClassHierarchy -> InstancePrototypes
-buildInstances = undefined -- keep super in state and emit to writer
+buildInstances = collect composite0
+  where
+    collect super (Node clazz@(Class { classType = typ }) children) =
+      let composite = collectClass super clazz
+      in Map.insert typ composite $ Map.unions $ List.map (collect composite) children
+    collectClass super (Class { classFields = fields, classAllMethods = methods }) = Composite {
+          compositeFields = List.foldr insertField (compositeFields super) fields
+        , compositeMethods = List.foldr insertMethod (compositeMethods super) methods
+      }
+      where
+        insertField (Field { fieldType = typ, fieldName = name }) = Map.insert name (defaultValue typ)
+        insertMethod (Method { methodBody = SInherited }) = Prelude.id
+        insertMethod method@(Method { methodName = name }) = Map.insert name method
 
 -- RUNTIME STATE --
 -------------------
@@ -65,7 +78,7 @@ stackframe0 :: StackFrame
 stackframe0 = Map.empty
 
 mapHead :: (a -> a) -> [a] -> [a]
-mapHead fun (x:xs) = (fun x:xs)
+mapHead fun (x:xs) = fun x:xs
 
 type Heap = Map.Map Location ReferencedValue
 heap0 :: Heap
@@ -90,12 +103,14 @@ location0 :: Location
 location0 = 0
 
 data Composite = Composite {
-    fields :: Map.Map FieldName PrimitiveValue
+    compositeFields :: Map.Map FieldName PrimitiveValue
+  , compositeMethods :: Map.Map MethodName Method
 } deriving (Show)
 
 composite0 :: Composite
 composite0 = Composite {
-    fields = Map.empty
+    compositeFields = Map.empty
+  , compositeMethods = Map.empty
 }
 
 type Array = Map.Map Int PrimitiveValue
@@ -134,8 +149,8 @@ data ReferencedValue =
   | VNothing
   deriving (Show)
 
-defaultValue :: TypeBasic -> InterpreterM PrimitiveValue
-defaultValue typ = return $ case typ of
+defaultValue :: TypeBasic -> PrimitiveValue
+defaultValue typ = case typ of
   TPrimitive TInt -> VInt 0
   TPrimitive TChar -> VChar '\0'
   TPrimitive TBool -> VBool False
@@ -155,7 +170,7 @@ runInterpreterM r m = runStateT (runErrorT (runReaderT m r)) runstate0
 -- Executes given action in a new 'stack frame', restores old one afterwards.
 newFrame :: InterpreterM a -> InterpreterM a
 newFrame action = do
-  modify (\st -> st { runenvStack = [stackframe0] ++ runenvStack st })
+  modify (\st -> st { runenvStack = stackframe0:runenvStack st })
   Err.finally action $
     -- Pop stack frame no matter what happened (exception/error/return),
     -- note that the stack might be modified due to GC runs
@@ -169,7 +184,7 @@ newFrame action = do
 -- function body.
 
 getResult :: InterpreterM () -> InterpreterM PrimitiveValue
-getResult action = (action >> return VVoid) `catchError` (\case
+getResult action = (action >> return VVoid) `catchError` (\x -> case x of
     RValue val -> return val
     err -> throwError err)
 
@@ -210,7 +225,11 @@ doGCNow conf heap = Map.size heap > gcthresh conf
 -- Extracts referred locations from stack variables, does not recurse into
 -- objects in any way
 findTopLevelRefs :: [StackFrame] -> Set.Set Location
-findTopLevelRefs = Set.unions . map (Set.fromList . concatMap (\case { VRef loc -> [loc]; _ -> [] }) . Map.elems)
+findTopLevelRefs = Set.unions . map (Set.fromList . concatMap getLocs . Map.elems)
+  where
+    getLocs x = case x of
+      VRef loc -> [loc]
+      _ -> []
 
 -- Returns garbage-collected heap, each object under location present in
 -- provided set is present in the new heap (if it was in the old one)
@@ -230,20 +249,20 @@ compactHeap pinned heap =
             grey''' = case Map.lookup loc heap of
               Nothing -> error $ Err.danglingReference loc
               Just (VArray arr) -> Map.fold (flip extract) grey' arr
-              Just (VObject obj) -> Map.fold (flip extract) grey' (fields obj)
+              Just (VObject obj) -> Map.fold (flip extract) grey' (compositeFields obj)
               -- We do not recurse (add to grey) in all other cases
               _ -> grey'
               where
                 extract :: Set.Set Location -> PrimitiveValue -> Set.Set Location
-                extract grey'' = \case
+                extract grey'' x = case x of
                   VRef loc' -> if Set.member loc' black' then grey'' else Set.insert loc' grey''
                   _ -> grey''
         in fun (grey''', black')
 
 dumpHeap :: InterpreterM ()
 dumpHeap = do
-  hp <- gets runenvHeap
-  liftIO $ IO.hPutStrLn IO.stderr $ "| Heap size: " ++ (show $ Map.size hp)
+  heap <- gets runenvHeap
+  liftIO $ IO.hPutStrLn IO.stderr $ "| Heap size: " ++ show (Map.size heap)
 
 -- MONADIC BYTECODE --
 ----------------------
@@ -294,7 +313,7 @@ return'_ = return_ VVoid
 
 newarray :: TypeBasic -> PrimitiveValue -> InterpreterM PrimitiveValue
 newarray typ (VInt len) = do
-  val <- defaultValue typ
+  let val = defaultValue typ
   alloc $ VArray $ foldl (\m i -> Map.insert i val m) Map.empty [0..(len - 1)]
 
 arraylength :: PrimitiveValue -> InterpreterM PrimitiveValue
@@ -307,28 +326,36 @@ newobject ctyp = do
 
 getfield :: FieldName -> PrimitiveValue -> InterpreterM PrimitiveValue
 -- Types are already checked, we can simply get value from a map
-getfield name ref = do
-  lval <- deref ref
-  case lval of
+getfield name ref = deref ref >>= \obj -> case obj of
     VArray _ -> arraylength ref
     VString str -> return $ VInt $ length str
-    VObject obj -> return $ fromJust $ Map.lookup name $ fields obj
-    _ -> Err.unreachable lval
+    VObject composite -> return $ fromJust $ Map.lookup name $ compositeFields composite
+    _ -> Err.unreachable obj
 
 putfield :: FieldName -> PrimitiveValue -> PrimitiveValue -> InterpreterM ()
 -- Types are already checked, we can simply store value in a map
-putfield name val ref = do
-  lval <- deref ref
-  case lval of
-    VArray _ -> throwError (RError $ Err.isConstant name)
-    VString _ -> throwError (RError $ Err.isConstant name)
-    VObject obj -> do
-      update ref (VObject $ obj { fields = Map.insert name val (fields obj) })
+putfield name@(FieldName y) val ref = deref ref >>= \x -> case (x, y) of
+    (VArray _, "length") -> throwError (RError $ Err.isConstant name)
+    (VString _, "length") -> throwError (RError $ Err.isConstant name)
+    (VObject composite, _) -> do
+      update ref (VObject $ composite {
+          compositeFields = Map.insert name val (compositeFields composite)
+        })
       runGC
-    _ -> Err.unreachable lval
+    _ -> Err.unreachable x
 
 invokevirtual :: PrimitiveValue -> MethodName -> [PrimitiveValue] -> InterpreterM ()
-invokevirtual _ _ _ = undefined
+invokevirtual ref name@(MethodName y) args = deref ref >>= \x -> case (x, y) of
+    (VString str, "charAt") -> do
+      let VInt ind = head args
+      guard (0 <= ind && ind < length str) `rethrow` RError (Err.indexOutOfBounds ind)
+      return_ $ VChar $ head $ drop ind str
+    (VObject composite, _) ->
+      let method = fromJust $ Map.lookup name $ compositeMethods composite
+      in newFrame $ do
+        zipWithM_ (\num val -> store (VariableNum num) val) [0..] (ref:args)
+        interpret $ methodBody method
+    _ -> Err.unreachable "not a composite"
 
 -- TREE TRAVERSAL --
 --------------------
@@ -359,7 +386,7 @@ instance Interpretable Stmt () where
       if val then interpret stmt else nop
     SIfElse expr stmt1 stmt2 -> do
       VBool val <- interpret expr
-      if val then interpret stmt1 else interpret stmt2
+      interpret $ if val then stmt1 else stmt2
     -- Note that (once again) there is no lexical variable hiding, after one
     -- iteration of a loop all variables declared inside fall out of the scope,
     -- which means we can dispose them.
@@ -372,7 +399,7 @@ instance Interpretable Stmt () where
     SThrow expr -> do
       ref <- interpret expr
       throw ref
-    STryCatch stmt1 _ num stmt2 -> interpret stmt1 `catchError` \case
+    STryCatch stmt1 _ num stmt2 -> interpret stmt1 `catchError` \e -> case e of
         RException val -> do
           store num val
           interpret stmt2
@@ -409,11 +436,11 @@ instance Interpretable Expr PrimitiveValue where
       val1 <- interpret expr1
       val2 <- interpret expr2
       aload val1 val2
-    EGetField expr _ num _ -> interpret expr >>= getfield num
+    EGetField expr _ name _ -> interpret expr >>= getfield name
     -- Method calls
     EInvokeStatic _ (MethodName "printInt") _ [expr] -> do
       VInt val <- interpret expr
-      liftIO $ putStrLn (show val)
+      liftIO $ print val
       return VVoid
     EInvokeStatic _ (MethodName "readInt") _ [] -> do
       val <- liftIO (readLn :: IO Int)
@@ -425,20 +452,16 @@ instance Interpretable Expr PrimitiveValue where
       return VVoid
     EInvokeStatic _ (MethodName "readString") _ [] -> do
       val <- liftIO (getLine :: IO String)
-      ref <- alloc (VString val)
-      return ref
+      alloc (VString val)
     EInvokeStatic _ (MethodName "error") _ [] ->
       throwError $ RError Err.userIssuedError
-    EInvokeStatic _ name _ exprs -> mapM interpret exprs >>= getResult . invokestatic TObject name
-    EInvokeVirtual eref (TString) (MethodName "charAt") _ [eind] -> do
-      VString str <- deref =<< interpret eref
-      VInt ind <- interpret eind
-      unless (0 <= ind && ind < length str) $ throwError $ RError $ Err.indexOutOfBounds ind
-      return $ VChar $ head $ drop ind str
+    EInvokeStatic _ name _ exprs -> do
+      vals <- mapM interpret exprs
+      getResult $ invokestatic TObject name vals
     EInvokeVirtual expr _ name _ exprs -> do
       ref <- interpret expr
       vals <- mapM interpret exprs
-      getResult (invokevirtual ref name vals)
+      getResult $ invokevirtual ref name vals
     -- Object creation
     ENewObj typ -> newobject typ
     ENewArr typ expr -> interpret expr >>= newarray typ
@@ -466,14 +489,14 @@ instance Interpretable Expr PrimitiveValue where
         _ -> Err.unreachable opbin
     EBinary ObAnd expr1 expr2 (TPrimitive TBool) -> do
       VBool val1 <- interpret expr1
-      case val1 of
-        True -> interpret expr2
-        False -> return $ VBool False
+      if val1
+      then interpret expr2
+      else return $ VBool False
     EBinary ObOr expr1 expr2 (TPrimitive TBool) -> do
       VBool val1 <- interpret expr1
-      case val1 of
-        True -> return $ VBool True
-        False -> interpret expr2
+      if val1
+      then return $ VBool True
+      else interpret expr2
     EBinary opbin expr1 expr2 (TPrimitive TBool) -> do
       val1 <- interpret expr1
       val2 <- interpret expr2
