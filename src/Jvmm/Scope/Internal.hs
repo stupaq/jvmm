@@ -355,29 +355,7 @@ instance Scopeable RValue where
         (\field -> EGetField (ELoad VariableThis undefined) undefined field undefined)
 
 instance Scopeable LValue where
-  scope x = case x of
-    LVariable {} -> return x
-    LArrayElement lval _ -> do
-      EArrayLoad _ expr' _ <- scope $ toRValue x
-      lval' <- scope lval
-      return $ LArrayElement lval' expr' undefined
-    LField lval@(LVariable VariableThis _) _ name _ -> do
-      -- We can resolve the field since it should belong to the instance scope we are in
-      dynamic name
-      return $ LField lval undefined name undefined
-    LField lval _ name _ -> do
-      lval' <- scope lval
-      -- The field name we see here cannot be verified without type information
-      return $ LField lval' undefined name undefined
-    -- These expressions will be replaced with ones caring more context in subsequent phases
-    T_LVar name -> do
-      num <- current name
-      return $ LVariable num undefined
-      -- We replace all assignments that actually refer to instance fields but give precedence to local
-      -- variables (like in Java), to referencee hidden field self.<field_name> construct can be used
-      varOrField name
-        (\num' -> LVariable num' undefined)
-        (\name' -> LField (LVariable VariableThis undefined) undefined name' undefined)
+  scope = fmap toLValue . scope . toRValue
 
 -- HELPERS --
 -------------
