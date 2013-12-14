@@ -533,16 +533,7 @@ instance TypeCheckable' RValue where
     T_EVar _ -> Err.unreachable x
 
 instance TypeCheckable' LValue where
-  tcheck' x = case x of
-    LVariable _ _ -> do
-      ELoad num typ <- fst <$> tcheck' (toRValue x)
-      return (LVariable num typ, typ)
-    LArrayElement lval _ _ -> do
-      EArrayLoad _ expr2 telem <- fst <$> tcheck' (toRValue x)
-      lval' <- fst <$> tcheck' lval
-      return (LArrayElement lval' expr2 telem, telem)
-    LField lval _ _ _ -> do
-      EGetField _ ctyp name ftyp <- fst <$> tcheck' (toRValue x)
-      lval' <- fst <$> tcheck' lval
-      return (LField lval' ctyp name ftyp, ftyp)
+  tcheck' lval = do
+    (expr', typ) <- tcheck' $ toRValue lval
+    return (toLValue expr', typ)
 

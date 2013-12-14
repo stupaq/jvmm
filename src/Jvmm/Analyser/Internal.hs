@@ -1,6 +1,5 @@
 {-# LANGUAGE FlexibleInstances      #-}
 {-# LANGUAGE FunctionalDependencies #-}
-{-# LANGUAGE KindSignatures         #-}
 {-# LANGUAGE MultiParamTypeClasses  #-}
 {-# LANGUAGE RankNTypes             #-}
 {-# LANGUAGE TypeSynonymInstances   #-}
@@ -181,4 +180,5 @@ instance Analysable LValue LValue where
     LVariable _ _ -> return x
     LArrayElement lval expr telem -> LArrayElement <$> analyse lval <*> analyse expr <#> telem
     LField lval ctyp name ftyp -> LField <$> analyse lval <#> ctyp <#> name <#> ftyp
+    T_LExpr _ -> Err.unreachable x
 

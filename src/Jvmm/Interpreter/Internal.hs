@@ -402,6 +402,7 @@ instance Interpretable Stmt () where
       val <- interpret expr
       ref <- interpret $ toRValue lval
       putfield name val ref
+    SAssign (T_LExpr _) _ -> Err.unreachable x
     -- Control statements
     SReturn expr _ -> interpret expr >>= return_
     SReturnV -> return'_

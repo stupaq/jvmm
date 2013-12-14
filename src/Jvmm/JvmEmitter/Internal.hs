@@ -351,6 +351,7 @@ instance Emitable Stmt () where
       emit expr1
       emit expr2
       inss (element telem "astore") dec3
+    SAssign (T_LExpr _) _ -> Err.unreachable x
     SAssign {} -> notImplemented
     -- Control statements
     SReturn expr typ -> do

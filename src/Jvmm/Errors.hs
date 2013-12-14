@@ -84,6 +84,7 @@ redeclaredSymbol x = Dangling $ "redeclared symbol in the same scope: " ++ show 
 globalForbidden = Dangling "statement not allowed in global scope"
 repeatedDeclaration x = Dangling $ "repeated declaration for: " ++ show x
 redefinedBuiltin x = Dangling $ "redefined built-in method: " ++ show x
+expressionIsNotLValue x = Dangling $ "expression is not an l-value: " ++ show x
 
 -- Type resolution errors
 notAComposedType typ = Dangling $ "expected composed type, got " ++ show typ

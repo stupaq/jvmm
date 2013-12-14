@@ -355,7 +355,11 @@ instance Scopeable RValue where
         (\field -> EGetField (ELoad VariableThis undefined) undefined field undefined)
 
 instance Scopeable LValue where
-  scope = fmap toLValue . scope . toRValue
+  scope lval = do
+    lval' <- fmap toLValue $ scope $ toRValue lval
+    if isPureLValue lval'
+    then return lval'
+    else throwError $ Err.expressionIsNotLValue lval'
 
 -- HELPERS --
 -------------

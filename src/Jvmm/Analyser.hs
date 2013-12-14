@@ -11,6 +11,7 @@ import Jvmm.Trans.Output (ClassHierarchy)
 --  like prunning unreachable branches, propagating constants and partially
 --  evaluating expressions, removing unreachable code and so on.
 -------------------------------------------------------------------------------
+
 analyse :: ClassHierarchy -> ErrorInfoT Identity ClassHierarchy
 analyse = runAnalyserM . Internal.analyse
 

@@ -42,13 +42,13 @@ isBuiltinType TObject = False
 isBuiltinType (TArray _) = True
 isBuiltinType _ = Err.unreachable TNull
 
-builtinFieldType :: forall (m :: * -> *) e. (MonadError e m, Error e) => (TypeComposed, [Char]) -> m Type
+builtinFieldType :: forall (m :: * -> *) e. (MonadError e m, Error e) => (TypeComposed, String) -> m Type
 builtinFieldType desc = case desc of
   (TArray _, "length") -> return $ toType TInt
   (TString, "length") -> return $ toType TInt
   _ -> throwError noMsg
 
-builtinMethodType :: forall (m :: * -> *) e. (MonadError e m, Error e) => (TypeComposed, [Char]) -> m Type
+builtinMethodType :: forall (m :: * -> *) e. (MonadError e m, Error e) => (TypeComposed, String) -> m Type
 builtinMethodType desc = case desc of
   (TString, "charAt") -> return $ toType $ TypeMethod (TPrimitive TChar) [TPrimitive TInt] []
   _ -> throwError noMsg
