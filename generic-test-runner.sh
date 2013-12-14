@@ -118,8 +118,7 @@ function testcase_interpreter() {
   [[ -f $Output ]] || Output=/dev/null
 
   echo -ne "INTERP\t$1: "
-  ulimit -Sv $env_memlimit
-  $run_interpreter $1 <$Input 1>$exec_output 2>$exec_error
+  (ulimit -Sv $env_memlimit; $run_interpreter $1 <$Input 1>$exec_output 2>$exec_error)
   Status=$?
   if [[ $1 == $pattern_bad_exec ]]; then
     negate $Status
