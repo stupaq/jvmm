@@ -4,28 +4,33 @@ set -e
 class=`basename ${1%.*}`
 path=`dirname $1`
 ext=${1##*.}
+debug=
+
+if [[ $2 == -*g* ]]; then
+  debug=-g
+fi
 
 if [[ $2 == -*c* ]]; then
   rm -f $path/$class.{j,class,jar}
   exit 0
 fi
 
-`dirname $0`/src/Jvmm/Main -j $1
+`dirname $0`/src/Jvmm/Main -j $1 $debug
 java -jar lib/jasmin.jar $path/$class.j -d $path
 
-if [[ $2 == -*s* ]] || [[ $2 == -*v* ]]; then
+if [[ $2 == -*s* || $2 == -*v* ]]; then
   echo -e "\n:: JVMM (source)"
   cat $path/$class.$ext
   echo
 fi
 
-if [[ $2 == -*a* ]] || [[ $2 == -*v* ]]; then
+if [[ $2 == -*a* || $2 == -*v* ]]; then
   echo -e "\n:: JASMIN (source)"
   cat $path/$class.j
   echo
 fi
 
-if [[ $2 == -*p* ]] || [[ $2 == -*x* ]]; then
+if [[ $2 == -*p* || $2 == -*x* ]]; then
   echo "Packaging $path/$class.jar"
   jar cfe $path/$class.jar $class \
     -C $path $class.class \

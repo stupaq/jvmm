@@ -143,8 +143,11 @@ function testcase_jvm() {
 
   echo -ne "JVM\t$1: "
   $compile_jvm $1 $compile_jvm_opts &>$compile_output
-  $run_jvm ${1%.*}.jar <$Input 1>$exec_output 2>$exec_error
   Status=$?
+  if [[ $Status -eq 0 ]]; then
+    $run_jvm ${1%.*}.jar <$Input 1>$exec_output 2>$exec_error
+    Status=$?
+  fi
   if [[ $1 == $pattern_bad_exec ]]; then
     negate $Status
     assert_status $?

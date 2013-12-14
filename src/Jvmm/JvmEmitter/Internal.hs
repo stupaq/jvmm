@@ -291,10 +291,8 @@ instance Emitable TypePrimitive String where
   emit typ = return $ case typ of
       TVoid -> "V"
       TInt -> "I"
-      -- This kind of stinks we won't be able to performa ny better knwoing that
-      -- smth is a character or boolean in fact
-      TBool -> "I"
-      TChar -> "I"
+      TBool -> "Z"
+      TChar -> "C"
 
 instance Emitable TypeComposed String where
   emit TObject = return "Ljava/lang/Object;"
@@ -327,8 +325,9 @@ instance Emitable Method () where
     -- ...and method body
     tell body
     -- ...and final return/nop (just in case there was a branch after return or empty method)
-    when (tret == TPrimitive TVoid) $ ins "return"
-    unless (not (null body) && isInstruction (last body)) $ ins "nop"
+    if tret == TPrimitive TVoid
+    then ins "return"
+    else unless (not (null body) && isInstruction (last body)) $ ins "nop"
     -- The epilogue
     dir "end method"
     nl
@@ -438,25 +437,25 @@ instance Emitable RValue TypeBasic where
       return ftyp
     EGetField {} -> notImplemented
     -- Method calls
-    EInvokeStatic _ (MethodName name) ftyp@(TypeMethod tret _ _) exprs -> do
+    EInvokeStatic _ (MethodName name) mtyp@(TypeMethod tret _ _) exprs -> do
       mapM_ emit exprs
       className <- asks emitterenvOverrideClass
       case className of
         Just (ClassName str) -> do
           -- Class that holds top-level static methods
-          fdesc <- emit ftyp
+          fdesc <- emit mtyp
           let pops = length exprs - (if tret == TPrimitive TVoid then 0 else 1)
           -- In case this is actually a builtin
           let str' = if name `elem` builtinMethodNames then builtinsClassName else str
           inss ("invokestatic " ++ str' ++ "/" ++ name ++ fdesc) (decn pops)
           return tret
         Nothing -> notImplemented
-    EInvokeVirtual expr TString (MethodName "charAt") _ [expr1] -> do
+    EInvokeVirtual expr TString (MethodName "charAt") mtyp [expr1] -> do
       emit expr
       emit expr1
       cdesc <- classPath <$> emit TString
-      -- We do the manual overridde of method descriptor here
-      inss ("invokevirtual " ++ cdesc ++ "/charAt(I)C") dec1
+      fdesc <- emit mtyp
+      inss ("invokevirtual " ++ cdesc ++ "/charAt" ++ fdesc) dec1
       return (TPrimitive TChar)
     EInvokeVirtual {} -> notImplemented
     -- Object creation
@@ -516,6 +515,7 @@ class EmitableConditional a where
     emitCond x ltrue lfalse ltrue
     lab ltrue
     emit ELitTrue
+    -- Stack alternation 'dec1' refers to the instruction right after the jump
     jmp dec1 lend
     lab lfalse
     emit ELitFalse
