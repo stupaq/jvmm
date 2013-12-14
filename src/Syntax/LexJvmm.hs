@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -w #-}
 {-# LANGUAGE CPP,MagicHash #-}
 {-# LINE 3 "Syntax/LexJvmm.x" #-}
 

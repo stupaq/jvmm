@@ -13,14 +13,13 @@ $(MAIN): % : %.hs Syntax
 
 Syntax: $(BNFC) Syntax.diff
 	bnfc -p $@ $<
-	(cd $@/; patch -p1 -i ../Syntax.diff)
-	@-rm -f $@/*.bak
 	happy --info -gca $@/ParJvmm.y
 	alex -g $@/LexJvmm.x
+	(cd $@/; patch -p1 -i ../Syntax.diff)
 	(cd $@/; $(PDFLATEX) DocJvmm.tex; )
 
 parserclean:
-	-rm -f Syntax/*.{log,aux,hi,o,x,y,info,hs.orig}
+	-rm -f Syntax/*.{bak,log,aux,hi,o,x,y,info,hs.orig}
 
 clean: parserclean
 	-rm -rf ghc-make

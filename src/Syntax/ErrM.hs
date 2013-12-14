@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -w #-}
 -- BNF Converter: Error Monad
 -- Copyright (C) 2004  Author:  Aarne Ranta
 

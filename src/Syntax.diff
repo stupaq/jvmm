@@ -1,13 +1,20 @@
-diff -rcd Syntax/PrintJvmm.hs Syntax1/PrintJvmm.hs
-*** Syntax/PrintJvmm.hs	2013-04-17 21:10:36.022808529 +0200
---- Syntax1/PrintJvmm.hs	2013-04-17 21:08:18.299469187 +0200
+diff -rcd Syntax1/LexJvmm.hs Syntax/LexJvmm.hs
+*** Syntax1/LexJvmm.hs	Sat Dec 14 15:17:42 2013
+--- Syntax/LexJvmm.hs	Sat Dec 14 15:19:26 2013
 ***************
-*** 166,171 ****
---- 166,172 ----
-     TObject  -> prPrec i 0 (concatD [doc (showString "Object")])
+*** 1,3 ****
+--- 1,4 ----
++ {-# OPTIONS_GHC -w #-}
+  {-# LANGUAGE CPP,MagicHash #-}
+  {-# LINE 3 "Syntax/LexJvmm.x" #-}
   
-    prtList es = case es of
-+    [] -> (concatD [doc (showString "")])
-     [x] -> (concatD [prt 0 x])
-     x:xs -> (concatD [prt 0 x , doc (showString ",") , prt 0 xs])
+diff -rcd Syntax1/ErrM.hs Syntax/ErrM.hs
+*** Syntax1/ErrM.hs	Sat Dec 14 15:17:42 2013
+--- Syntax/ErrM.hs	Sat Dec 14 15:21:27 2013
+***************
+*** 1,3 ****
+--- 1,4 ----
++ {-# OPTIONS_GHC -w #-}
+  -- BNF Converter: Error Monad
+  -- Copyright (C) 2004  Author:  Aarne Ranta
   

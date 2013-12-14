@@ -171,7 +171,6 @@ instance Print TypeComposed where
    TString  -> prPrec i 0 (concatD [doc (showString "string")])
 
   prtList es = case es of
-   [] -> (concatD [doc (showString "")])
    [x] -> (concatD [prt 0 x])
    x:xs -> (concatD [prt 0 x , doc (showString ",") , prt 0 xs])
 
