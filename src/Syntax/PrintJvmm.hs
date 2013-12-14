@@ -162,10 +162,6 @@ instance Print TypeBasic where
    TComposed typecomposed -> prPrec i 0 (concatD [prt 0 typecomposed])
    TPrimitive typeprimitive -> prPrec i 0 (concatD [prt 0 typeprimitive])
 
-  prtList es = case es of
-   [] -> (concatD [doc (showString "")])
-   [x] -> (concatD [prt 0 x])
-   x:xs -> (concatD [prt 0 x , doc (showString ",") , prt 0 xs])
 
 instance Print TypeComposed where
   prt i e = case e of
@@ -175,6 +171,7 @@ instance Print TypeComposed where
    TString  -> prPrec i 0 (concatD [doc (showString "string")])
 
   prtList es = case es of
+   [] -> (concatD [doc (showString "")])
    [x] -> (concatD [prt 0 x])
    x:xs -> (concatD [prt 0 x , doc (showString ",") , prt 0 xs])
 
@@ -185,9 +182,6 @@ instance Print TypePrimitive where
    TBool  -> prPrec i 0 (concatD [doc (showString "boolean")])
    TVoid  -> prPrec i 0 (concatD [doc (showString "void")])
 
-  prtList es = case es of
-   [x] -> (concatD [prt 0 x])
-   x:xs -> (concatD [prt 0 x , doc (showString ",") , prt 0 xs])
 
 instance Print Stmt where
   prt i e = case e of
@@ -196,16 +190,10 @@ instance Print Stmt where
    SBlock leftbrace stmts rightbrace -> prPrec i 0 (concatD [prt 0 leftbrace , prt 0 stmts , prt 0 rightbrace])
    SEmpty semicolon -> prPrec i 0 (concatD [prt 0 semicolon])
    SDeclVar typebasic items semicolon -> prPrec i 0 (concatD [prt 0 typebasic , prt 0 items , prt 0 semicolon])
-   SAssign id expr semicolon -> prPrec i 0 (concatD [prt 0 id , doc (showString "=") , prt 0 expr , prt 0 semicolon])
-   SAssignArr id expr0 expr semicolon -> prPrec i 0 (concatD [prt 0 id , doc (showString "[") , prt 0 expr0 , doc (showString "]") , doc (showString "=") , prt 0 expr , prt 0 semicolon])
-   SAssignFld id0 id expr semicolon -> prPrec i 0 (concatD [prt 0 id0 , doc (showString ".") , prt 0 id , doc (showString "=") , prt 0 expr , prt 0 semicolon])
-   SAssignThis id expr semicolon -> prPrec i 0 (concatD [doc (showString "self") , doc (showString ".") , prt 0 id , doc (showString "=") , prt 0 expr , prt 0 semicolon])
-   SPostInc id semicolon -> prPrec i 0 (concatD [prt 0 id , doc (showString "++") , prt 0 semicolon])
-   SPostDec id semicolon -> prPrec i 0 (concatD [prt 0 id , doc (showString "--") , prt 0 semicolon])
-   SAssignOp id assignop expr semicolon -> prPrec i 0 (concatD [prt 0 id , prt 0 assignop , prt 0 expr , prt 0 semicolon])
-   SAssignOpArr id expr0 assignop expr semicolon -> prPrec i 0 (concatD [prt 0 id , doc (showString "[") , prt 0 expr0 , doc (showString "]") , prt 0 assignop , prt 0 expr , prt 0 semicolon])
-   SAssignOpFld id0 id assignop expr semicolon -> prPrec i 0 (concatD [prt 0 id0 , doc (showString ".") , prt 0 id , prt 0 assignop , prt 0 expr , prt 0 semicolon])
-   SAssignOpThis id assignop expr semicolon -> prPrec i 0 (concatD [doc (showString "self") , doc (showString ".") , prt 0 id , prt 0 assignop , prt 0 expr , prt 0 semicolon])
+   SAssign expr0 expr semicolon -> prPrec i 0 (concatD [prt 0 expr0 , doc (showString "=") , prt 0 expr , prt 0 semicolon])
+   SAssignOp expr0 assignop expr semicolon -> prPrec i 0 (concatD [prt 0 expr0 , prt 0 assignop , prt 0 expr , prt 0 semicolon])
+   SPostInc expr semicolon -> prPrec i 0 (concatD [prt 0 expr , doc (showString "++") , prt 0 semicolon])
+   SPostDec expr semicolon -> prPrec i 0 (concatD [prt 0 expr , doc (showString "--") , prt 0 semicolon])
    SReturn expr semicolon -> prPrec i 0 (concatD [doc (showString "return") , prt 0 expr , prt 0 semicolon])
    SReturnV semicolon -> prPrec i 0 (concatD [doc (showString "return") , prt 0 semicolon])
    SIf expr stmt -> prPrec i 0 (concatD [doc (showString "if") , doc (showString "(") , prt 0 expr , doc (showString ")") , prt 0 stmt])
@@ -229,26 +217,21 @@ instance Print Item where
 
 instance Print Expr where
   prt i e = case e of
-   EArrayE expr0 expr -> prPrec i 6 (concatD [prt 7 expr0 , doc (showString "[") , prt 0 expr , doc (showString "]")])
-   EMethodE expr id exprs -> prPrec i 6 (concatD [prt 7 expr , doc (showString ".") , prt 0 id , doc (showString "(") , prt 0 exprs , doc (showString ")")])
-   EFieldE expr id -> prPrec i 6 (concatD [prt 7 expr , doc (showString ".") , prt 0 id])
-   EArrayI id expr -> prPrec i 6 (concatD [prt 0 id , doc (showString "[") , prt 0 expr , doc (showString "]")])
-   EMethodI id0 id exprs -> prPrec i 6 (concatD [prt 0 id0 , doc (showString ".") , prt 0 id , doc (showString "(") , prt 0 exprs , doc (showString ")")])
-   EFieldI id0 id -> prPrec i 6 (concatD [prt 0 id0 , doc (showString ".") , prt 0 id])
-   ENewObject typecomposed -> prPrec i 6 (concatD [doc (showString "new") , prt 0 typecomposed])
-   ENewArray typebasic expr -> prPrec i 6 (concatD [doc (showString "new") , prt 0 typebasic , doc (showString "[") , prt 0 expr , doc (showString "]")])
-   EMethodIT id exprs -> prPrec i 6 (concatD [doc (showString "self") , doc (showString ".") , prt 0 id , doc (showString "(") , prt 0 exprs , doc (showString ")")])
-   EFieldIT id -> prPrec i 6 (concatD [doc (showString "self") , doc (showString ".") , prt 0 id])
-   EThis  -> prPrec i 6 (concatD [doc (showString "self")])
-   ENullT typecomposed -> prPrec i 6 (concatD [doc (showString "(") , prt 0 typecomposed , doc (showString ")null")])
-   ENull  -> prPrec i 6 (concatD [doc (showString "null")])
-   ELitChar c -> prPrec i 6 (concatD [prt 0 c])
-   EVar id -> prPrec i 6 (concatD [prt 0 id])
-   ELitInt n -> prPrec i 6 (concatD [prt 0 n])
-   ELitTrue  -> prPrec i 6 (concatD [doc (showString "true")])
-   ELitFalse  -> prPrec i 6 (concatD [doc (showString "false")])
-   EApp id exprs -> prPrec i 6 (concatD [prt 0 id , doc (showString "(") , prt 0 exprs , doc (showString ")")])
-   EString str -> prPrec i 6 (concatD [prt 0 str])
+   EVar id -> prPrec i 7 (concatD [prt 0 id])
+   ELitInt n -> prPrec i 7 (concatD [prt 0 n])
+   ELitTrue  -> prPrec i 7 (concatD [doc (showString "true")])
+   ELitFalse  -> prPrec i 7 (concatD [doc (showString "false")])
+   EString str -> prPrec i 7 (concatD [prt 0 str])
+   EThis  -> prPrec i 7 (concatD [doc (showString "self")])
+   ENull  -> prPrec i 7 (concatD [doc (showString "null")])
+   ENullT typecomposed -> prPrec i 7 (concatD [doc (showString "(") , prt 0 typecomposed , doc (showString ")null")])
+   ELitChar c -> prPrec i 7 (concatD [prt 0 c])
+   EArray expr0 expr -> prPrec i 6 (concatD [prt 6 expr0 , doc (showString "[") , prt 0 expr , doc (showString "]")])
+   EField expr id -> prPrec i 6 (concatD [prt 6 expr , doc (showString ".") , prt 0 id])
+   EMethod expr id exprs -> prPrec i 6 (concatD [prt 6 expr , doc (showString ".") , prt 0 id , doc (showString "(") , prt 0 exprs , doc (showString ")")])
+   ENewObject typecomposed -> prPrec i 5 (concatD [doc (showString "new") , prt 0 typecomposed])
+   ENewArray typebasic expr -> prPrec i 5 (concatD [doc (showString "new") , prt 0 typebasic , doc (showString "[") , prt 0 expr , doc (showString "]")])
+   EApp id exprs -> prPrec i 5 (concatD [prt 0 id , doc (showString "(") , prt 0 exprs , doc (showString ")")])
    ENeg expr -> prPrec i 5 (concatD [doc (showString "-") , prt 5 expr])
    ENot expr -> prPrec i 5 (concatD [doc (showString "!") , prt 5 expr])
    EMul expr0 mulop expr -> prPrec i 4 (concatD [prt 4 expr0 , prt 0 mulop , prt 5 expr])

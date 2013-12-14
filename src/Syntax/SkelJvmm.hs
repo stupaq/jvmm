@@ -107,16 +107,10 @@ transStmt x = case x of
   SBlock leftbrace stmts rightbrace  -> failure x
   SEmpty semicolon  -> failure x
   SDeclVar typebasic items semicolon  -> failure x
-  SAssign id expr semicolon  -> failure x
-  SAssignArr id expr1 expr2 semicolon3  -> failure x
-  SAssignFld id1 id2 expr3 semicolon4  -> failure x
-  SAssignThis id expr semicolon  -> failure x
-  SPostInc id semicolon  -> failure x
-  SPostDec id semicolon  -> failure x
-  SAssignOp id assignop expr semicolon  -> failure x
-  SAssignOpArr id expr1 assignop2 expr3 semicolon4  -> failure x
-  SAssignOpFld id1 id2 assignop3 expr4 semicolon5  -> failure x
-  SAssignOpThis id assignop expr semicolon  -> failure x
+  SAssign expr1 expr2 semicolon3  -> failure x
+  SAssignOp expr1 assignop2 expr3 semicolon4  -> failure x
+  SPostInc expr semicolon  -> failure x
+  SPostDec expr semicolon  -> failure x
   SReturn expr semicolon  -> failure x
   SReturnV semicolon  -> failure x
   SIf expr stmt  -> failure x
@@ -134,26 +128,21 @@ transItem x = case x of
 
 transExpr :: Expr -> Result
 transExpr x = case x of
-  EArrayE expr1 expr2  -> failure x
-  EMethodE expr id exprs  -> failure x
-  EFieldE expr id  -> failure x
-  EArrayI id expr  -> failure x
-  EMethodI id1 id2 exprs3  -> failure x
-  EFieldI id1 id2  -> failure x
-  ENewObject typecomposed  -> failure x
-  ENewArray typebasic expr  -> failure x
-  EMethodIT id exprs  -> failure x
-  EFieldIT id  -> failure x
-  EThis  -> failure x
-  ENullT typecomposed  -> failure x
-  ENull  -> failure x
-  ELitChar c  -> failure x
   EVar id  -> failure x
   ELitInt n  -> failure x
   ELitTrue  -> failure x
   ELitFalse  -> failure x
-  EApp id exprs  -> failure x
   EString str  -> failure x
+  EThis  -> failure x
+  ENull  -> failure x
+  ENullT typecomposed  -> failure x
+  ELitChar c  -> failure x
+  EArray expr1 expr2  -> failure x
+  EField expr id  -> failure x
+  EMethod expr id exprs  -> failure x
+  ENewObject typecomposed  -> failure x
+  ENewArray typebasic expr  -> failure x
+  EApp id exprs  -> failure x
   ENeg expr  -> failure x
   ENot expr  -> failure x
   EMul expr1 mulop2 expr3  -> failure x

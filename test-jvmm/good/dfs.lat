@@ -3,18 +3,17 @@ class Graph {
     Edges[] vertices;
 
     void init(int size) {
-        Edges[] tmp = new Edges[size];
+        vertices = new Edges[size];
         int i = 0;
         while (i < size) {
-            tmp[i] = new Edges;
+            vertices[i] = new Edges;
             i++;
         }
-        vertices = tmp;
     }
 
     void add(int src, int dest) {
-        (vertices[src]).add(dest);
-        (vertices[dest]).add(src);
+        vertices[src].add(dest);
+        self.vertices[dest].add(src);
     }
 
     void dfs(int src) {
@@ -28,9 +27,8 @@ class Graph {
         visited[src] = true;
         printString("visiting:");
         printInt(src);
-        Edges edges = vertices[src];
-        int i = edges.nextFree;
-        int[] neigh = edges.destinations;
+        int i = vertices[src].nextFree;
+        int[] neigh = vertices[src].destinations;
         while (i > 0) {
             i--;
             printString("considering:");

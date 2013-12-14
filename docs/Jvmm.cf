@@ -55,8 +55,6 @@ TComposed.  TypeBasic ::= TypeComposed;
 
 TPrimitive. TypeBasic ::= TypePrimitive;
 
-separator nonempty TypeBasic ",";
-
 -- EXTENSIONS/
 TObject.    TypeComposed ::= "Object";
 
@@ -76,8 +74,6 @@ TChar.      TypePrimitive ::= "char";
 TBool.      TypePrimitive ::= "boolean";
 
 TVoid.      TypePrimitive ::= "void";
-
-separator nonempty TypePrimitive ",";
 
 -- STATEMENTS --
 ----------------
@@ -102,29 +98,13 @@ Init.           Item ::= Ident "=" Expr;
 
 separator nonempty Item ",";
 
-SAssign.        Stmt ::= Ident "=" Expr  Semicolon;
+SAssign.        Stmt ::= Expr "=" Expr  Semicolon;
 
--- EXTENSIONS/
-SAssignArr.     Stmt ::= Ident "[" Expr "]" "=" Expr  Semicolon;
+SAssignOp.      Stmt ::= Expr AssignOp Expr  Semicolon;
 
-SAssignFld.     Stmt ::= Ident "." Ident "=" Expr  Semicolon;
+SPostInc.       Stmt ::= Expr "++" Semicolon;
 
-SAssignThis.    Stmt ::= "self" "." Ident "=" Expr  Semicolon;
--- /EXTENSIONS
-
-SPostInc.       Stmt ::= Ident "++" Semicolon;
-
-SPostDec.       Stmt ::= Ident "--" Semicolon;
-
-SAssignOp.      Stmt ::= Ident AssignOp Expr  Semicolon;
-
--- EXTENSIONS/
-SAssignOpArr.   Stmt ::= Ident "[" Expr "]" AssignOp Expr  Semicolon;
-
-SAssignOpFld.   Stmt ::= Ident "." Ident AssignOp Expr  Semicolon;
-
-SAssignOpThis.  Stmt ::= "self" "." Ident AssignOp Expr  Semicolon;
--- /EXTENSIONS
+SPostDec.       Stmt ::= Expr "--" Semicolon;
 
 SReturn.        Stmt ::= "return" Expr Semicolon;
 
@@ -145,47 +125,37 @@ SExpr.          Stmt ::= Expr Semicolon;
 -- EXPRESSIONS --
 -----------------
 
--- EXTENTIONS/
-EArrayE.    Expr6 ::= Expr7 "[" Expr "]";
+EVar.       Expr7 ::= Ident;
 
-EMethodE.   Expr6 ::= Expr7 "." Ident "(" [Expr] ")";
+ELitInt.    Expr7 ::= Integer;
 
-EFieldE.    Expr6 ::= Expr7 "." Ident;
+ELitTrue.   Expr7 ::= "true";
 
-EArrayI.    Expr6 ::= Ident "[" Expr "]";
+ELitFalse.  Expr7 ::= "false";
 
-EMethodI.   Expr6 ::= Ident "." Ident "(" [Expr] ")";
+EString.    Expr7 ::= String;
 
-EFieldI.    Expr6 ::= Ident "." Ident;
+-- EXTENSIONS/
+EThis.      Expr7 ::= "self";
 
-ENewObject. Expr6 ::= "new" TypeComposed;
+ENull.      Expr7 ::= "null";
 
-ENewArray.  Expr6 ::= "new" TypeBasic "[" Expr "]";
+ENullT.     Expr7 ::= "(" TypeComposed ")null";
 
-EMethodIT.  Expr6 ::= "self" "." Ident "(" [Expr] ")";
+ELitChar.   Expr7 ::= Char;
 
-EFieldIT.   Expr6 ::= "self" "." Ident;
+EArray.     Expr6 ::= Expr6 "[" Expr "]";
 
-EThis.      Expr6 ::= "self";
+EField.     Expr6 ::= Expr6 "." Ident;
 
-ENullT.     Expr6 ::= "(" TypeComposed ")null";
+EMethod.    Expr6 ::= Expr6 "." Ident "(" [Expr] ")";
 
-ENull.      Expr6 ::= "null";
+ENewObject. Expr5 ::= "new" TypeComposed;
 
-ELitChar.   Expr6 ::= Char;
+ENewArray.  Expr5 ::= "new" TypeBasic "[" Expr "]";
 -- /EXTENSIONS
 
-EVar.       Expr6 ::= Ident;
-
-ELitInt.    Expr6 ::= Integer;
-
-ELitTrue.   Expr6 ::= "true";
-
-ELitFalse.  Expr6 ::= "false";
-
-EApp.       Expr6 ::= Ident "(" [Expr] ")";
-
-EString.    Expr6 ::= String;
+EApp.       Expr5 ::= Ident "(" [Expr] ")";
 
 -- Original grammary says that `Expr5 ::= "-" Expr6`, this rule prohibits many not-so-useful
 -- expressions like `- -1`. Being a total fan of weird stuff, I have changed that.

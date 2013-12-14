@@ -72,22 +72,12 @@ tStmt x = case x of
   I.SDeclVar typ items s -> tSem s $ concatMap (tItem typ) items
   I.SBlock lbr stmts rbr -> tBraces lbr rbr $ return $
     O.SBlock $ concatMap tStmt stmts
-  I.SAssignOp id opassign expr s -> tSem s $ return $
-    O.T_SAssign (tVIdent id) $ tExpr $ tAssignOp opassign (I.EVar id) expr
-  I.SAssignOpArr id expr1 opassign2 expr3 s -> tSem s $ return $
-    O.T_SAssignArr (tVIdent id) (tExpr expr1) $ tExpr $ tAssignOp opassign2 (I.EArrayE (I.EVar id) expr1) expr3
-  I.SAssignOpFld id1 id2 opassign3 expr4 s -> tSem s $ return $
-    O.T_SAssignFld (tVIdent id1) (tFIdent id2) $ tExpr $ tAssignOp opassign3 (I.EFieldE (I.EVar id1) id2) expr4
-  I.SAssignOpThis id2 opassign3 expr4 s -> tSem s $ return $
-    O.SPutField O.VariableThis undefined (tFIdent id2) (tExpr $ tAssignOp opassign3 (I.EFieldE I.EThis id2) expr4) undefined
-  I.SPostInc id s -> tStmt $ I.SAssignOp id I.APlus (I.ELitInt 1) s
-  I.SPostDec id s -> tStmt $ I.SAssignOp id I.AMinus (I.ELitInt 1) s
+  I.SAssignOp expr1 opassign expr2 s -> tSem s $ return $
+    O.SAssign (tLVal expr1) $ tExpr $ tAssignOp opassign expr1 expr2
+  I.SPostInc expr s -> tStmt $ I.SAssignOp expr I.APlus (I.ELitInt 1) s
+  I.SPostDec expr s -> tStmt $ I.SAssignOp expr I.AMinus (I.ELitInt 1) s
   I.SEmpty s -> tSem s $ return O.SEmpty
-  I.SAssign id expr s -> tSem s $ return $ O.T_SAssign (tVIdent id) $ tExpr expr
-  I.SAssignArr id expr1 expr2 s -> tSem s $  return $ O.T_SAssignArr (tVIdent id) (tExpr expr1) (tExpr expr2)
-  I.SAssignFld id1 id2 expr3 s -> tSem s $ return $ O.T_SAssignFld (tVIdent id1) (tFIdent id2) (tExpr expr3)
-  I.SAssignThis id2 expr3 s -> tSem s $ return $
-    O.SPutField O.VariableThis undefined (tFIdent id2) (tExpr expr3) undefined
+  I.SAssign expr1 expr2 s -> tSem s $ return $ O.SAssign (tLVal expr1) (tExpr expr2)
   I.SReturn expr s -> tSem s $ return $ O.SReturn (tExpr expr) undefined
   I.SReturnV s -> tSem s $ return O.SReturnV
   I.SIf expr stmt -> return $ O.SIf (tExpr expr) (O.SBlock $ tStmt stmt)
@@ -99,12 +89,12 @@ tStmt x = case x of
         iditer = tempIdent id "iter"
     in tStmt $ I.SBlock noLbr [
       I.SDeclVar (I.TComposed $ I.TArray typ) [I.Init idarr expr] noSem,
-      I.SDeclVar (I.TPrimitive I.TInt) [I.Init idlength (I.EFieldE (I.EVar idarr) (I.Ident "length")),
+      I.SDeclVar (I.TPrimitive I.TInt) [I.Init idlength (I.EField (I.EVar idarr) (I.Ident "length")),
       I.Init iditer (I.ELitInt 0)] noSem,
       I.SWhile (I.ERel (I.EVar iditer) I.LTH (I.EVar idlength)) (I.SBlock noLbr [
-        I.SDeclVar typ [I.Init id (I.EArrayE (I.EVar idarr) (I.EVar iditer))] noSem,
+        I.SDeclVar typ [I.Init id (I.EArray (I.EVar idarr) (I.EVar iditer))] noSem,
         stmt,
-        I.SPostInc iditer noSem] noRbr)] noRbr
+        I.SPostInc (I.EVar iditer) noSem] noRbr)] noRbr
   I.SExpr expr s -> tSem s $ return $ O.SExpr $ tExpr expr
   I.SThrow expr s -> tSem s $ return $ O.SThrow $ tExpr expr
   I.STryCatch stmt1 typ2 id3 stmt4 -> return $ O.T_STryCatch (O.SBlock $ tStmt stmt1) (tTComposed typ2) (tVIdent id3) (O.SBlock $ tStmt stmt4)
@@ -116,6 +106,12 @@ tStmt x = case x of
     I.ATimes -> I.EMul expr1 I.Times expr2
     I.ADiv -> I.EMul expr1 I.Div expr2
     I.AMod -> I.EMul expr1 I.Mod expr2
+
+tLVal :: I.Expr -> O.LValue
+tLVal = O.T_LExpr . tExpr
+
+tLVar :: I.Ident -> O.LValue
+tLVar = tLVal . I.EVar
 
 tSem :: I.Semicolon -> [O.Stmt] -> [O.Stmt]
 tSem (I.Semicolon ((line, _), _)) stmts
@@ -143,17 +139,17 @@ tItem :: I.TypeBasic -> I.Item -> [O.Stmt]
 tItem t x =
   let typ = tTBasic t
   in case x of
-  I.NoInit id -> [O.T_SDeclVar typ (tVIdent id), O.T_SAssign (tVIdent id) (defaultValue typ)]
+  I.NoInit id -> [O.T_SDeclVar typ (tVIdent id), O.SAssign (tLVar id) (defaultValue typ)]
   I.Init id e -> -- SYNTACTIC SUGAR
     -- For declarations with conflicts (e.g. int x = x;) we use temporary variable
     -- with lifetime limited to four statements, which cannot hide any user-defined variable
     let expr = tExpr e
     in if refersTo (tVIdent id) expr then let idtmp = tempIdent id "decl" in [
         O.T_SDeclVar typ (tVIdent idtmp),
-        O.T_SAssign (tVIdent idtmp) expr,
+        O.SAssign (tLVar idtmp) expr,
         O.T_SDeclVar typ (tVIdent id),
-        O.T_SAssign (tVIdent id) (O.T_EVar (tVIdent idtmp))]
-    else [O.T_SDeclVar typ (tVIdent id), O.T_SAssign (tVIdent id) expr]
+        O.SAssign (tLVar id) (O.T_EVar (tVIdent idtmp))]
+    else [O.T_SDeclVar typ (tVIdent id), O.SAssign (tLVar id) expr]
   where
     defaultValue typ = case typ of
       O.TComposed _ -> O.ENull
@@ -162,7 +158,7 @@ tItem t x =
       O.TPrimitive O.TBool -> O.ELitFalse
       _ -> O.ENull
 
-refersTo :: O.VariableName -> O.Expr -> Bool
+refersTo :: O.VariableName -> O.RValue -> Bool
 refersTo var x = case x of
   -- Literals
   O.ENull -> False
@@ -191,7 +187,7 @@ refersTo var x = case x of
   where
     refers = refersTo var
 
-tExpr :: I.Expr -> O.Expr
+tExpr :: I.Expr -> O.RValue
 tExpr x = case x of
   I.EVar id -> O.T_EVar $ tVIdent id
   I.ELitInt n -> O.ELitInt n
@@ -201,19 +197,10 @@ tExpr x = case x of
   I.ELitChar c -> O.ELitChar c
   I.ENull -> O.ENull
   I.ENullT typ -> O.ENull
-  I.EArrayE expr1 expr2 -> O.EArrayLoad (tExpr expr1) (tExpr expr2) undefined
-  I.EMethodE expr id exprs ->
+  I.EArray expr1 expr2 -> O.EArrayLoad (tExpr expr1) (tExpr expr2) undefined
+  I.EMethod expr id exprs ->
     O.EInvokeVirtual (tExpr expr) undefined (tMIdent id) undefined (map tExpr exprs)
-  I.EFieldE expr id -> O.EGetField (tExpr expr) undefined (tFIdent id) undefined
-  I.EArrayI ide expr2 -> -- GRAMMAR IRREGULARITY
-    O.EArrayLoad (tExpr $ I.EVar ide) (tExpr expr2) undefined
-  I.EMethodI ide id exprs -> -- GRAMMAR IRREGULARITY
-    O.EInvokeVirtual (tExpr $ I.EVar ide) undefined (tMIdent id) undefined (map tExpr exprs)
-  I.EFieldI ide id -> -- GRAMMAR IRREGULARITY
-    O.EGetField (tExpr $ I.EVar ide) undefined (tFIdent id)  undefined
-  I.EFieldIT id -> O.EGetField (O.ELoad O.VariableThis undefined) undefined (tFIdent id) undefined
-  I.EMethodIT id exprs ->
-    O.EInvokeVirtual (O.ELoad O.VariableThis undefined) undefined (tMIdent id) undefined (map tExpr exprs)
+  I.EField expr id -> O.EGetField (tExpr expr) undefined (tFIdent id) undefined
   I.EApp id exprs -> O.EInvokeStatic undefined (tMIdent id) undefined (map tExpr exprs)
   I.ENewArray typ expr -> O.ENewArr (tTBasic typ) (tExpr expr)
   I.ENewObject typ -> O.ENewObj $ tTComposed typ

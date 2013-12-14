@@ -162,7 +162,7 @@ data LValue =
   | LArrayElement LValue RValue TypeBasic
   | LField LValue TypeComposed FieldName TypeBasic
   -- These expressions will be replaced with ones caring more context in subsequent phases
-  | T_LVar VariableName
+  | T_LExpr RValue
   deriving (Show)
 
 class InheritsRValue a where
@@ -173,14 +173,12 @@ instance InheritsRValue LValue where
   toRValue (LVariable num typ) = ELoad num typ
   toRValue (LArrayElement lval expr typ) = EArrayLoad (toRValue lval) expr typ
   toRValue (LField lval ctyp name typ) = EGetField (toRValue lval) ctyp name typ
-  toRValue (T_LVar name) = T_EVar name
+  toRValue (T_LExpr expr) = expr
 
--- This is a very restricted morphism, use wisely
 toLValue :: RValue -> LValue
 toLValue (ELoad num typ) = LVariable num typ
 toLValue (EArrayLoad rval expr2 typ) = LArrayElement (toLValue rval) expr2 typ
 toLValue (EGetField rval ctyp name typ) = LField (toLValue rval) ctyp name typ
-toLValue (T_EVar name) = T_LVar name
 toLValue _ = Err.unreachable "provided expression is not a l-value"
 
 -- OPERATIONS --

@@ -72,16 +72,10 @@ data Stmt =
  | SBlock LeftBrace [Stmt] RightBrace
  | SEmpty Semicolon
  | SDeclVar TypeBasic [Item] Semicolon
- | SAssign Ident Expr Semicolon
- | SAssignArr Ident Expr Expr Semicolon
- | SAssignFld Ident Ident Expr Semicolon
- | SAssignThis Ident Expr Semicolon
- | SPostInc Ident Semicolon
- | SPostDec Ident Semicolon
- | SAssignOp Ident AssignOp Expr Semicolon
- | SAssignOpArr Ident Expr AssignOp Expr Semicolon
- | SAssignOpFld Ident Ident AssignOp Expr Semicolon
- | SAssignOpThis Ident AssignOp Expr Semicolon
+ | SAssign Expr Expr Semicolon
+ | SAssignOp Expr AssignOp Expr Semicolon
+ | SPostInc Expr Semicolon
+ | SPostDec Expr Semicolon
  | SReturn Expr Semicolon
  | SReturnV Semicolon
  | SIf Expr Stmt
@@ -97,26 +91,21 @@ data Item =
   deriving (Eq,Ord,Show)
 
 data Expr =
-   EArrayE Expr Expr
- | EMethodE Expr Ident [Expr]
- | EFieldE Expr Ident
- | EArrayI Ident Expr
- | EMethodI Ident Ident [Expr]
- | EFieldI Ident Ident
- | ENewObject TypeComposed
- | ENewArray TypeBasic Expr
- | EMethodIT Ident [Expr]
- | EFieldIT Ident
- | EThis
- | ENullT TypeComposed
- | ENull
- | ELitChar Char
- | EVar Ident
+   EVar Ident
  | ELitInt Integer
  | ELitTrue
  | ELitFalse
- | EApp Ident [Expr]
  | EString String
+ | EThis
+ | ENull
+ | ENullT TypeComposed
+ | ELitChar Char
+ | EArray Expr Expr
+ | EField Expr Ident
+ | EMethod Expr Ident [Expr]
+ | ENewObject TypeComposed
+ | ENewArray TypeBasic Expr
+ | EApp Ident [Expr]
  | ENeg Expr
  | ENot Expr
  | EMul Expr MulOp Expr
