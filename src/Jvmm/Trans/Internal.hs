@@ -7,9 +7,9 @@ import Prelude hiding (id)
 
 import qualified Syntax.AbsJvmm as I
 
-import qualified Jvmm.Errors as Err
 import Jvmm.Errors (ErrorInfoT, Location)
-import Jvmm.Hierarchy (prepareClassDiff, objectClassDiff)
+import qualified Jvmm.Errors as Err
+import Jvmm.Hierarchy (objectClassDiff, prepareClassDiff)
 
 -- Creates variable-associated identifier from given one (for temporary and iteration variables).
 -- Only variable-associated identifiers derived from the same variable and with the same context

@@ -28,21 +28,31 @@ data Symbol =
   deriving (Show, Eq, Ord)
 
 type Scope = Set.Set Symbol
+
+scope0 :: Scope
 scope0 = Set.empty
 
 -- SCOPE STATE --
 -----------------
 type Variables = Map.Map VariableName DeclarationId
+
+variables0 :: Variables
 variables0 = Map.empty
 
 type DeclarationId = Int
+
+declarationid0 :: DeclarationId
 declarationid0 = 0
+
+variablenum0 :: VariableNum
 variablenum0 = VariableNum declarationid0
 
 data ScopeState = ScopeState {
     scopestateVariables :: Variables
   , scopestateNextId    :: DeclarationId
 } deriving (Show)
+
+scopestate0 :: ScopeState
 scopestate0 = ScopeState variables0 declarationid0
 
 -- SCOPE ENVIRONMENT --
@@ -52,6 +62,8 @@ data ScopeEnv = ScopeEnv {
   , scopeenvStatic   :: Scope
   , scopeenvParent   :: Variables
 } deriving (Show)
+
+scopeenv0 :: ScopeEnv
 scopeenv0 = ScopeEnv scope0 scope0 variables0
 
 -- SCOPE MONAD --
@@ -61,7 +73,7 @@ runScopeM :: ScopeM a -> ErrorInfoT Identity ((a, [Variable]), ScopeState)
 runScopeM m = runReaderT (runStateT (runWriterT m) scopestate0) scopeenv0
 
 lookupM :: (Show a, Ord a) => a -> Map.Map a b -> ScopeM b
-lookupM key map = case Map.lookup key map of
+lookupM key assoc = case Map.lookup key assoc of
   Nothing -> throwError $ Err.unboundSymbol key
   Just val -> return val
 
@@ -147,8 +159,8 @@ instance Resolvable TypeComposed where
 
 checkRedeclaration :: VariableName -> ScopeM ()
 checkRedeclaration name = do
-  upper <- current name `orReturn` VariableThis
-  current <- parent name `orReturn` VariableThis
+  upper <- inCurrent name `orReturn` VariableThis
+  current <- inParent name `orReturn` VariableThis
   unless (upper == current) $ throwError (Err.redeclaredSymbol name)
 
 isField :: VariableName -> ScopeM Bool
@@ -160,10 +172,10 @@ isField name = do
 
 isStatic :: MethodName -> ScopeM Bool
 isStatic name = do
-  inst <- tryDynamic name
-  static <- tryStatic name
-  guard (static || inst) `rethrow` Err.unboundSymbol name
-  return $ static && not inst
+  isInst <- tryDynamic name
+  isClass <- tryStatic name
+  guard (isClass || isInst) `rethrow` Err.unboundSymbol name
+  return $ isClass && not isInst
 
 -- SCOPE UPDATING --
 --------------------
@@ -171,12 +183,12 @@ class Redeclarable a where
   -- Declares reference
   declare :: a -> ScopeM VariableNum
   -- Resolves reference in current scope
-  current :: a -> ScopeM VariableNum
+  inCurrent :: a -> ScopeM VariableNum
   -- Resolves reference in the scope from parent block (before entering current scope)
-  parent :: a -> ScopeM VariableNum
+  inParent :: a -> ScopeM VariableNum
   tryCurrent, tryParent :: a -> ScopeM Bool
-  tryCurrent x = (current x >> return True) `orReturn` False
-  tryParent x = (parent x >> return True) `orReturn` False
+  tryCurrent x = (inCurrent x >> return True) `orReturn` False
+  tryParent x = (inParent x >> return True) `orReturn` False
 
 instance Redeclarable VariableName where
   declare name = do
@@ -186,9 +198,9 @@ instance Redeclarable VariableName where
           scopestateVariables = Map.insert name free (scopestateVariables st)
         , scopestateNextId = free + 1
       })
-    current name
-  current name = liftM VariableNum $ gets scopestateVariables >>= lookupM name
-  parent name = liftM VariableNum $ asks scopeenvParent >>= lookupM name
+    inCurrent name
+  inCurrent name = liftM VariableNum $ gets scopestateVariables >>= lookupM name
+  inParent name = liftM VariableNum $ asks scopeenvParent >>= lookupM name
 
 -- SCOPE COMPUTATION --
 -----------------------
@@ -234,8 +246,8 @@ instance Scopeable Method where
           }
     where
       declareArg :: Variable -> ScopeM Variable
-      declareArg var@Variable { variableName = name } = do
-        num' <- declare name
+      declareArg var@Variable { variableName = vname } = do
+        num' <- declare vname
         return var { variableNum = num' }
 
 instance Scopeable Stmt where
@@ -284,7 +296,7 @@ instance Scopeable Stmt where
     T_SDeclVar typ name -> do
       declare name
       static typ
-      num <- current name
+      num <- inCurrent name
       tell [Variable typ num name]
       return SEmpty
     T_STryCatch stmt1 typ name stmt2 -> do
@@ -292,7 +304,7 @@ instance Scopeable Stmt where
       newLocalScope $ do
         -- Catch body can hide exception variable
         declare name
-        num <- current name
+        num <- inCurrent name
         tell [Variable (TComposed typ) num name]
         stmt2' <- newLocalScope (scope stmt2)
         return $ STryCatch stmt1' typ num stmt2'
@@ -363,12 +375,13 @@ instance Scopeable LValue where
 
 -- HELPERS --
 -------------
+varOrField :: VariableName -> (VariableNum -> b) -> (FieldName -> b) -> ScopeM b
 varOrField name ifVar ifField = do
-  field <- isField name
-  if field
+  aField <- isField name
+  if aField
   then do
       let field = fieldFromVariable name
       dynamic field
       return $ ifField field
-  else liftM ifVar (current name)
+  else liftM ifVar (inCurrent name)
 
