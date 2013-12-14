@@ -3,11 +3,11 @@ module Jvmm.Hierarchy.Internal where
 import Control.Monad
 import Control.Monad.Identity
 
-import qualified Data.Tree as Tree
 import qualified Data.List as List
+import qualified Data.Tree as Tree
 
+import Jvmm.Errors (ErrorInfoT, rethrow)
 import qualified Jvmm.Errors as Err
-import Jvmm.Errors (rethrow, ErrorInfoT)
 import Jvmm.Trans.Output
 
 -- HIERACHY MONAD --
@@ -56,6 +56,6 @@ visit :: Class -> [(TypeComposed, ClassDiff)] -> ClassDiff -> HierarchyM ClassHi
 visit super classes diff = do
   current <- diff super
   children <- mapM (visit current classes)
-      [ diff | (typ, diff) <- classes, typ == classType current ]
+      [ child | (typ, child) <- classes, typ == classType current ]
   return $ Tree.Node current children
 

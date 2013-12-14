@@ -159,6 +159,7 @@ tItem t x =
       _ -> O.ENull
 
 refersTo :: O.VariableName -> O.RValue -> Bool
+-- We can always make a mistake and answer True
 refersTo var x = case x of
   -- Literals
   O.ENull -> False
@@ -182,8 +183,6 @@ refersTo var x = case x of
   O.EBinary _ expr1 expr2 _ -> any refers [expr1, expr2]
   -- These expressions will be replaced with ones caring more context in subsequent phases
   O.T_EVar var1 -> var == var1
-  -- We can always make a mistake and aswer True
-  _ -> True
   where
     refers = refersTo var
 
@@ -196,7 +195,7 @@ tExpr x = case x of
   I.EString str -> O.ELitString str
   I.ELitChar c -> O.ELitChar c
   I.ENull -> O.ENull
-  I.ENullT typ -> O.ENull
+  I.ENullT _ -> O.ENull
   I.EArray expr1 expr2 -> O.EArrayLoad (tExpr expr1) (tExpr expr2) undefined
   I.EMethod expr id exprs ->
     O.EInvokeVirtual (tExpr expr) undefined (tMIdent id) undefined (map tExpr exprs)

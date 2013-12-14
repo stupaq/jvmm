@@ -120,6 +120,7 @@ instance Analysable Stmt [Stmt] where
     SMetaLocation loc stmts -> Err.withLocation loc (consecutive stmts)
     -- These statements will be replaced with ones caring more context in subsequent phases
     T_SDeclVar {} -> Err.unreachable x
+    T_STryCatch {} -> Err.unreachable x
     where
       original, nothing :: AnalyserM [Stmt]
       original = return [x]

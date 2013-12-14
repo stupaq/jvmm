@@ -392,15 +392,16 @@ instance Interpretable Stmt () where
     SBlock stmts -> mapM_ interpret stmts
     SExpr expr -> interpret expr >> nop
     -- Memory access
+    -- Order of expressions evaluation is 'left to right'
     SAssign (LVariable num _) expr -> interpret expr >>= store num
     SAssign (LArrayElement lval expr1 _) expr2 -> do
-      val <- interpret expr2
-      ind <- interpret expr1
       ref <- interpret $ toRValue lval
+      ind <- interpret expr1
+      val <- interpret expr2
       astore ref ind val
     SAssign (LField lval _ name _) expr -> do
-      val <- interpret expr
       ref <- interpret $ toRValue lval
+      val <- interpret expr
       putfield name val ref
     SAssign (T_LExpr _) _ -> Err.unreachable x
     -- Control statements
@@ -450,6 +451,7 @@ instance Interpretable RValue PrimitiveValue where
     ELitString str -> alloc (VString str)
     ELitInt n -> return $ VInt $ fromInteger n
     -- Memory access
+    -- Order of expressions evaluation is 'left to right'
     ELoad num _ -> load num
     EArrayLoad expr1 expr2 _ -> do
       val1 <- interpret expr1

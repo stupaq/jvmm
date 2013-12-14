@@ -6,7 +6,6 @@
 {-# LANGUAGE UndecidableInstances  #-}
 module Jvmm.Types.Internal where
 
-import Control.Applicative
 import Control.Monad.Error
 import Control.Monad.Identity
 import Control.Monad.Reader
@@ -205,7 +204,6 @@ called :: TypeMethod -> [Variable] -> [Variable] -> TypeM a -> TypeM a
 called typ@(TypeMethod _ argumentTypes exceptions) arguments localVariables action = do
   forM_ argumentTypes $ \argt -> notAVoid (toType argt) `rethrow` Err.voidArg
   catches exceptions . declareAll arguments . declareAll localVariables . enterFunction typ $ action
-called _ _ _ _ = Err.unreachable "attempt to call not a functional type"
 
 catches :: [TypeComposed] -> TypeM a -> TypeM a
 catches types = local (\env -> env {
@@ -218,7 +216,6 @@ returns typ = do
   case ftyp of
     Just (TypeMethod rett _ _) -> void $ rett =| typ
     Nothing -> throwError Err.danglingReturn
-    _ -> Err.unreachable "typeenvFunction was not of functional type"
 
 this :: TypeM TypeComposed
 this = asks typeenvThis >>= \x -> case x of
@@ -286,20 +283,16 @@ instance Arithmetizable Type where
 
 instance Arithmetizable TypeMethod where
   (=|) typ1 typ2 = do
-    let bad = throwError (Err.unexpectedType typ1 typ2)
-        ok = return typ1
-    case (typ1, typ2) of
-      (TypeMethod _ argt1 _, TypeMethod _ argt2 _) -> do
-        unless (length argt1 == length argt2) $ throwError noMsg
-        zipWithM_ (=|) argt1 argt2
-        ok
-      _ -> bad
+    let (TypeMethod _ argt1 _, TypeMethod _ argt2 _) = (typ1, typ2)
+    unless (length argt1 == length argt2) $ throwError noMsg
+    zipWithM_ (=|) argt1 argt2
+    return typ1
   super = Err.unreachable "method type is not hierarchical"
 
 instance Arithmetizable TypeBasic where
-  (=|) typ1 typ2 = do
-    let bad = throwError (Err.unexpectedType typ1 typ2)
-    case (typ1, typ2) of
+  (=|) targ1 targ2 = do
+    let bad = throwError (Err.unexpectedType targ1 targ2)
+    case (targ1, targ2) of
       (TPrimitive typ1, TPrimitive typ2) -> liftM TPrimitive $ typ1 =| typ2
       (TComposed typ1, TComposed typ2) -> liftM TComposed $ typ1 =| typ2
       _ -> bad
@@ -383,8 +376,8 @@ instance TypeCheckable Method where
       return $ method { methodBody = stmt' }
     where
       checkEntrypoint :: Method -> TypeM ()
-      checkEntrypoint method = when (isEntrypoint method)
-          (void $ entrypointType =| methodType method) `rethrow` Err.incompatibleMain
+      checkEntrypoint aMethod = when (isEntrypoint aMethod)
+          (void $ entrypointType =| methodType aMethod) `rethrow` Err.incompatibleMain
 
 instance TypeCheckable Stmt where
   tcheck x = case x of
@@ -429,8 +422,8 @@ instance TypeCheckable Stmt where
     SThrow expr -> do
       (expr', etyp) <- tcheck' expr
       -- We cannot throw primitive type
-      etyp <- notAPrimitive etyp
-      throws etyp
+      ctyp <- notAPrimitive etyp
+      throws ctyp
       return $ SThrow expr'
     STryCatch stmt1 typ num stmt2 -> do
       stmt2' <- tcheck stmt2
@@ -444,6 +437,7 @@ instance TypeCheckable Stmt where
     SMetaLocation loc stmts -> stmtMetaLocation loc $ mapM tcheck stmts
     -- These statements will be replaced with ones caring more context in subsequent phases
     T_SDeclVar {} -> Err.unreachable x
+    T_STryCatch {} -> Err.unreachable x
 
 class TypeCheckable' a where
   tcheck' :: a -> TypeM (a, TypeBasic)
@@ -472,9 +466,9 @@ instance TypeCheckable' RValue where
         _ -> throwError Err.subscriptNonArray
     EGetField expr _ name _ -> do
       (expr', etyp) <- tcheck' expr
-      etyp <- notAPrimitive etyp
-      typ <- typeof' etyp name
-      return (EGetField expr' etyp name typ, typ)
+      ctyp <- notAPrimitive etyp
+      typ <- typeof' ctyp name
+      return (EGetField expr' ctyp name typ, typ)
     -- Method calls
     EInvokeStatic _ name _ exprs -> do
       (exprs', etypes) <- mapAndUnzipM tcheck' exprs
@@ -484,11 +478,11 @@ instance TypeCheckable' RValue where
       return (EInvokeStatic styp name ftyp exprs', rtyp)
     EInvokeVirtual expr _ name _ exprs -> do
       (expr', etyp) <- tcheck' expr
-      etyp <- notAPrimitive etyp
+      ctyp <- notAPrimitive etyp
       (exprs', etypes) <- mapAndUnzipM tcheck' exprs
-      ftyp <- typeof' etyp name
+      ftyp <- typeof' ctyp name
       rtyp <- invoke ftyp etypes
-      return (EInvokeVirtual expr' etyp name ftyp exprs', rtyp)
+      return (EInvokeVirtual expr' ctyp name ftyp exprs', rtyp)
     -- Object creation
     ENewObj typ -> return (ENewObj typ, TComposed typ)
     ENewArr typ expr -> do
@@ -533,6 +527,7 @@ instance TypeCheckable' RValue where
     T_EVar _ -> Err.unreachable x
 
 instance TypeCheckable' LValue where
+  tcheck' lval@(T_LExpr _) = Err.unreachable lval
   tcheck' lval = do
     (expr', typ) <- tcheck' $ toRValue lval
     return (toLValue expr', typ)

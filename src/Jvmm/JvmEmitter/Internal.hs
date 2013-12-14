@@ -343,6 +343,7 @@ instance Emitable Stmt () where
       n <- getStack
       replicateM_ n $ inss "pop" dec1
     -- Memory access
+    -- Order of expressions evaluation is 'left to right'
     SAssign (LVariable num typ) expr -> do
       emit expr
       inssv (variable typ "store") dec1 num
@@ -391,6 +392,7 @@ instance Emitable Stmt () where
     SMetaLocation loc stmts -> stmtMetaLocation' loc (mapM emit stmts)
     -- These statements will be replaced with ones caring more context in subsequent phases
     T_SDeclVar {} -> Err.unreachable x
+    T_STryCatch {} -> Err.unreachable x
 
 instance Emitable RValue TypeBasic where
   emit x = case x of
@@ -415,6 +417,7 @@ instance Emitable RValue TypeBasic where
       inssc "ldc" inc1 (fromInteger n)
       return (TPrimitive TInt)
     -- Memory access
+    -- Order of expressions evaluation is 'left to right'
     ELoad num typ -> do
       inssv (variable typ "load") inc1 num
       return typ
@@ -448,7 +451,7 @@ instance Emitable RValue TypeBasic where
           inss ("invokestatic " ++ str' ++ "/" ++ name ++ fdesc) (decn pops)
           return tret
         Nothing -> notImplemented
-    EInvokeVirtual expr TString (MethodName "charAt") ftyp [expr1] -> do
+    EInvokeVirtual expr TString (MethodName "charAt") _ [expr1] -> do
       emit expr
       emit expr1
       cdesc <- classPath <$> emit TString
@@ -480,6 +483,7 @@ instance Emitable RValue TypeBasic where
       emit expr
       inss "ineg" id
       return tret
+    EUnary {} -> Err.unreachable x
     EBinary _ _ _ (TPrimitive TBool) -> evalCond x
     EBinary ObPlus expr1 expr2 tret@(TComposed TString) -> do
       emit expr1
@@ -498,6 +502,7 @@ instance Emitable RValue TypeBasic where
         ObMinus -> inss "isub" dec1
         _ -> Err.unreachable "should be handled in TPrimitive TBool branch"
       return tret
+    EBinary {} -> Err.unreachable x
     -- These expressions will be replaced with ones caring more context in subsequent phases
     T_EVar {} -> Err.unreachable x
 
