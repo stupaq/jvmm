@@ -18,11 +18,11 @@ You will also need some Unix tools that you should already have.
 
 In order to compile JVMM run `make all`, if you wish to render documentation in PDF format run `make docs`.
 In project's root folder you can find scripts which run different parts of the JVMM stack, namely:
-    +   `./jvmmc_parse <source_file>` - parses provided source and shows any syntactic errors
-    +   `./jvmmc_check <source_file>` - performs static analysis (type checking and more) and shows any errors
-    +   `./jvmmc_jvm <source_file>` - emits Jasmin assembler, compiles it into .class file and packages into JAR
-        together with JVMM runtime library
-    +   `./jvmmi <source_file>` - interprets program in the same process that performed parsing and static analysis
++   `./jvmmc_parse <source_file>` - parses provided source and shows any syntactic errors
++   `./jvmmc_check <source_file>` - performs static analysis (type checking and more) and shows any errors
++   `./jvmmc_jvm <source_file>` - emits Jasmin assembler, compiles it into .class file and packages into JAR
+    together with JVMM runtime library
++   `./jvmmi <source_file>` - interprets program in the same process that performed parsing and static analysis
 
 RUNNING TEST SUITES
 -------------------
