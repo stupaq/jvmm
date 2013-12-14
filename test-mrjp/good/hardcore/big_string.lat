@@ -7,7 +7,7 @@ int main() {
     string s1 = "";
     string s2 = "";
     int i = 0;
-    while(i < 1024 * 100) {
+    while(i < 1024 * 70) {
         s1 = s1 + "a";
         if(i % 2 == 0)
             s2 = s2 + "a";
