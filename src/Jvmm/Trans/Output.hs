@@ -111,7 +111,10 @@ data Stmt =
   | SBlock [Stmt]
   | SExpr RValue
   -- Memory access
-  | SAssign LValue RValue
+  | SAssign {
+        sassignTarget :: LValue
+      , sassignSource :: RValue
+    }
   -- Control statements
   | SReturn RValue TypeBasic
   | SReturnV

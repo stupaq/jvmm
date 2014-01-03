@@ -24,7 +24,6 @@ builtinFunctions = map fun [
 entrypointType :: TypeMethod
 entrypointType = TypeMethod (TPrimitive TInt) [] []
 
-
 entrypointName :: MethodName
 entrypointName = MethodName "main"
 
@@ -52,4 +51,12 @@ builtinMethodType :: forall (m :: * -> *) e. (MonadError e m, Error e) => (TypeC
 builtinMethodType desc = case desc of
   (TString, "charAt") -> return $ toType $ TypeMethod (TPrimitive TChar) [TPrimitive TInt] []
   _ -> throwError noMsg
+
+defaultValue :: TypeBasic -> RValue
+defaultValue typ = case typ of
+  TPrimitive TInt -> ELitInt 0
+  TPrimitive TChar -> ELitChar 'a'
+  TPrimitive TBool -> ELitFalse
+  TComposed _ -> ENull
+  _ -> Err.unreachable "void has no default value"
 

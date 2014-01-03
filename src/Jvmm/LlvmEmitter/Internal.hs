@@ -6,6 +6,7 @@
 {-# LANGUAGE TypeSynonymInstances   #-}
 module Jvmm.LlvmEmitter.Internal where
 import Jvmm.LlvmEmitter.Output
+import Jvmm.LlvmEmitter.Layout
 
 import Control.Applicative
 import Control.Exception
@@ -25,18 +26,17 @@ import Jvmm.Errors (ErrorInfoT)
 import qualified Jvmm.Errors as Err
 import Jvmm.Trans.Output
 
--- A class that holds builtins
-builtinsClassName :: String
-builtinsClassName = "Runtime"
-builtinMethodNames :: [String]
-builtinMethodNames = ["printInt", "readInt", "error", "printString", "readString"]
+-- FIXME
+import Text.Show.Pretty (ppShow)
 
 -- EMITTING CLASS HIERARCHY --
 ------------------------------
 emitHierarchy :: EmitterEnv -> ClassHierarchy -> ErrorInfoT Identity [LlvmModule]
 emitHierarchy env hierarchy = do
   let name = emitterenvModuleName env
-  code <- runEmitterM env $ intercept $ Traversable.mapM emit hierarchy
+  layout <- lift $ layoutHierarchy hierarchy
+  error $ ppShow $ layout
+  code <- runEmitterM (env { emitterenvLayout = layout }) $ intercept $ Traversable.mapM emit hierarchy
   return [LlvmModule name code]
 
 -- EMITTER STATE --
@@ -52,10 +52,11 @@ emitterstate0 = EmitterState 0
 -------------------------
 data EmitterEnv = EmitterEnv {
     emitterenvModuleName :: String
+  , emitterenvLayout :: HierarchyLayout
 } deriving (Show)
 
 emitterenv0 :: EmitterEnv
-emitterenv0 = EmitterEnv "unknown"
+emitterenv0 = EmitterEnv "unknown" undefined
 
 -- THE MONAD --
 ---------------
@@ -82,6 +83,9 @@ emitterstateNewId = do
 emitterstateResetId :: EmitterM ()
 emitterstateResetId = modify (\st -> st { emitterstateUnique = 0 })
 
+tell1 :: LlvmLine -> EmitterM ()
+tell1 = tell . return
+
 -- LABELS ALLOCATION --
 -----------------------
 newtype Label = Label String
@@ -104,7 +108,12 @@ data Name =
   deriving (Show, Eq, Ord)
 
 newLocal :: EmitterM Name
-newLocal = fmap (Local . ('t':) . show) emitterstateNewId
+newLocal = fmap (Local . ('i':) . show) emitterstateNewId
+
+-- EMITTING HELPERS --
+----------------------
+lab :: Label -> EmitterM ()
+lab (Label str) = tell1 $ LlvmLabel str
 
 -- TREE TRAVERSING --
 ---------------------
@@ -122,7 +131,7 @@ instance Emitable TypeBasic String where
   emit (TPrimitive typ) = emit typ
 
 instance Emitable TypePrimitive String where
-  emit typ = undefined
+  emit = undefined
 
 instance Emitable TypeComposed String where
   emit = undefined
@@ -134,17 +143,17 @@ instance Emitable Method () where
   emit = undefined
 
 instance Emitable Stmt () where
-  emit x = undefined
+  emit = undefined
 
 instance Emitable RValue TypeBasic where
-  emit x = undefined
+  emit = undefined
 
 -- JUMPING CODE --
 ------------------
 class EmitableConditional a where
   emitCond :: a -> Label -> Label -> EmitterM ()
   evalCond :: a -> EmitterM TypeBasic
-  evalCond x = undefined
+  evalCond = undefined
 
 instance EmitableConditional RValue where
-  emitCond x ltrue lfalse = undefined
+  emitCond = undefined
