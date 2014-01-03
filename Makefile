@@ -13,8 +13,9 @@ all: $(JVM_RUNTIME) $(LLVM_RUNTIME)
 $(JVM_RUNTIME): %.class: %.java
 	javac $<
 
-$(LLVM_RUNTIME): %.bc: %.ll
-	llvm-as -o $@ $<
+$(LLVM_RUNTIME): %.bc: %.c
+	clang -S -emit-llvm -o $*.ll $<
+	llvm-as -o $@ $*.ll
 
 docs: $(DOCS)
 $(DOCS): %.pdf : %.md
@@ -26,7 +27,7 @@ $(TESTSUITES): % : all
 clean:
 	-$(MAKE) -C src/ clean
 	-rm -f $(JVM_RUNTIME)
-	-rm -f $(LLVM_RUNTIME)
+	-rm -f $(LLVM_RUNTIME) $(LLVM_RUNTIME:.bc=.ll)
 	-rm -f {compile,exec}.{err,out}
 	-find ./ -path "*test-*" -a \( -name "*.class" -o -name "*.j" -o -name "*.jar" \) -delete
 
