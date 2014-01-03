@@ -1,0 +1,41 @@
+#!/bin/bash
+set -e
+
+module=`basename ${1%.*}`
+path=`dirname $1`
+ext=${1##*.}
+debug=
+
+if [[ $2 == -*g* ]]; then
+  debug=-g
+fi
+
+if [[ $2 == -*c* ]]; then
+  rm -f $path/$module.{ll,bc.part,bc,a.out}
+  exit 0
+fi
+
+`dirname $0`/src/Jvmm/Main -l $1 $debug
+llvm-as -o $path/$module.bc.part $path/$module.ll
+llvm-link -o $path/$module.bc $path/$module.bc.part lib/runtime.bc
+llc $path/$module.bc \
+  -O0 \
+  -asm-verbose \
+gcc -o $path/a.out $path/$module.s
+
+if [[ $2 == -*s* || $2 == -*v* ]]; then
+  echo -e "\n:: JVMM (source)"
+  cat $path/$module.$ext
+  echo
+fi
+
+if [[ $2 == -*a* || $2 == -*v* ]]; then
+  echo -e "\n:: LLVM (source)"
+  cat $path/$module.ll
+  echo
+fi
+
+if [[ $2 == -*x* ]]; then
+  echo "Executing $path/a.out"
+  $path/a.out
+fi

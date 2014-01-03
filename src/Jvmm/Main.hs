@@ -26,6 +26,8 @@ import Jvmm.Verifier
 import Jvmm.Interpreter
 import Jvmm.JvmEmitter
 import Jvmm.JvmEmitter.Output
+import Jvmm.LlvmEmitter
+import Jvmm.LlvmEmitter.Output
 
 -- WORKFLOWS --
 ---------------
@@ -61,6 +63,21 @@ compileJvm = checkT =?> compile
           lift $ appendFile file "; eof\n"
       emitJvm config =>> mapM_ writeOne =>| classes
 
+-- Performs all static analysis and emits LLVM IR
+compileLlvm :: Interaction String
+compileLlvm = checkT =?> compile
+  where
+    compile classes = do
+      config <- ask
+      let source = configurationSource config
+      let dest = dropFileName source
+      let writeOne (LlvmModule clazz code) = do
+          let file = dest </> clazz ++ ".ll"
+          lift $ writeFile file $ "; source: " ++ source
+          mapM_ (lift . appendFile file . toLlvm) code
+          lift $ appendFile file "; eof\n"
+      emitLlvm config =>> mapM_ writeOne =>| classes
+
 execute :: Interaction String
 execute = checkT =?> interpret
 
@@ -77,6 +94,7 @@ optionsDef = [
   , Option "p" [] (NoArg $ \opts -> opts { configurationWorkflow = parse }) "parse code"
   , Option "c" [] (NoArg $ \opts -> opts { configurationWorkflow = check }) "preform static analysis"
   , Option "j" [] (NoArg $ \opts -> opts { configurationWorkflow = compileJvm }) "compile to Jasmin"
+  , Option "l" [] (NoArg $ \opts -> opts { configurationWorkflow = compileLlvm }) "compile to LLVM IR"
   , Option "i" [] (NoArg $ \opts -> opts { configurationWorkflow = execute }) "preform execution"
   , Option "g" [] (NoArg $ \opts -> opts { configurationDebug = True }) "include debug comments in code"
   ]
