@@ -1,25 +1,26 @@
+{-# LANGUAGE ExistentialQuantification #-}
 module Jvmm.LlvmEmitter.Output where
 
--- LLVM ASSEMBLER INPUT --
---------------------------
-data LlvmModule = LlvmModule String [LlvmLine]
-  deriving (Show)
+import Control.Monad.Error
 
-data LlvmLine =
-    LlvmInstruction String
-  | LlvmComment String
-  | LlvmLabel String
-  | LlvmEmpty
-  deriving (Show, Eq)
+import LLVM.General.AST as LLVM.AST
+import LLVM.General.Context
+import LLVM.General.Module
 
-isInstruction :: LlvmLine -> Bool
-isInstruction (LlvmInstruction _) = True
-isInstruction _ = False
+-- LLVM MODULE --
+-----------------
+data LlvmModule = LlvmModule LLVM.AST.Module
 
-toLlvm :: LlvmLine -> String
-toLlvm (LlvmInstruction str) = '\n':'\t':str
-toLlvm (LlvmComment ('\n':str)) = '\n':';':' ':str
-toLlvm (LlvmComment str) = '\t':';':' ':str
-toLlvm (LlvmLabel str) = '\n':str ++ ":"
-toLlvm LlvmEmpty = "\n"
+handleErrorT :: ErrorT String IO a -> IO a
+handleErrorT action = do
+  res <- runErrorT action
+  case res of
+    Left err -> ioError $ userError err
+    Right val -> return val
+
+writeUnitFile :: String -> LlvmModule -> IO ()
+writeUnitFile file (LlvmModule content) =
+  withContext $ \ctx -> handleErrorT $
+    withModuleFromAST ctx content $ \m -> handleErrorT $
+      writeBitcodeToFile file m
 

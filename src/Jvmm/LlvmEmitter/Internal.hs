@@ -26,27 +26,30 @@ import Jvmm.Errors (ErrorInfoT)
 import qualified Jvmm.Errors as Err
 import Jvmm.Trans.Output
 
--- FIXME
-import Text.Show.Pretty (ppShow)
+import qualified LLVM.General.AST as AST
 
 -- EMITTING CLASS HIERARCHY --
 ------------------------------
 emitHierarchy :: EmitterEnv -> ClassHierarchy -> ErrorInfoT Identity [LlvmModule]
 emitHierarchy env hierarchy = do
+  let layout = runIdentity $ layoutHierarchy hierarchy
   let name = emitterenvModuleName env
-  layout <- lift $ layoutHierarchy hierarchy
-  error $ ppShow $ layout
-  code <- runEmitterM (env { emitterenvLayout = layout }) $ intercept $ Traversable.mapM emit hierarchy
-  return [LlvmModule name code]
+  content <- runEmitterM (env { emitterenvLayout = layout }) $ Traversable.mapM emit hierarchy
+  return [LlvmModule name content]
 
 -- EMITTER STATE --
 -------------------
 data EmitterState = EmitterState {
-    emitterstateUnique   :: Int
+    emitterstateNextInt :: Int
+  , emitterstateBlock :: BasicBlockState
 } deriving (Show)
 
 emitterstate0 :: EmitterState
-emitterstate0 = EmitterState 0
+emitterstate0 = EmitterState basicblockstate0
+
+data BasicBlockState = BasicBlockState {}
+
+basicblockstate0 = BasicBlockState
 
 -- EMITTER ENVIRONMENT --
 -------------------------
@@ -60,61 +63,19 @@ emitterenv0 = EmitterEnv "unknown" undefined
 
 -- THE MONAD --
 ---------------
-type EmitterM = StateT EmitterState (ReaderT EmitterEnv (WriterT [LlvmLine] (ErrorInfoT Identity)))
+type EmitterM a = StateT EmitterState (ReaderT EmitterEnv (ErrorInfoT Identity)) a
 runEmitterM :: EmitterEnv -> EmitterM a -> ErrorInfoT Identity a
-runEmitterM env action = do
-  (res, leftCode) <- runWriterT (runReaderT (evalStateT action emitterstate0) env)
-  assert (null leftCode) $ return res
+runEmitterM env action = runReaderT (evalStateT action emitterstate0) env
 
 -- MONADIC HELPERS --
 ---------------------
-notImplemented :: a
-notImplemented = error "Not implemented"
+nextInt :: EmitterM Int
+nextInt = do
+  next <- gets emitterenvNextInt
+  modify $ \s -> s { emitterenvNextInt = next + 1 }
+  return next
 
-intercept :: EmitterM a -> EmitterM [LlvmLine]
-intercept action = fmap snd $ censor (const []) $ listen action
-
-emitterstateNewId :: EmitterM Int
-emitterstateNewId = do
-  num <- gets emitterstateUnique
-  modify (\st -> st { emitterstateUnique = num + 1 })
-  return num
-
-emitterstateResetId :: EmitterM ()
-emitterstateResetId = modify (\st -> st { emitterstateUnique = 0 })
-
-tell1 :: LlvmLine -> EmitterM ()
-tell1 = tell . return
-
--- LABELS ALLOCATION --
------------------------
-newtype Label = Label String
-  deriving (Show, Eq, Ord)
-
-newLabel :: EmitterM Label
-newLabel = fmap (Label . ('l':) . show)  emitterstateNewId
-
-newLabels2 :: EmitterM (Label, Label)
-newLabels2 = liftM2 (,) newLabel newLabel
-newLabels3 :: EmitterM (Label, Label, Label)
-newLabels3 = liftM3 (,,) newLabel newLabel newLabel
-newLabels4 :: EmitterM (Label, Label, Label, Label)
-newLabels4 = liftM4 (,,,) newLabel newLabel newLabel newLabel
-
--- NAMES ALLOCATION --
-----------------------
-data Name =
-    Local String
-  deriving (Show, Eq, Ord)
-
-newLocal :: EmitterM Name
-newLocal = fmap (Local . ('i':) . show) emitterstateNewId
-
--- EMITTING HELPERS --
-----------------------
-lab :: Label -> EmitterM ()
-lab (Label str) = tell1 $ LlvmLabel str
-
+-- FIXME/
 -- TREE TRAVERSING --
 ---------------------
 class Emitable a b | a -> b where
@@ -148,12 +109,3 @@ instance Emitable Stmt () where
 instance Emitable RValue TypeBasic where
   emit = undefined
 
--- JUMPING CODE --
-------------------
-class EmitableConditional a where
-  emitCond :: a -> Label -> Label -> EmitterM ()
-  evalCond :: a -> EmitterM TypeBasic
-  evalCond = undefined
-
-instance EmitableConditional RValue where
-  emitCond = undefined

@@ -3,8 +3,6 @@
 #include <string.h>
 #include <stdint.h>
 
-#define STRING_LINE_BUFFER 1024
-
 void printInt(int32_t x) {
   printf("%d\n", x);
 }
@@ -20,9 +18,9 @@ void printString(char* s) {
 }
 
 char* readString() {
-  static char buffer[STRING_LINE_BUFFER];
-  fgets(buffer, STRING_LINE_BUFFER, stdin);
-  char* s = (char*) malloc(strlen(buffer));
+  char* s = NULL;
+  size_t n = 0;
+  getline(&s, &n, stdin);
   return s;
 }
 

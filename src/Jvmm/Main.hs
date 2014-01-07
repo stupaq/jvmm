@@ -54,13 +54,13 @@ compileJvm = checkT =?> compile
   where
     compile classes = do
       config <- ask
-      let source = configurationSource config
-      let dest = dropFileName source
+      let dest = dropFileName $ configurationSource config
       let writeOne (JasminAsm clazz code) = do
           let file = dest </> clazz ++ ".j"
-          lift $ writeFile file $ "; source: " ++ source
-          mapM_ (lift . appendFile file . toJasmin) code
-          lift $ appendFile file "; eof\n"
+          lift $ do
+            writeFile file "; clazz"
+            mapM_ (appendFile file . toJasmin) code
+            appendFile file "; eof\n"
       emitJvm config =>> mapM_ writeOne =>| classes
 
 -- Performs all static analysis and emits LLVM IR
@@ -69,13 +69,10 @@ compileLlvm = checkT =?> compile
   where
     compile classes = do
       config <- ask
-      let source = configurationSource config
-      let dest = dropFileName source
-      let writeOne (LlvmModule clazz code) = do
-          let file = dest </> clazz ++ ".ll"
-          lift $ writeFile file $ "; source: " ++ source
-          mapM_ (lift . appendFile file . toLlvm) code
-          lift $ appendFile file "; eof\n"
+      let dest = dropFileName $ configurationSource config
+      let writeOne unit@(LlvmModule name _) = do
+          let file = dest </> name ++ ".bc"
+          lift $ writeUnitFile file unit
       emitLlvm config =>> mapM_ writeOne =>| classes
 
 execute :: Interaction String

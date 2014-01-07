@@ -2,13 +2,13 @@ module Jvmm.LlvmEmitter where
 import Jvmm.LlvmEmitter.Internal
 import Jvmm.LlvmEmitter.Output
 
-import System.FilePath (takeBaseName)
-
 import Control.Monad.Identity
 
-import Jvmm.Workflows
+import System.FilePath (takeBaseName)
+
 import Jvmm.Errors (ErrorInfoT)
 import Jvmm.Trans.Output
+import Jvmm.Workflows
 
 -- LLVM EMITTER ----------------------------------------------------------------
 --  The layer responsible for emitting LLVM IR for restricted subset of JVMM

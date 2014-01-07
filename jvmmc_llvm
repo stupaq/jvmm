@@ -11,17 +11,12 @@ if [[ $2 == -*g* ]]; then
 fi
 
 if [[ $2 == -*c* ]]; then
-  rm -f $path/$module.{ll,bc.part,bc,a.out}
+  rm -f $path/$module.{ll,bc.part,bc,s}
+  rm -f $path/a.out
   exit 0
 fi
 
 `dirname $0`/src/Jvmm/Main -l $1 $debug
-llvm-as -o $path/$module.bc.part $path/$module.ll
-llvm-link -o $path/$module.bc $path/$module.bc.part lib/runtime.bc
-llc $path/$module.bc \
-  -O0 \
-  -asm-verbose \
-gcc -o $path/a.out $path/$module.s
 
 if [[ $2 == -*s* || $2 == -*v* ]]; then
   echo -e "\n:: JVMM (source)"
@@ -29,11 +24,19 @@ if [[ $2 == -*s* || $2 == -*v* ]]; then
   echo
 fi
 
+llvm-dis -o $path/$module.ll $path/$module.bc
+
 if [[ $2 == -*a* || $2 == -*v* ]]; then
   echo -e "\n:: LLVM (source)"
   cat $path/$module.ll
   echo
 fi
+
+mv -f $path/$module.bc $path/$module.bc.part
+llvm-link -o $path/$module.bc $path/$module.bc.part lib/runtime.bc
+rm -f $path/$module.bc.part
+llc -O0 -asm-verbose $path/$module.bc
+gcc -o $path/a.out $path/$module.s
 
 if [[ $2 == -*x* ]]; then
   echo "Executing $path/a.out"
