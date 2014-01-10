@@ -70,8 +70,8 @@ compileLlvm = checkT =?> compile
     compile classes = do
       config <- ask
       let dest = dropFileName $ configurationSource config
-      let writeOne unit@(LlvmModule name _) = do
-          let file = dest </> name ++ ".bc"
+      let writeOne unit = do
+          let file = dest </> llvmModuleName unit ++ ".bc"
           lift $ writeUnitFile file unit
       emitLlvm config =>> mapM_ writeOne =>| classes
 

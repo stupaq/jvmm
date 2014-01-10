@@ -16,7 +16,7 @@ import Jvmm.Workflows
 -------------------------------------------------------------------------------
 
 emitLlvm :: Configuration -> ClassHierarchy -> ErrorInfoT Identity [LlvmModule]
-emitLlvm (Configuration { configurationDebug = debug, configurationSource = source }) =
+emitLlvm (Configuration { configurationSource = source }) =
   let env = emitterenv0 { emitterenvModuleName = takeBaseName source }
   in emitHierarchy env
 

@@ -52,7 +52,7 @@ void rc_release(void* ptr) {
 
 /** Strings */
 // Null terminated strings
-char* concat(char* first, char* second) {
+char* string_concat(char* first, char* second) {
   char* both = rc_malloc(strlen(first) + strlen(second) + 1);
   strcpy(both, first);
   strcat(both, second);
@@ -60,23 +60,29 @@ char* concat(char* first, char* second) {
 }
 
 /** Arrays */
-struct array {
+#define ARRAY_HEADER_SIZE (sizeof(struct array_header))
+
+struct array_header {
   int32_t length;
-  void* data[0];
 };
 
-int32_t array_length(struct array* array) {
-  return array->length;
+static inline void* array_header_to_ptr(struct array_header* header) {
+  return ((char*) header) + ARRAY_HEADER_SIZE;
 }
 
-void* array_data(struct array* array) {
-  return array->data;
+static inline struct array_header* array_ptr_to_header(void* ptr) {
+  return (struct array_header*) ((char*) ptr) - ARRAY_HEADER_SIZE;
 }
 
-struct array* array_malloc(int32_t length, int32_t element) {
-  struct array* array =  rc_malloc(length * element);
+void* array_malloc(int32_t length, int32_t element) {
+  struct array_header* array =  rc_malloc(length * element);
   array->length = length;
-  return array;
+  return array_header_to_ptr(array);
+}
+
+int32_t array_length(void* array) {
+  struct array_header* header = array_ptr_to_header(array);
+  return header->length;
 }
 
 /** IO library functions */
@@ -96,7 +102,7 @@ void printString(char* s) {
 
 char* readString() {
   char* line = NULL;
-  ssize_t ret = getline(&line, NULL, stdin);
+  getline(&line, NULL, stdin);
   char* str = (char*) rc_malloc(strlen(line) + 1);
   strcpy(str, line);
   return str;
