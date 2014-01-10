@@ -12,6 +12,7 @@ import Jvmm.LlvmEmitter.Output
 
 import Control.Applicative
 import Control.Exception (assert)
+import Control.Monad
 import Control.Monad.Error
 import Control.Monad.Identity
 import Control.Monad.Reader
@@ -164,7 +165,7 @@ intercept :: forall (f :: * -> *) a a1. (Functor f, MonadWriter [a1] f) => f a -
 intercept action = fmap snd $ censor (const []) $ listen action
 
 layoutFor :: TypeComposed -> EmitterM ClassLayout
-layoutFor typ = asks emitterenvLayout >>= return . Maybe.fromJust . Map.lookup typ
+layoutFor typ = liftM (Maybe.fromJust . Map.lookup typ) (asks emitterenvLayout)
 
 -- LLVM MONADIC HELPERS --
 --------------------------
@@ -195,7 +196,7 @@ instance InstructionLike (InstructionMetadata -> Terminator) Terminator where
 newBlock :: Name  -> Name -> EmitterM a -> EmitterM a
 newBlock bname back action = do
   oldname <- gets emitterstateBlockName
-  assertM (oldname == Nothing)
+  assertM (Maybe.isNothing oldname)
   modify $ \s -> s { emitterstateBlockName = Just bname }
   res <- action
   endBlock $ Do $ Br back []
@@ -220,6 +221,24 @@ defaultValue typ = case typ of
   TPrimitive TBool -> return $ Llvm.Constant.Int 1 0
   TComposed ctyp -> Null <$> emit ctyp
   _ -> Err.unreachable "no default value"
+
+class Alignable a where
+  align :: a -> Word32
+
+instance Alignable TypeBasic where
+  align (TComposed _) = 4
+  align (TPrimitive _) = 8
+
+-- LLVM PURE HELPERS --
+-----------------------
+class Localizable a b | a -> b where
+  location :: a -> b
+
+instance Localizable VariableNum Name where
+  location num = Name $ ("loc" ++) $ show $ fromEnum num
+
+instance Localizable Variable Operand where
+  location (Variable _ num _) = LocalReference $ location num
 
 -- FIXME/
 -- TREE TRAVERSING --
@@ -299,7 +318,7 @@ instance Emitable Method () where
         mapM_ allocVar $ args ++ vars
         mapM_ initArg args
       exit <- nextUnName
-      newBlock body exit $ do
+      newBlock body exit $
         -- FIXME
         return ()
       newBlock exit exit $
@@ -317,15 +336,14 @@ instance Emitable Method () where
       where
         argSelf = Variable (TComposed origin) VariableThis (VariableName "self")
         argName num = Name $ ("arg" ++) $ show $ fromEnum num
-        varLocName num = Name $ ("loc" ++) $ show $ fromEnum num
         emitArg (Variable typ num _) = do
           ltyp <- emit typ
           return $ Parameter ltyp (argName num) []
         allocVar (Variable typ num _) = do
           ltyp <- emit typ
-          varLocName num |= Alloca ltyp Nothing 8
-        initArg (Variable _ num _) =
-          Do |- Store False (LocalReference $ varLocName num) (LocalReference $ argName num) Nothing 8
+          location num |= Alloca ltyp Nothing (align typ)
+        initArg var@(Variable typ num _) =
+          Do |- Store False (location var) (LocalReference $ argName num) Nothing (align typ)
 
 instance Emitable Stmt () where
   emit = undefined

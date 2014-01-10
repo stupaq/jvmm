@@ -21,6 +21,9 @@ docs: $(DOCS)
 $(DOCS): %.pdf : %.md
 	pandoc $< -o $@
 
+lint:
+	$(MAKE) -C src/ lint
+
 $(TESTSUITES): % : all
 	@./$@/test-run.sh -A
 
@@ -35,4 +38,4 @@ distclean: clean
 	-$(MAKE) -C src/ distclean
 	-rm -f $(DOCS) ./latc
 
-.PHONY: clean distclean docs
+.PHONY: clean distclean docs lint
