@@ -7,9 +7,9 @@ import Prelude hiding (id)
 
 import qualified Syntax.AbsJvmm as I
 
+import Jvmm.Builtins
 import Jvmm.Errors (ErrorInfoT, Location)
 import qualified Jvmm.Errors as Err
-import Jvmm.Builtins
 import Jvmm.Hierarchy (objectClassDiff, prepareClassDiff)
 
 -- Creates variable-associated identifier from given one (for temporary and iteration variables).
@@ -98,7 +98,7 @@ tStmt x = case x of
         I.SPostInc (I.EVar iditer) noSem] noRbr)] noRbr
   I.SExpr expr s -> tSem s $ return $ O.SExpr $ tExpr expr
   I.SThrow expr s -> tSem s $ return $ O.SThrow $ tExpr expr
-  I.STryCatch stmt1 typ2 id3 stmt4 -> return $ O.T_STryCatch (O.SBlock $ tStmt stmt1) (tTComposed typ2) (tVIdent id3) (O.SBlock $ tStmt stmt4)
+  I.STryCatch stmt1 typ2 id3 stmt4 -> return $ O.PruneSTryCatch (O.SBlock $ tStmt stmt1) (tTComposed typ2) (tVIdent id3) (O.SBlock $ tStmt stmt4)
   where
   tAssignOp :: I.AssignOp -> I.Expr -> I.Expr -> I.Expr
   tAssignOp opassign expr1 expr2 = case opassign of
@@ -109,7 +109,7 @@ tStmt x = case x of
     I.AMod -> I.EMul expr1 I.Mod expr2
 
 tLVal :: I.Expr -> O.LValue
-tLVal = O.T_LExpr . tExpr
+tLVal = O.PruneLExpr . tExpr
 
 tLVar :: I.Ident -> O.LValue
 tLVar = tLVal . I.EVar
@@ -140,17 +140,17 @@ tItem :: I.TypeBasic -> I.Item -> [O.Stmt]
 tItem t x =
   let typ = tTBasic t
   in case x of
-  I.NoInit id -> [O.T_SDeclVar typ (tVIdent id), O.SAssign (tLVar id) (defaultValue typ)]
+  I.NoInit id -> [O.PruneSDeclVar typ (tVIdent id), O.SAssign (tLVar id) (defaultValue typ)]
   I.Init id e -> -- SYNTACTIC SUGAR
     -- For declarations with conflicts (e.g. int x = x;) we use temporary variable
     -- with lifetime limited to four statements, which cannot hide any user-defined variable
     let expr = tExpr e
     in if refersTo (tVIdent id) expr then let idtmp = tempIdent id "decl" in [
-        O.T_SDeclVar typ (tVIdent idtmp),
+        O.PruneSDeclVar typ (tVIdent idtmp),
         O.SAssign (tLVar idtmp) expr,
-        O.T_SDeclVar typ (tVIdent id),
-        O.SAssign (tLVar id) (O.T_EVar (tVIdent idtmp))]
-    else [O.T_SDeclVar typ (tVIdent id), O.SAssign (tLVar id) expr]
+        O.PruneSDeclVar typ (tVIdent id),
+        O.SAssign (tLVar id) (O.PruneEVar (tVIdent idtmp))]
+    else [O.PruneSDeclVar typ (tVIdent id), O.SAssign (tLVar id) expr]
 
 refersTo :: O.VariableName -> O.RValue -> Bool
 -- We can always make a mistake and answer True
@@ -176,13 +176,13 @@ refersTo var x = case x of
   O.EUnary _ expr _ -> refers expr
   O.EBinary _ expr1 expr2 _ -> any refers [expr1, expr2]
   -- These expressions will be replaced with ones caring more context in subsequent phases
-  O.T_EVar var1 -> var == var1
+  O.PruneEVar var1 -> var == var1
   where
     refers = refersTo var
 
 tExpr :: I.Expr -> O.RValue
 tExpr x = case x of
-  I.EVar id -> O.T_EVar $ tVIdent id
+  I.EVar id -> O.PruneEVar $ tVIdent id
   I.ELitInt n -> O.ELitInt n
   I.ELitTrue -> O.ELitTrue
   I.ELitFalse -> O.ELitFalse

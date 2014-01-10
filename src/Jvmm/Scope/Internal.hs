@@ -293,13 +293,13 @@ instance Scopeable Stmt where
     -- Metainformation carriers
     SMetaLocation loc stmts -> stmtMetaLocation loc $ mapM scope stmts
     -- These statements will be replaced with ones caring more context in subsequent phases
-    T_SDeclVar typ name -> do
+    PruneSDeclVar typ name -> do
       declare name
       static typ
       num <- inCurrent name
       tell [Variable typ num name]
       return SEmpty
-    T_STryCatch stmt1 typ name stmt2 -> do
+    PruneSTryCatch stmt1 typ name stmt2 -> do
       stmt1' <- newLocalScope (scope stmt1)
       newLocalScope $ do
         -- Catch body can hide exception variable
@@ -361,7 +361,7 @@ instance Scopeable RValue where
       expr2' <- scope expr2
       return $ EBinary op expr1' expr2' undefined
     -- These expressions will be replaced with ones caring more context in subsequent phases
-    T_EVar name ->
+    PruneEVar name ->
       varOrField name
         (`ELoad` undefined)
         (\field -> EGetField (ELoad VariableThis undefined) undefined field undefined)

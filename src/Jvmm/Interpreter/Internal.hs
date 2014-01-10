@@ -403,7 +403,7 @@ instance Interpretable Stmt () where
       ref <- interpret $ toRValue lval
       val <- interpret expr
       putfield name val ref
-    SAssign (T_LExpr _) _ -> Err.unreachable x
+    SAssign (PruneLExpr _) _ -> Err.unreachable x
     -- Control statements
     SReturn expr _ -> interpret expr >>= return_
     SReturnV -> return'_
@@ -436,7 +436,7 @@ instance Interpretable Stmt () where
       -- We ignore error location for now
       mapM_ interpret stmts
     -- These statements will be replaced with ones caring more context in subsequent phases
-    T_SDeclVar {} -> Err.unreachable x
+    PruneSDeclVar {} -> Err.unreachable x
 
 instance Interpretable RValue PrimitiveValue where
   -- Using JVMM monadic bytecode here might be misleading but during
@@ -515,5 +515,5 @@ instance Interpretable RValue PrimitiveValue where
         ObGEQ -> val1 >= val2
         _ -> Err.unreachable opbin
     -- These expressions will be replaced with ones caring more context in subsequent phases
-    T_EVar _ -> Err.unreachable x
+    PruneEVar _ -> Err.unreachable x
 

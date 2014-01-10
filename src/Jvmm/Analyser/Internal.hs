@@ -119,8 +119,8 @@ instance Analysable Stmt [Stmt] where
     -- Metainformation carriers
     SMetaLocation loc stmts -> Err.withLocation loc (consecutive stmts)
     -- These statements will be replaced with ones caring more context in subsequent phases
-    T_SDeclVar {} -> Err.unreachable x
-    T_STryCatch {} -> Err.unreachable x
+    PruneSDeclVar {} -> Err.unreachable x
+    PruneSTryCatch {} -> Err.unreachable x
     where
       original, nothing :: AnalyserM [Stmt]
       original = return [x]
@@ -169,7 +169,7 @@ instance Analysable RValue RValue where
         -- TODO constant propagation
         (_, expr1', expr2') -> return $ EBinary op expr1' expr2' tret
     -- These expressions will be replaced with ones caring more context in subsequent phases
-    T_EVar {} -> Err.unreachable x
+    PruneEVar {} -> Err.unreachable x
     -- Fallback to original value
     _ -> original
     where
@@ -181,5 +181,5 @@ instance Analysable LValue LValue where
     LVariable _ _ -> return x
     LArrayElement lval expr telem -> LArrayElement <$> analyse lval <*> analyse expr <#> telem
     LField lval ctyp name ftyp -> LField <$> analyse lval <#> ctyp <#> name <#> ftyp
-    T_LExpr _ -> Err.unreachable x
+    PruneLExpr _ -> Err.unreachable x
 

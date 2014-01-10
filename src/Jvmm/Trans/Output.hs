@@ -129,8 +129,8 @@ data Stmt =
   -- Metainformation carriers
   | SMetaLocation Location [Stmt]
   -- These statements will be replaced with ones caring more context in subsequent phases
-  | T_SDeclVar TypeBasic VariableName
-  | T_STryCatch Stmt TypeComposed VariableName Stmt
+  | PruneSDeclVar TypeBasic VariableName
+  | PruneSTryCatch Stmt TypeComposed VariableName Stmt
   deriving (Show)
 
 -- EXPRESSIONS --
@@ -157,7 +157,7 @@ data RValue =
   | EUnary OpUn RValue TypeBasic
   | EBinary OpBin RValue RValue TypeBasic
   -- These expressions will be replaced with ones caring more context in subsequent phases
-  | T_EVar VariableName
+  | PruneEVar VariableName
   deriving (Show)
 
 data LValue =
@@ -165,7 +165,7 @@ data LValue =
   | LArrayElement LValue RValue TypeBasic
   | LField LValue TypeComposed FieldName TypeBasic
   -- These expressions will be replaced with ones caring more context in subsequent phases
-  | T_LExpr RValue
+  | PruneLExpr RValue
   deriving (Show)
 
 class InheritsRValue a where
@@ -176,7 +176,7 @@ instance InheritsRValue LValue where
   toRValue (LVariable num typ) = ELoad num typ
   toRValue (LArrayElement lval expr typ) = EArrayLoad (toRValue lval) expr typ
   toRValue (LField lval ctyp name typ) = EGetField (toRValue lval) ctyp name typ
-  toRValue (T_LExpr expr) = expr
+  toRValue (PruneLExpr expr) = expr
 
 class InheritsLValue a where
   toLValue :: a -> LValue
@@ -185,14 +185,14 @@ class InheritsLValue a where
     LVariable _ _ -> True
     LArrayElement lval _ _ -> isPureLValue lval
     LField lval _ _ _ -> isPureLValue lval
-    T_LExpr _ -> False
+    PruneLExpr _ -> False
 instance InheritsLValue LValue where
   toLValue = Prelude.id
 instance InheritsLValue RValue where
   toLValue (ELoad num typ) = LVariable num typ
   toLValue (EArrayLoad rval expr2 typ) = LArrayElement (toLValue rval) expr2 typ
   toLValue (EGetField rval ctyp name typ) = LField (toLValue rval) ctyp name typ
-  toLValue expr = T_LExpr expr
+  toLValue expr = PruneLExpr expr
 
 -- OPERATIONS --
 ----------------

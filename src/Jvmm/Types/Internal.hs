@@ -436,8 +436,8 @@ instance TypeCheckable Stmt where
     -- Metainformation carriers
     SMetaLocation loc stmts -> stmtMetaLocation loc $ mapM tcheck stmts
     -- These statements will be replaced with ones caring more context in subsequent phases
-    T_SDeclVar {} -> Err.unreachable x
-    T_STryCatch {} -> Err.unreachable x
+    PruneSDeclVar {} -> Err.unreachable x
+    PruneSTryCatch {} -> Err.unreachable x
 
 class TypeCheckable' a where
   tcheck' :: a -> TypeM (a, TypeBasic)
@@ -524,10 +524,10 @@ instance TypeCheckable' RValue where
                 _ -> return TInt
           return (EBinary opbin expr1' expr2' rett, rett)
     -- These expressions will be replaced with ones caring more context in subsequent phases
-    T_EVar _ -> Err.unreachable x
+    PruneEVar _ -> Err.unreachable x
 
 instance TypeCheckable' LValue where
-  tcheck' lval@(T_LExpr _) = Err.unreachable lval
+  tcheck' lval@(PruneLExpr _) = Err.unreachable lval
   tcheck' lval = do
     (expr', typ) <- tcheck' $ toRValue lval
     return (toLValue expr', typ)

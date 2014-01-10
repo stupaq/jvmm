@@ -351,7 +351,7 @@ instance Emitable Stmt () where
       emit expr1
       emit expr2
       inss (element telem "astore") dec3
-    SAssign (T_LExpr _) _ -> Err.unreachable x
+    SAssign (PruneLExpr _) _ -> Err.unreachable x
     SAssign {} -> notImplemented
     -- Control statements
     SReturn expr typ -> do
@@ -390,8 +390,8 @@ instance Emitable Stmt () where
     -- Metainformation carriers
     SMetaLocation loc stmts -> stmtMetaLocation' loc (mapM emit stmts)
     -- These statements will be replaced with ones caring more context in subsequent phases
-    T_SDeclVar {} -> Err.unreachable x
-    T_STryCatch {} -> Err.unreachable x
+    PruneSDeclVar {} -> Err.unreachable x
+    PruneSTryCatch {} -> Err.unreachable x
 
 instance Emitable RValue TypeBasic where
   emit x = case x of
@@ -503,7 +503,7 @@ instance Emitable RValue TypeBasic where
       return tret
     EBinary {} -> Err.unreachable x
     -- These expressions will be replaced with ones caring more context in subsequent phases
-    T_EVar {} -> Err.unreachable x
+    PruneEVar {} -> Err.unreachable x
 
 -- JUMPING CODE --
 ------------------

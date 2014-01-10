@@ -89,7 +89,7 @@ instance Verifiable Stmt where
   verify x = case x of
     SBlock stmts -> mapM_ verify stmts
     -- Memory access
-    SAssign (T_LExpr _) _ -> Err.unreachable x
+    SAssign (PruneLExpr _) _ -> Err.unreachable x
     -- Control statements
     SReturn _ _ -> setReturned True
     SReturnV -> setReturned True
@@ -117,7 +117,7 @@ instance Verifiable Stmt where
     -- Metainformation carriers
     SMetaLocation loc stmts -> Err.withLocation loc (mapM_ verify stmts)
     -- These statements will be replaced with ones caring more context in subsequent phases
-    T_SDeclVar {} -> Err.unreachable x
+    PruneSDeclVar {} -> Err.unreachable x
     -- Nothing to do here
     _ -> return ()
     where
