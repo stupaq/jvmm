@@ -36,8 +36,8 @@ import LLVM.General.AST.Constant as Llvm.Constant
 import LLVM.General.AST.Global as Llvm.Global
 import LLVM.General.AST.Instruction as Llvm.Instruction
 import LLVM.General.AST.IntegerPredicate as Llvm.IntegerPrediacte
-import LLVM.General.AST.Name as Llvm.Name
 import LLVM.General.AST.Linkage as Llvm.Linkage
+import LLVM.General.AST.Name as Llvm.Name
 import LLVM.General.AST.Operand as Llvm.Operand
 import LLVM.General.AST.RMWOperation as Llvm.RMWOperation
 import LLVM.General.AST.Type as Llvm.Type hiding (Type)
@@ -70,13 +70,18 @@ charType = IntegerType 8
 voidPtrType = PointerType charType defAddrSpace
 stringType = PointerType charType defAddrSpace
 
-nameTObject :: String
-nameTObject = "class.Object"
+composedName :: TypeComposed -> Name
+composedName x = case x of
+  TObject -> Name "class.Object"
+  TUser (ClassName str) -> Name $ "class." ++ str
+  _ -> Err.unreachable "type has no name"
+
+(+/+) :: Name -> String -> Name
+(+/+) (Name pref) suf = Name $ pref ++ "." ++ suf
+(+/+) x@(UnName _) _ = x
 
 objectProto :: TypeComposed -> Name
-objectProto TObject = Name $ nameTObject ++ "..proto"
-objectProto (TUser (ClassName str)) = Name $ concat ["class.", str, "..proto"]
-objectProto _ = Err.unreachable "type has no proto"
+objectProto typ = composedName typ +/+ ".proto"
 
 builtinGlobals :: [Definition]
 builtinGlobals = map GlobalDefinition [
@@ -93,7 +98,7 @@ builtinGlobals = map GlobalDefinition [
     , declareFn "error" [] VoidType
     , defineFn "main" [] intType [BasicBlock
         (UnName 0)
-        [UnName 1 := defCall (Name $ nameTObject ++ ".main") []]
+        [UnName 1 := defCall (composedName TObject +/+ "main") []]
         (Do $ Ret (Just $ LocalReference $ UnName 1) [])
       ]
   ]
@@ -235,8 +240,8 @@ class Alignable a where
   align :: a -> Word32
 
 instance Alignable TypeBasic where
-  align (TComposed _) = 4
-  align (TPrimitive _) = 8
+  align (TComposed _) = 8
+  align (TPrimitive _) = 4
 
 -- LLVM PURE HELPERS --
 -----------------------
@@ -249,40 +254,40 @@ instance Localizable VariableNum Name where
 instance Localizable Variable Operand where
   location (Variable _ num _) = LocalReference $ location num
 
-class DirectlyTranslatable a b | a -> b where
+class Translatable a b | a -> b where
   toLlvm :: a -> b
 
-instance DirectlyTranslatable Type LlvmType where
+instance Translatable Type LlvmType where
   toLlvm (TMethod typ) = toLlvm typ
   toLlvm (TBasic typ) = toLlvm typ
 
-instance DirectlyTranslatable TypeMethod LlvmType where
-  toLlvm _ = undefined
+instance Translatable TypeMethod LlvmType where
+  toLlvm (TypeMethod tret targs _) = FunctionType (toLlvm tret) (map toLlvm targs) False
 
-instance DirectlyTranslatable TypeBasic LlvmType where
+instance Translatable TypeBasic LlvmType where
   toLlvm (TComposed typ) = toLlvm typ
   toLlvm (TPrimitive typ) = toLlvm typ
 
-instance DirectlyTranslatable TypePrimitive LlvmType where
+instance Translatable TypePrimitive LlvmType where
   toLlvm x = case x of
     TVoid -> VoidType
     TInt -> intType
     TChar -> charType
     TBool -> boolType
 
-instance DirectlyTranslatable TypeComposed LlvmType where
+instance Translatable TypeComposed LlvmType where
   toLlvm x = case x of
-    TObject -> namedType nameTObject
-    TUser (ClassName str) -> namedType str
     TArray typ -> PointerType (toLlvm typ) defAddrSpace
     TString -> stringType
     TNull -> Err.unreachable TNull
-    where
-      namedType = NamedTypeReference . Name
+    _ -> PointerType (NamedTypeReference $ composedName x) defAddrSpace
 
+instance Translatable ClassLayout LlvmType where
+  toLlvm layout = StructureType {
+        Llvm.Type.isPacked = False
+      , elementTypes = map toLlvm $ layoutFieldTypes layout
+    }
 
-
--- FIXME/
 -- TREE TRAVERSING --
 ---------------------
 class Emitable a b | a -> b where
@@ -291,20 +296,20 @@ class Emitable a b | a -> b where
 instance Emitable Class () where
   emit clazz@(Class { classType = typ }) = do
     -- Emit class structure definition
-    let NamedTypeReference tname = toLlvm typ
-    tdef <- emit =<< layoutFor typ
-    define $ TypeDefinition tname (Just tdef)
+    lay@(ClassLayout _ fields _) <- layoutFor typ
+    let tdef = toLlvm lay
+    define $ TypeDefinition (composedName typ) (Just tdef)
     -- Emit object prototype
+    define $ GlobalDefinition $ globalVariableDefaults {
+          name = objectProto typ
+        , isConstant = True
+        , Llvm.Global.type' = tdef
+        , initializer = Just $ Struct False $ map defaultValue fields
+      }
+    -- Emit vtable
+    -- FIXME
     -- Emit static methods
-    mapM_ emit $ classStaticMethods clazz
-    -- FIXME emit vtable
-    -- FIXME emit instance methods
-
-instance Emitable ClassLayout LlvmType where
-  emit layout = return StructureType {
-        Llvm.Type.isPacked = False
-      , elementTypes = map toLlvm $ layoutFieldTypes layout
-    }
+    mapM_ emit $ classAllMethods clazz
 
 instance Emitable Method () where
   emit Method { methodBody = SInherited } = return ()
@@ -314,11 +319,11 @@ instance Emitable Method () where
       , methodType = TypeMethod tret _ _
       , methodVariables = vars
       , methodOrigin = origin
+      , methodBody = bodyStmt
       }) = do
     let args = if methodInstance method
         then argSelf : methodArgs method
         else methodArgs method
-    let NamedTypeReference (Name originstr) = toLlvm origin
     let ltret = toLlvm tret
     largs <- mapM emitArg args
     blocks <- intercept $ do
@@ -329,14 +334,13 @@ instance Emitable Method () where
         mapM_ initArg args
       exit <- nextUnName
       newBlock body exit $
-        -- FIXME
-        return ()
+        emit bodyStmt
       newBlock exit exit $
         if ltret == VoidType
         then Do |- Ret Nothing
         else Do |- Ret (Just $ ConstantOperand $ defaultValue tret)
     define $ GlobalDefinition $ functionDefaults {
-        name = Name $ concat [originstr, ".", namestr]
+        name = composedName origin +/+ namestr
       , returnType = ltret
       , parameters = (largs, False)
       , basicBlocks = blocks
@@ -350,8 +354,6 @@ instance Emitable Method () where
           Do |- Store False (location var) (LocalReference $ argName num) Nothing (align typ)
 
 instance Emitable Stmt () where
-  emit = undefined
-
-instance Emitable RValue TypeBasic where
-  emit = undefined
+  -- FIXME
+  emit _ = return ()
 
