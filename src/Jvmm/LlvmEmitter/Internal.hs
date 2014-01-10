@@ -37,6 +37,7 @@ import LLVM.General.AST.Global as Llvm.Global
 import LLVM.General.AST.Instruction as Llvm.Instruction
 import LLVM.General.AST.IntegerPredicate as Llvm.IntegerPrediacte
 import LLVM.General.AST.Name as Llvm.Name
+import LLVM.General.AST.Linkage as Llvm.Linkage
 import LLVM.General.AST.Operand as Llvm.Operand
 import LLVM.General.AST.RMWOperation as Llvm.RMWOperation
 import LLVM.General.AST.Type as Llvm.Type hiding (Type)
@@ -69,6 +70,14 @@ charType = IntegerType 8
 voidPtrType = PointerType charType defAddrSpace
 stringType = PointerType charType defAddrSpace
 
+nameTObject :: String
+nameTObject = "class.Object"
+
+objectProto :: TypeComposed -> Name
+objectProto TObject = Name $ nameTObject ++ "..proto"
+objectProto (TUser (ClassName str)) = Name $ concat ["class.", str, "..proto"]
+objectProto _ = Err.unreachable "type has no proto"
+
 builtinGlobals :: [Definition]
 builtinGlobals = map GlobalDefinition [
       declareFn "rc_malloc" [intType] voidPtrType
@@ -84,7 +93,7 @@ builtinGlobals = map GlobalDefinition [
     , declareFn "error" [] VoidType
     , defineFn "main" [] intType [BasicBlock
         (UnName 0)
-        [UnName 1 := defCall (Name "class.Object.main") []]
+        [UnName 1 := defCall (Name $ nameTObject ++ ".main") []]
         (Do $ Ret (Just $ LocalReference $ UnName 1) [])
       ]
   ]
@@ -214,12 +223,12 @@ endBlock term = get >>= \x -> case x of
         , emitterstateBlockRelease = []
       }
 
-defaultValue :: TypeBasic -> EmitterM Constant
+defaultValue :: TypeBasic -> Constant
 defaultValue typ = case typ of
-  TPrimitive TInt -> return $ Llvm.Constant.Int 32 0
-  TPrimitive TChar -> return $ Llvm.Constant.Int 8 0
-  TPrimitive TBool -> return $ Llvm.Constant.Int 1 0
-  TComposed ctyp -> Null <$> emit ctyp
+  TPrimitive TInt -> Llvm.Constant.Int 32 0
+  TPrimitive TChar -> Llvm.Constant.Int 8 0
+  TPrimitive TBool -> Llvm.Constant.Int 1 0
+  TComposed ctyp -> Null $ toLlvm ctyp
   _ -> Err.unreachable "no default value"
 
 class Alignable a where
@@ -240,6 +249,39 @@ instance Localizable VariableNum Name where
 instance Localizable Variable Operand where
   location (Variable _ num _) = LocalReference $ location num
 
+class DirectlyTranslatable a b | a -> b where
+  toLlvm :: a -> b
+
+instance DirectlyTranslatable Type LlvmType where
+  toLlvm (TMethod typ) = toLlvm typ
+  toLlvm (TBasic typ) = toLlvm typ
+
+instance DirectlyTranslatable TypeMethod LlvmType where
+  toLlvm _ = undefined
+
+instance DirectlyTranslatable TypeBasic LlvmType where
+  toLlvm (TComposed typ) = toLlvm typ
+  toLlvm (TPrimitive typ) = toLlvm typ
+
+instance DirectlyTranslatable TypePrimitive LlvmType where
+  toLlvm x = case x of
+    TVoid -> VoidType
+    TInt -> intType
+    TChar -> charType
+    TBool -> boolType
+
+instance DirectlyTranslatable TypeComposed LlvmType where
+  toLlvm x = case x of
+    TObject -> namedType nameTObject
+    TUser (ClassName str) -> namedType str
+    TArray typ -> PointerType (toLlvm typ) defAddrSpace
+    TString -> stringType
+    TNull -> Err.unreachable TNull
+    where
+      namedType = NamedTypeReference . Name
+
+
+
 -- FIXME/
 -- TREE TRAVERSING --
 ---------------------
@@ -249,52 +291,20 @@ class Emitable a b | a -> b where
 instance Emitable Class () where
   emit clazz@(Class { classType = typ }) = do
     -- Emit class structure definition
-    NamedTypeReference tname <- emit typ
+    let NamedTypeReference tname = toLlvm typ
     tdef <- emit =<< layoutFor typ
     define $ TypeDefinition tname (Just tdef)
+    -- Emit object prototype
     -- Emit static methods
     mapM_ emit $ classStaticMethods clazz
+    -- FIXME emit vtable
+    -- FIXME emit instance methods
 
 instance Emitable ClassLayout LlvmType where
-  emit layout = do
-    fields <- mapM emit $ layoutFieldTypes layout
-    return StructureType {
+  emit layout = return StructureType {
         Llvm.Type.isPacked = False
-      , elementTypes = fields
+      , elementTypes = map toLlvm $ layoutFieldTypes layout
     }
-
-instance Emitable Type LlvmType where
-  emit (TMethod typ) = emit typ
-  emit (TBasic typ) = emit typ
-
-instance Emitable TypeMethod LlvmType where
-  emit _ = undefined
-
-instance Emitable TypeBasic LlvmType where
-  emit (TComposed typ) = emit typ
-  emit (TPrimitive typ) = emit typ
-
-instance Emitable TypePrimitive LlvmType where
-  emit x = return $ case x of
-    TVoid -> VoidType
-    TInt -> intType
-    TChar -> charType
-    TBool -> boolType
-
-instance Emitable TypeComposed LlvmType where
-  emit x = case x of
-    TObject -> namedType "class.Object"
-    TUser (ClassName str) -> namedType str
-    TArray typ -> do
-      ltyp <- emit typ
-      return $ PointerType ltyp defAddrSpace
-    TString -> return stringType
-    TNull -> Err.unreachable TNull
-    where
-      namedType = return . NamedTypeReference . Name
-
-instance Emitable Field () where
-  emit = undefined
 
 instance Emitable Method () where
   emit Method { methodBody = SInherited } = return ()
@@ -308,8 +318,8 @@ instance Emitable Method () where
     let args = if methodInstance method
         then argSelf : methodArgs method
         else methodArgs method
-    NamedTypeReference (Name originstr) <- emit origin
-    ltret <- emit tret
+    let NamedTypeReference (Name originstr) = toLlvm origin
+    let ltret = toLlvm tret
     largs <- mapM emitArg args
     blocks <- intercept $ do
       let entry = Name "entry"
@@ -324,9 +334,7 @@ instance Emitable Method () where
       newBlock exit exit $
         if ltret == VoidType
         then Do |- Ret Nothing
-        else do
-          def <- defaultValue tret
-          Do |- Ret (Just $ ConstantOperand def)
+        else Do |- Ret (Just $ ConstantOperand $ defaultValue tret)
     define $ GlobalDefinition $ functionDefaults {
         name = Name $ concat [originstr, ".", namestr]
       , returnType = ltret
@@ -336,12 +344,8 @@ instance Emitable Method () where
       where
         argSelf = Variable (TComposed origin) VariableThis (VariableName "self")
         argName num = Name $ ("arg" ++) $ show $ fromEnum num
-        emitArg (Variable typ num _) = do
-          ltyp <- emit typ
-          return $ Parameter ltyp (argName num) []
-        allocVar (Variable typ num _) = do
-          ltyp <- emit typ
-          location num |= Alloca ltyp Nothing (align typ)
+        emitArg (Variable typ num _) = return $ Parameter (toLlvm typ) (argName num) []
+        allocVar (Variable typ num _) = location num |= Alloca (toLlvm typ) Nothing (align typ)
         initArg var@(Variable typ num _) =
           Do |- Store False (location var) (LocalReference $ argName num) Nothing (align typ)
 
