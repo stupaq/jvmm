@@ -101,7 +101,7 @@ newtype FieldName = FieldName String
 fieldFromVariable :: VariableName -> FieldName
 fieldFromVariable (VariableName name) = FieldName name
 
-newtype MethodName = MethodName String
+newtype MethodName = MethodName { string :: String }
   deriving (Show, Eq, Ord)
 
 -- STATEMENTS --

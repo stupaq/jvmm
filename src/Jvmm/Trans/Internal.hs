@@ -9,6 +9,7 @@ import qualified Syntax.AbsJvmm as I
 
 import Jvmm.Errors (ErrorInfoT, Location)
 import qualified Jvmm.Errors as Err
+import Jvmm.Builtins
 import Jvmm.Hierarchy (objectClassDiff, prepareClassDiff)
 
 -- Creates variable-associated identifier from given one (for temporary and iteration variables).
@@ -150,13 +151,6 @@ tItem t x =
         O.T_SDeclVar typ (tVIdent id),
         O.SAssign (tLVar id) (O.T_EVar (tVIdent idtmp))]
     else [O.T_SDeclVar typ (tVIdent id), O.SAssign (tLVar id) expr]
-  where
-    defaultValue typ = case typ of
-      O.TComposed _ -> O.ENull
-      O.TPrimitive O.TInt -> O.ELitInt 0
-      O.TPrimitive O.TChar -> O.ELitChar '\0'
-      O.TPrimitive O.TBool -> O.ELitFalse
-      _ -> O.ENull
 
 refersTo :: O.VariableName -> O.RValue -> Bool
 -- We can always make a mistake and answer True

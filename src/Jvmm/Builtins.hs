@@ -54,9 +54,9 @@ builtinMethodType desc = case desc of
 
 defaultValue :: TypeBasic -> RValue
 defaultValue typ = case typ of
-  TPrimitive TInt -> ELitInt 0
-  TPrimitive TChar -> ELitChar 'a'
-  TPrimitive TBool -> ELitFalse
   TComposed _ -> ENull
-  _ -> Err.unreachable "void has no default value"
+  TPrimitive TInt -> ELitInt 0
+  TPrimitive TChar -> ELitChar '\0'
+  TPrimitive TBool -> ELitFalse
+  _ -> ENull
 
