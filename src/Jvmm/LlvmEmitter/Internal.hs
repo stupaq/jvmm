@@ -47,8 +47,8 @@ import qualified LLVM.General.AST.Type as Llvm.Type (Type)
 
 type LlvmType = Llvm.Type.Type
 
--- BUILTINS AND RUNTIME --
---------------------------
+-- LLVM RUNTIME AND BUILTINS --
+-------------------------------
 callDefaults :: CallableOperand -> [Operand] -> Instruction
 callDefaults fun args = Call {
       isTailCall = False
@@ -103,11 +103,12 @@ objectProto typ = composedName typ +/+ ".proto"
 
 builtinGlobals :: [Definition]
 builtinGlobals = map GlobalDefinition [
-      declareFn "rc_malloc" [intType] voidPtrType
+      declareFn "object_init" [intType, voidPtrType, voidPtrType] voidPtrType
+    , declareFn "rc_malloc" [intType] voidPtrType
     , declareFn "rc_retain" [voidPtrType] VoidType
     , declareFn "rc_release" [voidPtrType] VoidType
     , declareFn "string_concat" [stringType, stringType] stringType
-    , declareFn "array_malloc" [intType, intType] voidPtrType
+    , declareFn "array_create" [intType, intType] voidPtrType
     , declareFn "array_length" [voidPtrType] intType
     , declareFn "printInt" [intType] VoidType
     , declareFn "readInt" [] intType
@@ -327,18 +328,23 @@ instance Translatable ClassLayout LlvmType where
 
 -- MEMORY MODEL --
 ------------------
+-- We do reference counting for strings only (for now)
 retain, release :: TypeBasic -> Operand -> EmitterM ()
-retain (TComposed _) ref@(LocalReference _) = do
+retain (TComposed TString) ref@(LocalReference _) = do
   ref' <- castTo voidPtrType ref
   Do |- callDefaults (static $ Name "rc_retain") [ref']
 retain _ _ = return ()
-release (TComposed _) ref@(LocalReference _) = do
+release (TComposed TString) ref@(LocalReference _) = do
   ref' <- castTo voidPtrType ref
   modify $ \s -> s { emitterstateBlockRelease = ref' : emitterstateBlockRelease s }
 release _ _ = return ()
 
 releaseAll :: [TypeBasic] -> [Operand] -> EmitterM ()
 releaseAll types ops = mapM_ (uncurry release) (List.zip types ops)
+
+sizeOf :: LlvmType -> Operand
+sizeOf typ = let aNull = Null $ PointerType typ defAddrSpace in ConstantOperand $
+  Llvm.Constant.PtrToInt (Llvm.Constant.GetElementPtr False aNull [intValue 1]) intType
 
 -- TREE TRAVERSING --
 ---------------------
@@ -403,8 +409,10 @@ instance Emitable Method () where
         argName num = Name $ ("arg" ++) $ show $ fromEnum num
         emitArg (Variable typ num _) = return $ Parameter (toLlvm typ) (argName num) []
         allocVar (Variable typ num _) = location num |= Alloca (toLlvm typ) Nothing (align typ)
-        initArg var@(Variable typ num _) =
-          Do |- Store False (location var) (LocalReference $ argName num) Nothing (align typ)
+        initArg var@(Variable typ num _) = let argRef = LocalReference $ argName num in do
+          Do |- Store False (location var) argRef Nothing (align typ)
+          -- Note that we are copying a reference when initializing argument
+          retain typ argRef
         initVar var@(Variable typ _ _) =
           Do |- Store False (location var) (ConstantOperand $ defaultValue typ) Nothing (align typ)
 
@@ -523,6 +531,7 @@ instance Emitable RValue Operand where
       res <- nextVar
       res |= Load False (LocalReference loc) Nothing (align eltyp)
       retain eltyp (LocalReference res)
+      release (TComposed $ TArray eltyp) rop1
       populate res
     EGetField rval ctyp fname ftyp -> do
       rop <- emit rval
@@ -530,6 +539,7 @@ instance Emitable RValue Operand where
       res <- nextVar
       res |= Load False loc Nothing (align ftyp)
       retain ftyp (LocalReference res)
+      release (TComposed ctyp) rop
       populate res
     -- Method calls
     EInvokeStatic ctyp mname@(MethodName str) mtyp@(TypeMethod tret targs _) args -> do
@@ -548,9 +558,25 @@ instance Emitable RValue Operand where
         populate res
     EInvokeVirtual rval ctyp mname mtyp args -> undefined
     -- Object creation
-    ENewObj ctyp -> undefined
-    ENewArr eltyp rval -> undefined
-    -- FIXME/
+    ENewObj ctyp -> do
+      let PointerType lctyp _ = toLlvm ctyp
+      let siz = sizeOf lctyp
+      let proto = Llvm.Constant.BitCast (GlobalReference $ objectProto ctyp) voidPtrType
+      ptr <- nextVar
+      ptr |= callDefaults (static $ Name "rc_malloc") [siz]
+      Do |- callDefaults (static $ Name "object_init")
+          [siz, (LocalReference ptr), (ConstantOperand proto)]
+      obj <- nextVar
+      obj |= Llvm.Instruction.BitCast (LocalReference ptr) (toLlvm ctyp)
+      populate obj
+    ENewArr eltyp rval -> do
+      let siz = sizeOf $ toLlvm eltyp
+      rop <- emit rval
+      ptr <- nextVar
+      ptr |= callDefaults (static $ Name "array_create") [rop, siz]
+      obj <- nextVar
+      obj |= Llvm.Instruction.BitCast (LocalReference ptr) (PointerType (toLlvm eltyp) defAddrSpace)
+      populate obj
     -- Operations
     EUnary _ _ (TPrimitive TBool) -> evalCond x
     EUnary OuNeg expr tret -> undefined

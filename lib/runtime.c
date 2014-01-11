@@ -12,6 +12,12 @@
 #define debug(format, ...)
 #endif
 
+/** Object initialization */
+void object_init(int32_t size, void* object, void* proto) {
+  debug("object_init(): size %d object %p prototype %p\n", size, object, proto);
+  memmove(object, proto, size);
+}
+
 /** Reference counted structures */
 #define RC_HEADER_SIZE (sizeof(struct rc_header))
 
@@ -99,10 +105,12 @@ static inline struct array_header* array_ptr_to_header(void* ptr) {
   return (struct array_header*) (((char*) ptr) - ARRAY_HEADER_SIZE);
 }
 
-void* array_malloc(int32_t length, int32_t element) {
-  struct array_header* array =  rc_malloc(length * element);
+void* array_create(int32_t length, int32_t element) {
+  struct array_header* array =  rc_malloc(length * element + ARRAY_HEADER_SIZE);
   array->length = length;
-  return array_header_to_ptr(array);
+  void* ptr = array_header_to_ptr(array);
+  memset(ptr, 0, length * element);
+  return ptr;
 }
 
 int32_t array_length(void* array) {
