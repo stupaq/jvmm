@@ -4,7 +4,7 @@ import Jvmm.Hierarchy.Internal
 import Control.Monad.Identity
 import Data.List as List
 
-import Jvmm.Builtins (builtinFunctions)
+import qualified Jvmm.Builtins as Builtins
 import qualified Jvmm.Errors as Err
 import Jvmm.Errors (rethrow, ErrorInfoT)
 import Jvmm.Trans.Output
@@ -56,13 +56,13 @@ objectClassDiff functions = do
         classType = TObject
       , classSuper = TObject
       , classFields = []
-      , classAllMethods = builtinFunctions ++ functions
+      , classAllMethods = Builtins.libraryMethods ++ functions
       , classLocation = Err.Unknown
     }
   where
     repeated, idents, redefined :: [MethodName]
     repeated = idents \\ nub idents  -- This can be done faster but not funnier
     idents = List.map methodName functions
-    redefined = let builtinIdents = List.map methodName builtinFunctions
+    redefined = let builtinIdents = List.map methodName Builtins.libraryMethods
       in builtinIdents `intersect` idents
 

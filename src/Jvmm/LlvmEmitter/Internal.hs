@@ -26,8 +26,8 @@ import qualified Data.Maybe as Maybe
 import qualified Data.Traversable as Traversable
 import Data.Word
 
+import qualified Jvmm.Builtins as Builtins
 import Jvmm.Errors (ErrorInfoT)
-import Jvmm.Builtins (isBuiltinFunction)
 import qualified Jvmm.Errors as Err
 import Jvmm.Trans.Output
 
@@ -529,7 +529,9 @@ instance Emitable RValue Operand where
     -- Method calls
     EInvokeStatic ctyp mname@(MethodName str) mtyp@(TypeMethod tret _ _) args -> do
       aops <- mapM emit args
-      let nam = if isBuiltinFunction ctyp mname mtyp then Name str else composedName ctyp +/+ str
+      let nam = if Builtins.isLibraryMethod ctyp mname mtyp
+          then Name str
+          else composedName ctyp +/+ str
       let call = callDefaults (static nam) aops
       if tret == (TPrimitive TVoid)
       then do
