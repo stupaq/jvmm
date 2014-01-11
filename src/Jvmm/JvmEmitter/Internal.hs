@@ -503,6 +503,7 @@ instance Emitable RValue TypeBasic where
     EBinary {} -> Err.unreachable x
     -- These expressions will be replaced with ones caring more context in subsequent phases
     PruneEVar {} -> Err.unreachable x
+    PruneENull {} -> Err.unreachable x
 
 -- JUMPING CODE --
 ------------------

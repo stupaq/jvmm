@@ -9,11 +9,11 @@ int[] foo(int n) {
     }
     return arr;
   } else
-    return null;
+    return (int[])null;
 }
 
 int bar(int[] arr) {
-  if (arr == null)
+  if (arr == (int[])null)
     return 0;
   int s; // equivalent to int s = 0;
   for (int a : arr) {

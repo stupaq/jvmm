@@ -365,6 +365,7 @@ instance Scopeable RValue where
       varOrField name
         (`ELoad` undefined)
         (\field -> EGetField (ELoad VariableThis undefined) undefined field undefined)
+    PruneENull -> return x
 
 instance Scopeable LValue where
   scope lval = do

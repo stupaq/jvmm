@@ -177,6 +177,7 @@ refersTo var x = case x of
   O.EBinary _ expr1 expr2 _ -> any refers [expr1, expr2]
   -- These expressions will be replaced with ones caring more context in subsequent phases
   O.PruneEVar var1 -> var == var1
+  O.PruneENull -> False
   where
     refers = refersTo var
 
@@ -188,7 +189,7 @@ tExpr x = case x of
   I.ELitFalse -> O.ELitFalse
   I.EString str -> O.ELitString str
   I.ELitChar c -> O.ELitChar c
-  I.ENull -> O.ENull O.TObject
+  I.ENull -> O.PruneENull
   I.ENullT typ -> O.ENull (tTComposed typ)
   I.EArray expr1 expr2 -> O.EArrayLoad (tExpr expr1) (tExpr expr2) undefined
   I.EMethod expr id exprs ->

@@ -1,23 +1,23 @@
 int main() {
-  string s = null;
+  string s = (string)null;
   printInt(length(s));
-  printInt(length(null));
+  printInt(length((string)null));
   printInt(length(""));
   printInt(length("safd"));
   printInt(length(nuller()));
   if (null == null)
     printString("OK");
-  if (nuller() == null)
+  if (nuller() == (string)null)
     printString("OK");
   return 0;
 }
 
 string nuller() {
-  return null;
+  return (string)null;
 }
 
 int length(string s) {
-  if (s != null) {
+  if (s != (string)null) {
     return s.length;
   } else {
     return -1;

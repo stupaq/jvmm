@@ -155,6 +155,7 @@ data RValue =
   | EBinary OpBin RValue RValue TypeBasic
   -- These expressions will be replaced with ones caring more context in subsequent phases
   | PruneEVar VariableName
+  | PruneENull
   deriving (Show)
 
 data LValue =

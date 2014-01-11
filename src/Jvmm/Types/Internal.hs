@@ -72,6 +72,8 @@ data TypeEnv = TypeEnv {
   , typeenvSuper        :: Map.Map TypeComposed TypeComposed
     -- Origin of visible static methods
   , typeenvStaticOrigin :: TypeComposed
+    -- Expected type for limited type inference
+  , typeenvExpectedTypes :: [TypeBasic]
 } deriving (Show)
 
 typeenv0 :: TypeEnv
@@ -83,6 +85,7 @@ typeenv0 = TypeEnv {
   , typeenvTypes = membertypes0
   , typeenvSuper = Map.empty
   , typeenvStaticOrigin = undefined
+  , typeenvExpectedTypes = []
 }
 
 typeenvNewSymbol :: Symbol -> Type -> TypeEnv -> TypeEnv
@@ -239,6 +242,9 @@ invoke ftyp@(TypeMethod ret args excepts) etypes = do
     (ftyp =| TypeMethod ret etypes []) `rethrow` Err.argumentsNotMatch args etypes
     return ret
 
+expectedType :: TypeBasic -> TypeM a -> TypeM a
+expectedType typ = local $ \e -> e { typeenvExpectedTypes = typ : typeenvExpectedTypes e }
+
 -- TYPE ASSERTIONS --
 ---------------------
 class Assertable a where
@@ -387,9 +393,10 @@ instance TypeCheckable Stmt where
     -- Memory access
     SAssign lval expr _ -> do
       (lval', ltyp) <- tcheck' lval
-      (expr', etyp) <- tcheck' expr
-      typ <- ltyp =| etyp
-      return $ SAssign lval' expr' typ
+      expectedType ltyp $ do
+        (expr', etyp) <- tcheck' expr
+        typ <- ltyp =| etyp
+        return $ SAssign lval' expr' typ
     -- Control statements
     SReturn expr _ -> do
       (expr', etyp) <- tcheck' expr
@@ -524,7 +531,12 @@ instance TypeCheckable' RValue where
                 _ -> return TInt
           return (EBinary opbin expr1' expr2' rett, rett)
     -- These expressions will be replaced with ones caring more context in subsequent phases
-    PruneEVar _ -> Err.unreachable x
+    PruneEVar {} -> Err.unreachable x
+    PruneENull -> do
+      types <- asks typeenvExpectedTypes
+      case types of
+        [TComposed etyp] -> tcheck' $ ENull etyp
+        _ -> tcheck' $ ENull TObject
 
 instance TypeCheckable' LValue where
   tcheck' lval@(PruneLExpr _) = Err.unreachable lval
