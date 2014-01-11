@@ -537,7 +537,7 @@ instance Emitable RValue Operand where
       let nam = if ctyp == TNull || Builtins.isLibraryMethod ctyp mname mtyp
           then Name str
           else composedName ctyp +/+ str
-      let callAndRelease = \dst -> dst (callDefaults (static nam) aops) >> releaseAll targs aops
+      let callAndRelease dst = dst (callDefaults (static nam) aops) >> releaseAll targs aops
       if tret == (TPrimitive TVoid)
       then do
         callAndRelease (Do |-)

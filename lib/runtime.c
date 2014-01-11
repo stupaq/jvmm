@@ -5,6 +5,13 @@
 #include <assert.h>
 #include <stdbool.h>
 
+/** Debug */
+#ifndef NODEBUG
+#define debug(format, ...) fprintf (stderr, "debug: " format, __VA_ARGS__)
+#else
+#define debug(format, ...)
+#endif
+
 /** Reference counted structures */
 #define RC_HEADER_SIZE (sizeof(struct rc_header))
 
@@ -17,7 +24,7 @@ static inline void* rc_header_to_ptr(struct rc_header* header) {
 }
 
 static inline struct rc_header* rc_ptr_to_header(void* ptr) {
-  return (struct rc_header*) ((char*) ptr) - RC_HEADER_SIZE;
+  return (struct rc_header*) (((char*) ptr) - RC_HEADER_SIZE);
 }
 
 static inline bool rc_is_const(struct rc_header* header) {
@@ -26,9 +33,13 @@ static inline bool rc_is_const(struct rc_header* header) {
 
 void* rc_malloc(int32_t size) {
   struct rc_header* header = (struct rc_header*) malloc(((size_t) size) + RC_HEADER_SIZE);
+  if (header == NULL) {
+    debug("malloc(): size %d failed!\n", size);
+    exit(EXIT_FAILURE);
+  }
   header->count = 1;
   void* ptr = rc_header_to_ptr(header);
-  fprintf(stderr, "debug: malloc(): size %d count %d object  %p\n", size, header->count, ptr);
+  debug("malloc(): size %d count %d object  %p\n", size, header->count, ptr);
   return ptr;
 }
 
@@ -36,11 +47,13 @@ void rc_retain(void* ptr) {
   if (ptr != NULL) {
     struct rc_header* header = rc_ptr_to_header(ptr);
     if (!rc_is_const(header)) {
-      fprintf(stderr, "debug: retain(): count %d object %p\n", header->count, ptr);
+      debug("retain(): count %d object %p\n", header->count, ptr);
       header->count++;
     } else {
-      fprintf(stderr, "debug: retain(): constant %p\n", ptr);
+      debug("retain(): constant %p\n", ptr);
     }
+  } else {
+    debug("release(): %s\n", "null");
   }
 }
 
@@ -48,14 +61,17 @@ void rc_release(void* ptr) {
   if (ptr != NULL) {
     struct rc_header* header = rc_ptr_to_header(ptr);
     if (!rc_is_const(header)) {
-      fprintf(stderr, "debug: release(): count %d object %p\n", header->count, ptr);
-      if (header->count-- == 0) {
-        fprintf(stderr, "debug: free(): object %p\n", ptr);
+      header->count--;
+      debug("release(): count %d object %p\n", header->count, ptr);
+      if (header->count == 0) {
+        debug("free(): object %p\n", ptr);
         free(header);
       }
     } else {
-      fprintf(stderr, "debug: release(): constant %p\n", ptr);
+      debug("release(): constant %p\n", ptr);
     }
+  } else {
+    debug("release(): %s\n", "null");
   }
 }
 
@@ -80,7 +96,7 @@ static inline void* array_header_to_ptr(struct array_header* header) {
 }
 
 static inline struct array_header* array_ptr_to_header(void* ptr) {
-  return (struct array_header*) ((char*) ptr) - ARRAY_HEADER_SIZE;
+  return (struct array_header*) (((char*) ptr) - ARRAY_HEADER_SIZE);
 }
 
 void* array_malloc(int32_t length, int32_t element) {
