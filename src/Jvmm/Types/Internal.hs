@@ -214,11 +214,11 @@ catches types = local (\env -> env {
       typeenvExceptions = List.foldl (flip Set.insert) (typeenvExceptions env) types
     })
 
-returns :: TypeBasic -> TypeM ()
+returns :: TypeBasic -> TypeM TypeBasic
 returns typ = do
   ftyp <- asks typeenvFunction
   case ftyp of
-    Just (TypeMethod rett _ _) -> void $ rett =| typ
+    Just (TypeMethod rett _ _) -> rett =| typ >> return rett
     Nothing -> throwError Err.danglingReturn
 
 this :: TypeM TypeComposed
@@ -401,8 +401,8 @@ instance TypeCheckable Stmt where
     SReturn expr _ -> do
       (expr', etyp) <- tcheck' expr
       notAVoid etyp `rethrow` Err.voidNotIgnored
-      returns etyp
-      return $ SReturn expr' etyp
+      tret <- returns etyp
+      return $ SReturn expr' tret
     SReturnV -> do
       returns $ TPrimitive TVoid
       return x

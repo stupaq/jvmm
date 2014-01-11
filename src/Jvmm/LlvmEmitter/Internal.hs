@@ -74,6 +74,12 @@ charType = IntegerType 8
 voidPtrType = PointerType charType defAddrSpace
 stringType = PointerType charType defAddrSpace
 
+castToVoidPtr :: Operand -> EmitterM Operand
+castToVoidPtr op = do
+  tmp <- nextVar
+  tmp |= Llvm.Instruction.BitCast op voidPtrType
+  populate tmp
+
 intValue :: Integer -> Constant
 intValue int = Llvm.Constant.Int 32 int
 charValue :: Char -> Constant
@@ -87,6 +93,11 @@ alignRef, alignPrim, align0 :: Word32
 alignRef = 0 -- 8
 alignPrim = 0 -- 4
 align0 = 0
+
+entryBlockName, exitBlockName, returnLoc :: Name
+entryBlockName = Name "entry"
+exitBlockName = Name "exit"
+returnLoc = Name "ret"
 
 composedName :: TypeComposed -> Name
 composedName x = case x of
@@ -287,7 +298,7 @@ class Localizable a b | a -> b where
   location :: a -> b
 
 instance Localizable VariableNum Name where
-  location num = Name $ ("loc" ++) $ show $ fromEnum num
+  location num = Name $ ("var" ++) $ show $ fromEnum num
 
 instance Localizable Variable Operand where
   location (Variable _ num _) = LocalReference $ location num
@@ -330,11 +341,11 @@ instance Translatable ClassLayout LlvmType where
 -- We do reference counting for strings only (for now)
 retain, release :: TypeBasic -> Operand -> EmitterM ()
 retain (TComposed TString) ref@(LocalReference _) = do
-  ref' <- castTo voidPtrType ref
+  ref' <- castToVoidPtr ref
   Do |- callDefaults (static $ Name "rc_retain") [ref']
 retain _ _ = return ()
 release (TComposed TString) ref@(LocalReference _) = do
-  ref' <- castTo voidPtrType ref
+  ref' <- castToVoidPtr ref
   modify $ \s -> s { emitterstateBlockRelease = ref' : emitterstateBlockRelease s }
 release _ _ = return ()
 
@@ -385,18 +396,25 @@ instance Emitable Method () where
     let ltret = toLlvm tret
     largs <- mapM emitArg args
     blocks <- intercept $ do
-      let entry = Name "entry"
       body <- nextBlock
-      newBlock entry body $ do
+      newBlock entryBlockName body $ do
         mapM_ allocVar $ args ++ vars
         mapM_ initArg args
         -- We have to initialize variables here for the first time for GC corectness
         mapM_ initVar vars
-      exit <- nextBlock
-      newBlock body exit $
+        when (ltret /= VoidType) $
+          -- Allocate place for return value
+          returnLoc |= Alloca ltret Nothing (align tret)
+      newBlock body exitBlockName $
         emit bodyStmt
-      newBlock exit exit $
-        Do |- if ltret == VoidType then Ret Nothing else Unreachable
+      newBlock exitBlockName undefined $ do
+        -- FIXME free all variables
+        if ltret == VoidType
+        then Do |- Ret Nothing
+        else do
+          tmp <- nextVar
+          tmp |= Load False (LocalReference returnLoc) Nothing (align tret)
+          Do |- Ret (Just (LocalReference tmp))
     define $ GlobalDefinition $ functionDefaults {
         name = composedName origin +/+ namestr
       , returnType = ltret
@@ -433,7 +451,7 @@ instance Emitable Stmt () where
       release typ rop
     -- Memory access
     SAssign lval rval typ -> do
-      rop <- castTo typ =<< emit rval
+      rop <- emit rval
       lop <- emit lval
       -- Firstly we have to fetch old value for reference counting
       tmp <- nextVar
@@ -442,10 +460,11 @@ instance Emitable Stmt () where
       -- And then we can assign new one
       Do |- Store False lop rop Nothing (align typ)
     -- Control statements
-    SReturn rval _ -> do
+    SReturn rval typ -> do
       rop <- emit rval
-      Do |- Ret (Just rop)
-    SReturnV -> Do |- Ret Nothing
+      Do |- Store False (LocalReference returnLoc) rop Nothing (align typ)
+      Do |- Br exitBlockName
+    SReturnV -> Do |- Br exitBlockName
     -- FIXME ref count
     SIf rval stmt -> undefined
     SIfElse rval stmt1 stmt2 -> undefined
@@ -555,6 +574,7 @@ instance Emitable RValue Operand where
         res <- nextVar
         callAndRelease (res |=)
         populate res
+    -- FIXME
     EInvokeVirtual rval ctyp mname mtyp args -> undefined
     -- Object creation
     ENewObj ctyp -> do
@@ -625,16 +645,4 @@ instance Populable Name where
 
 instance Populable Constant where
   populate = return . ConstantOperand
-
-class CastingTarget a where
-  castTo :: a -> Operand -> EmitterM Operand
-
-instance CastingTarget TypeBasic where
-  castTo = castTo . toLlvm
-
-instance CastingTarget LlvmType where
-  castTo typ op = do
-    tmp <- nextVar
-    tmp |= Llvm.Instruction.BitCast op typ
-    populate tmp
 
