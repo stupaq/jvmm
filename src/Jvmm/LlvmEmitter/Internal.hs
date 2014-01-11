@@ -74,16 +74,14 @@ charType = IntegerType 8
 voidPtrType = PointerType charType defAddrSpace
 stringType = PointerType charType defAddrSpace
 
-intValue, boolValue :: Integral a => a -> Constant
-intValue int = Llvm.Constant.Int 32 $ toInteger int
-boolValue int = Llvm.Constant.Int 1 $ toInteger int
+intValue :: Integer -> Constant
+intValue int = Llvm.Constant.Int 32 int
 charValue :: Char -> Constant
 charValue int = Llvm.Constant.Int 8 $ toInteger $ Char.ord int
 
-trueConst, falseConst, zeroConst :: Constant
-trueConst = boolValue (1 :: Int)
-falseConst = boolValue (0 :: Int)
-zeroConst = intValue (0 :: Int)
+trueConst, falseConst :: Constant
+trueConst = Llvm.Constant.Int 1 1
+falseConst = Llvm.Constant.Int 1 0
 
 alignRef, alignPrim, align0 :: Word32
 alignRef = 0 -- 8
@@ -269,7 +267,7 @@ endBlock term = gets emitterstateBlockName >>= \x -> case x of
 
 defaultValue :: TypeBasic -> Constant
 defaultValue typ = case typ of
-  TPrimitive TInt -> zeroConst
+  TPrimitive TInt -> intValue 0
   TPrimitive TChar -> charValue '\0'
   TPrimitive TBool -> falseConst
   TComposed ctyp -> Null $ toLlvm ctyp
@@ -339,6 +337,9 @@ release (TComposed _) ref@(LocalReference _) = do
   modify $ \s -> s { emitterstateBlockRelease = ref' : emitterstateBlockRelease s }
 release _ _ = return ()
 
+releaseAll :: [TypeBasic] -> [Operand] -> EmitterM ()
+releaseAll types ops = mapM_ (uncurry release) (List.zip types ops)
+
 -- TREE TRAVERSING --
 ---------------------
 class Emitable a b | a -> b where
@@ -407,6 +408,15 @@ instance Emitable Method () where
         initVar var@(Variable typ _ _) =
           Do |- Store False (location var) (ConstantOperand $ defaultValue typ) Nothing (align typ)
 
+instance Emitable (Operand, TypeComposed, FieldName) Operand where
+  emit (op, ctyp, fname) = do
+    ind <- lookupM fname $ layoutFieldOffsets <$> layoutFor ctyp
+    res <- nextVar
+    res |= Llvm.Instruction.GetElementPtr True op [
+        ConstantOperand $ intValue 0
+      , ConstantOperand $ intValue $ toInteger ind]
+    populate res
+
 instance Emitable Stmt () where
   emit x = case x of
     SEmpty -> return ()
@@ -461,12 +471,7 @@ instance Emitable LValue Operand where
       lop <- emit lval
       val <- nextVar
       val |= Load False lop Nothing alignRef
-      res <- nextVar
-      ind <- lookupM fname $ layoutFieldOffsets <$> layoutFor ctyp
-      res |= Llvm.Instruction.GetElementPtr True (LocalReference val) [
-            ConstantOperand zeroConst
-          , ConstantOperand $ intValue ind]
-      populate res
+      emit (LocalReference val, ctyp, fname)
     -- These expressions will be replaced with ones caring more context in subsequent phases
     PruneLExpr {} -> Err.unreachable x
 
@@ -500,13 +505,15 @@ instance Emitable RValue Operand where
               , ArrayType len charType]
           , initializer = Just val
         }
-      populate $
-        Llvm.Constant.GetElementPtr True (GlobalReference cname) [zeroConst, intValue (1 :: Int)]
+      let arr = Llvm.Constant.GetElementPtr True (GlobalReference cname) [intValue 0, intValue 1]
+      -- There is no need to bump up a reference count since this is marked as constant
+      populate $ Llvm.Constant.BitCast arr stringType
     ELitInt int -> populate $ intValue int
     -- Memory access
     ELoad num typ -> do
       res <- nextVar
       res |= Load False (LocalReference $ location num) Nothing (align typ)
+      retain typ (LocalReference res)
       populate res
     EArrayLoad rval1 rval2 eltyp -> do
       rop2 <- emit rval2
@@ -515,47 +522,69 @@ instance Emitable RValue Operand where
       loc |= Llvm.Instruction.GetElementPtr True rop1 [rop2]
       res <- nextVar
       res |= Load False (LocalReference loc) Nothing (align eltyp)
+      retain eltyp (LocalReference res)
       populate res
     EGetField rval ctyp fname ftyp -> do
       rop <- emit rval
-      loc <- nextVar
-      ind <- lookupM fname $ layoutFieldOffsets <$> layoutFor ctyp
-      loc |= Llvm.Instruction.GetElementPtr True rop [
-            ConstantOperand zeroConst
-          , ConstantOperand $ intValue ind]
+      loc <- emit (rop, ctyp, fname)
       res <- nextVar
-      res |= Load False (LocalReference loc) Nothing (align ftyp)
+      res |= Load False loc Nothing (align ftyp)
+      retain ftyp (LocalReference res)
       populate res
     -- Method calls
-    EInvokeStatic ctyp mname@(MethodName str) mtyp@(TypeMethod tret _ _) args -> do
+    EInvokeStatic ctyp mname@(MethodName str) mtyp@(TypeMethod tret targs _) args -> do
       aops <- mapM emit args
-      let nam = if Builtins.isLibraryMethod ctyp mname mtyp
+      let nam = if ctyp == TNull || Builtins.isLibraryMethod ctyp mname mtyp
           then Name str
           else composedName ctyp +/+ str
-      let call = callDefaults (static nam) aops
+      let callAndRelease = \dst -> dst (callDefaults (static nam) aops) >> releaseAll targs aops
       if tret == (TPrimitive TVoid)
       then do
-        Do |- call
+        callAndRelease (Do |-)
         populate $ Undef VoidType
       else do
         res <- nextVar
-        res |= call
+        callAndRelease (res |=)
         populate res
     EInvokeVirtual rval ctyp mname mtyp args -> undefined
     -- Object creation
     ENewObj ctyp -> undefined
     ENewArr eltyp rval -> undefined
+    -- FIXME/
     -- Operations
-    EUnary opun expr _ -> do
-      eop <- emit expr
+    EUnary _ _ (TPrimitive TBool) -> evalCond x
+    EUnary OuNeg expr tret -> undefined
+    EUnary {} -> Err.unreachable x
+    EBinary _ _ _ (TPrimitive TBool) -> evalCond x
+    EBinary ObPlus expr1 expr2 (TComposed TString) ->
+      let strType = TComposed TString
+          concatType = TypeMethod strType [strType, strType] [] in do
+        emit $ EInvokeStatic TNull (MethodName "string_concat") concatType [expr1, expr2]
+    EBinary opbin expr1 expr2 (TPrimitive TInt) -> do
+      eop1 <- emit expr1
+      eop2 <- emit expr2
       res <- nextVar
-      case opun of
-        OuNot -> res |= Llvm.Instruction.Xor (ConstantOperand trueConst) eop
-        OuNeg -> res |= Llvm.Instruction.Sub False False (ConstantOperand zeroConst) eop
+      case opbin of
+        ObTimes -> res |= Llvm.Instruction.Mul False False eop1 eop2
+        ObDiv -> res |= Llvm.Instruction.SDiv True eop1 eop2
+        ObMod -> res |= Llvm.Instruction.SRem eop1 eop2
+        ObPlus -> res |= Llvm.Instruction.Add False False eop1 eop2
+        ObMinus -> res |= Llvm.Instruction.Sub False False eop1 eop2
+        _ -> Err.unreachable "should be handled in TPrimitive TBool branch"
       populate res
-    EBinary opbin rval1 rval2 typ -> undefined
+    EBinary {} -> Err.unreachable x
     -- These expressions will be replaced with ones caring more context in subsequent phases
     PruneEVar {} -> Err.unreachable x
+
+-- JUMPING CODE --
+------------------
+class EmitableConditional a where
+  emitCond :: a -> Name -> Name -> EmitterM ()
+  evalCond :: a -> EmitterM Operand
+  evalCond x = undefined
+
+instance EmitableConditional RValue where
+  emitCond = undefined
 
 -- TRAVERSING HELPERS --
 ------------------------
