@@ -444,7 +444,7 @@ instance Interpretable RValue PrimitiveValue where
   -- statements
   interpret x = case x of
     -- Literals
-    ENull -> return nullReference
+    ENull _ -> return nullReference
     ELitTrue -> return (VBool True)
     ELitFalse -> return (VBool False)
     ELitChar c -> return (VChar c)

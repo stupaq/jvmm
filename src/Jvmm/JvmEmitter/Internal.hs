@@ -298,7 +298,6 @@ instance Emitable TypeComposed String where
   emit TObject = return "Ljava/lang/Object;"
   emit TString = return "Ljava/lang/String;"
   emit (TArray typ) = ("[" ++) <$> emit typ
-  emit TNull = Err.unreachable TNull
   emit _ = notImplemented
 
 instance Emitable Field () where
@@ -396,7 +395,7 @@ instance Emitable Stmt () where
 instance Emitable RValue TypeBasic where
   emit x = case x of
     -- Literals
-    ENull -> do
+    ENull _ -> do
       inss "aconst_null" inc1
       return (TComposed TObject)
     ELitTrue -> do

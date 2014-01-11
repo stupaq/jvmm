@@ -312,7 +312,7 @@ instance Scopeable Stmt where
 instance Scopeable RValue where
   scope x = case x of
     -- Literals
-    ENull -> return x
+    ENull _ -> return x
     ELitTrue -> return x
     ELitFalse -> return x
     ELitChar _ -> return x

@@ -317,18 +317,13 @@ instance Arithmetizable TypeComposed where
     let bad = throwError (Err.unexpectedType typ1 typ2)
         ok = return typ1
     case (typ1, typ2) of
-      (TNull, TNull) -> ok
-      (TArray _, TNull) -> ok
       -- Different people say different things about this
       (TArray etyp1, TArray etyp2) -> liftM TArray $ etyp1 =| etyp2
-      (TString, TNull) -> ok
       (TString, TString) -> ok
-      (TObject, TNull) -> ok
       (TObject, TString) -> ok
       (TObject, TObject) -> ok
       (TObject, TArray _) -> ok
       (TObject, TUser _) -> ok
-      (TUser _, TNull) -> ok
       (TUser _, TUser _)
         | typ1 == typ2 -> ok
         | otherwise -> do
@@ -446,7 +441,7 @@ class TypeCheckable' a where
 instance TypeCheckable' RValue where
   tcheck' x = case x of
     -- Literals
-    ENull -> return (x, TComposed TNull)
+    ENull typ -> return (x, TComposed typ)
     ELitTrue -> return (x, TPrimitive TBool)
     ELitFalse -> return (x, TPrimitive TBool)
     ELitChar c -> do

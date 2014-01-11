@@ -156,7 +156,7 @@ refersTo :: O.VariableName -> O.RValue -> Bool
 -- We can always make a mistake and answer True
 refersTo var x = case x of
   -- Literals
-  O.ENull -> False
+  O.ENull _ -> False
   O.ELitTrue -> False
   O.ELitFalse -> False
   O.ELitChar _ -> False
@@ -188,8 +188,8 @@ tExpr x = case x of
   I.ELitFalse -> O.ELitFalse
   I.EString str -> O.ELitString str
   I.ELitChar c -> O.ELitChar c
-  I.ENull -> O.ENull
-  I.ENullT _ -> O.ENull
+  I.ENull -> O.ENull O.TObject
+  I.ENullT typ -> O.ENull (tTComposed typ)
   I.EArray expr1 expr2 -> O.EArrayLoad (tExpr expr1) (tExpr expr2) undefined
   I.EMethod expr id exprs ->
     O.EInvokeVirtual (tExpr expr) undefined (tMIdent id) undefined (map tExpr exprs)

@@ -317,7 +317,6 @@ instance Translatable TypeComposed LlvmType where
   toLlvm x = case x of
     TArray typ -> PointerType (toLlvm typ) defAddrSpace
     TString -> stringType
-    TNull -> Err.unreachable TNull
     _ -> PointerType (NamedTypeReference $ composedName x) defAddrSpace
 
 instance Translatable ClassLayout LlvmType where
@@ -491,10 +490,10 @@ instance Emitable RValue Operand where
   emit x = case x of
     -- FIXME ref count
     -- Literals
-    ENull ->
+    ENull typ ->
       -- We deliberately skip retain here since it's a no-op, null can be treated as a new object
       -- to meet invariant assertion.
-      populate $ Null (toLlvm TObject)
+      populate $ Null (toLlvm typ)
     ELitTrue -> populate trueConst
     ELitFalse -> populate falseConst
     ELitChar c -> populate $ charValue c
@@ -544,7 +543,7 @@ instance Emitable RValue Operand where
     -- Method calls
     EInvokeStatic ctyp mname@(MethodName str) mtyp@(TypeMethod tret targs _) args -> do
       aops <- mapM emit args
-      let nam = if ctyp == TNull || Builtins.isLibraryMethod ctyp mname mtyp
+      let nam = if Builtins.isLibraryMethod ctyp mname mtyp
           then Name str
           else composedName ctyp +/+ str
       let callAndRelease dst = dst (callDefaults (static nam) aops) >> releaseAll targs aops
@@ -579,13 +578,16 @@ instance Emitable RValue Operand where
       populate obj
     -- Operations
     EUnary _ _ (TPrimitive TBool) -> evalCond x
-    EUnary OuNeg expr tret -> undefined
+    EUnary OuNeg expr typ@(TPrimitive TInt) -> emit $ EBinary ObMinus (ELitInt 0) expr typ
     EUnary {} -> Err.unreachable x
     EBinary _ _ _ (TPrimitive TBool) -> evalCond x
-    EBinary ObPlus expr1 expr2 (TComposed TString) ->
-      let strType = TComposed TString
-          concatType = TypeMethod strType [strType, strType] [] in do
-        emit $ EInvokeStatic TNull (MethodName "string_concat") concatType [expr1, expr2]
+    EBinary ObPlus expr1 expr2 (TComposed TString) -> do
+      eop1 <- emit expr1
+      eop2 <- emit expr2
+      res <- nextVar
+      res |= callDefaults (static $ Name "string_concat") [eop1, eop2]
+      releaseAll (replicate 2 $ TComposed TString) [eop1, eop2]
+      populate res
     EBinary opbin expr1 expr2 (TPrimitive TInt) -> do
       eop1 <- emit expr1
       eop2 <- emit expr2

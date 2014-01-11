@@ -134,7 +134,7 @@ data Stmt =
 -----------------
 data RValue =
   -- Literals
-    ENull
+    ENull TypeComposed
   | ELitTrue
   | ELitFalse
   | ELitChar Char
@@ -237,8 +237,7 @@ data TypePrimitive =
   deriving (Show, Eq, Ord)
 
 data TypeComposed =
-    TNull
-  | TString
+    TString
   | TArray TypeBasic
   | TObject
   | TUser ClassName

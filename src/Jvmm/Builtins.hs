@@ -46,7 +46,7 @@ isBuiltinType :: TypeComposed -> Bool
 isBuiltinType (TUser (ClassName str)) = str `elem` ["int", "char", "boolean", "string"]
 isBuiltinType TObject = False
 isBuiltinType (TArray _) = True
-isBuiltinType _ = Err.unreachable TNull
+isBuiltinType TString = True
 
 builtinFieldType :: (MonadError e m, Error e) => (TypeComposed, String) -> m Type
 builtinFieldType desc = case desc of
@@ -61,9 +61,9 @@ builtinMethodType desc = case desc of
 
 defaultValue :: TypeBasic -> RValue
 defaultValue typ = case typ of
-  TComposed _ -> ENull
+  TComposed ctyp -> ENull ctyp
   TPrimitive TInt -> ELitInt 0
   TPrimitive TChar -> ELitChar '\0'
   TPrimitive TBool -> ELitFalse
-  _ -> ENull
+  _ -> ENull TObject
 
