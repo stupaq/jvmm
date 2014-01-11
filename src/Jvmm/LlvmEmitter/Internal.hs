@@ -81,7 +81,7 @@ castToVoidPtr op = do
   populate tmp
 
 intValue :: Integer -> Constant
-intValue int = Llvm.Constant.Int 32 int
+intValue = Llvm.Constant.Int 32
 charValue :: Char -> Constant
 charValue int = Llvm.Constant.Int 8 $ toInteger $ Char.ord int
 
@@ -384,7 +384,7 @@ instance Emitable Method () where
   emit Method { methodBody = SBuiltin } = return ()
   emit method@(Method {
         methodName = MethodName namestr
-      , methodType = TypeMethod tret _ _
+      , methodType = TypeMethod tret targs _
       , methodVariables = vars
       , methodOrigin = origin
       , methodBody = bodyStmt
@@ -408,7 +408,8 @@ instance Emitable Method () where
       newBlock body exitBlockName $
         emit bodyStmt
       newBlock exitBlockName undefined $ do
-        -- FIXME free all variables
+        mapM_ freeVar args
+        mapM_ freeVar vars
         if ltret == VoidType
         then Do |- Ret Nothing
         else do
@@ -432,6 +433,10 @@ instance Emitable Method () where
           retain typ argRef
         initVar var@(Variable typ _ _) =
           Do |- Store False (location var) (ConstantOperand $ defaultValue typ) Nothing (align typ)
+        freeVar var@(Variable typ num _) = do
+          tmp <- nextVar
+          tmp |= Load False (location var) Nothing (align tret)
+          release typ (LocalReference tmp)
 
 instance Emitable (Operand, TypeComposed, FieldName) Operand where
   emit (op, ctyp, fname) = do
@@ -487,19 +492,21 @@ instance Emitable LValue Operand where
     LVariable num _ -> populate $ location num
     LArrayElement lval rval _ -> do
       rop <- emit rval
-      lop <- emit lval
-      val <- nextVar
-      val |= Load False lop Nothing alignRef
+      val <- loadLValue lval
       res <- nextVar
-      res |= Llvm.Instruction.GetElementPtr True (LocalReference val) [rop]
+      res |= Llvm.Instruction.GetElementPtr True val [rop]
       populate res
     LField lval ctyp fname _ -> do
-      lop <- emit lval
-      val <- nextVar
-      val |= Load False lop Nothing alignRef
-      emit (LocalReference val, ctyp, fname)
+      val <- loadLValue lval
+      emit (val, ctyp, fname)
     -- These expressions will be replaced with ones caring more context in subsequent phases
     PruneLExpr {} -> Err.unreachable x
+    where
+      loadLValue lval = do
+        lop <- emit lval
+        val <- nextVar
+        val |= Load False lop Nothing alignRef
+        return (LocalReference val)
 
 instance Emitable RValue Operand where
   -- Objects might be created and destroyed while computing rvalue. Our invariants are:
@@ -566,7 +573,7 @@ instance Emitable RValue Operand where
           then Name str
           else composedName ctyp +/+ str
       let callAndRelease dst = dst (callDefaults (static nam) aops) >> releaseAll targs aops
-      if tret == (TPrimitive TVoid)
+      if tret == TPrimitive TVoid
       then do
         callAndRelease (Do |-)
         populate $ Undef VoidType
@@ -584,7 +591,7 @@ instance Emitable RValue Operand where
       ptr <- nextVar
       ptr |= callDefaults (static $ Name "rc_malloc") [siz]
       Do |- callDefaults (static $ Name "object_init")
-          [siz, (LocalReference ptr), (ConstantOperand proto)]
+          [siz, LocalReference ptr, ConstantOperand proto]
       obj <- nextVar
       obj |= Llvm.Instruction.BitCast (LocalReference ptr) (toLlvm ctyp)
       populate obj
