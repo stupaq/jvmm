@@ -12,6 +12,7 @@ import Control.Monad.Reader
 import Control.Monad.State
 
 import Data.Int (Int32)
+import qualified Data.Char as Char
 import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Set as Set
@@ -385,15 +386,15 @@ instance TypeCheckable Stmt where
     SBlock stmts -> do
       stmts' <- mapM tcheck stmts
       return $ SBlock stmts'
-    SExpr expr -> do
-      (expr', _) <- tcheck' expr
-      return $ SExpr expr'
+    SExpr expr _ -> do
+      (expr', typ') <- tcheck' expr
+      return $ SExpr expr' typ'
     -- Memory access
-    SAssign lval expr -> do
+    SAssign lval expr _ -> do
       (lval', ltyp) <- tcheck' lval
       (expr', etyp) <- tcheck' expr
       ltyp =| etyp
-      return $ SAssign lval' expr'
+      return $ SAssign lval' expr' etyp
     -- Control statements
     SReturn expr _ -> do
       (expr', etyp) <- tcheck' expr
@@ -448,8 +449,12 @@ instance TypeCheckable' RValue where
     ENull -> return (x, TComposed TNull)
     ELitTrue -> return (x, TPrimitive TBool)
     ELitFalse -> return (x, TPrimitive TBool)
-    ELitChar _ -> return (x, TPrimitive TChar)
-    ELitString _ -> return (x, TComposed TString)
+    ELitChar c -> do
+      unless (Char.isAscii c) $ throwError (Err.nonAsciiCharacter c)
+      return (x, TPrimitive TChar)
+    ELitString str -> do
+      unless (all Char.isAscii str) $ throwError (Err.nonAsciiCharacter ' ')
+      return (x, TComposed TString)
     ELitInt n -> do
       intWithinBounds n `rethrow` Err.intValueOutOfBounds n
       return (x, TPrimitive TInt)

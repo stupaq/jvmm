@@ -89,7 +89,7 @@ instance Verifiable Stmt where
   verify x = case x of
     SBlock stmts -> mapM_ verify stmts
     -- Memory access
-    SAssign (PruneLExpr _) _ -> Err.unreachable x
+    SAssign (PruneLExpr _) _ _ -> Err.unreachable x
     -- Control statements
     SReturn _ _ -> setReturned True
     SReturnV -> setReturned True

@@ -74,11 +74,11 @@ tStmt x = case x of
   I.SBlock lbr stmts rbr -> tBraces lbr rbr $ return $
     O.SBlock $ concatMap tStmt stmts
   I.SAssignOp expr1 opassign expr2 s -> tSem s $ return $
-    O.SAssign (tLVal expr1) $ tExpr $ tAssignOp opassign expr1 expr2
+    O.SAssign (tLVal expr1) (tExpr (tAssignOp opassign expr1 expr2)) undefined
   I.SPostInc expr s -> tStmt $ I.SAssignOp expr I.APlus (I.ELitInt 1) s
   I.SPostDec expr s -> tStmt $ I.SAssignOp expr I.AMinus (I.ELitInt 1) s
   I.SEmpty s -> tSem s $ return O.SEmpty
-  I.SAssign expr1 expr2 s -> tSem s $ return $ O.SAssign (tLVal expr1) (tExpr expr2)
+  I.SAssign expr1 expr2 s -> tSem s $ return $ O.SAssign (tLVal expr1) (tExpr expr2) undefined
   I.SReturn expr s -> tSem s $ return $ O.SReturn (tExpr expr) undefined
   I.SReturnV s -> tSem s $ return O.SReturnV
   I.SIf expr stmt -> return $ O.SIf (tExpr expr) (O.SBlock $ tStmt stmt)
@@ -96,7 +96,7 @@ tStmt x = case x of
         I.SDeclVar typ [I.Init id (I.EArray (I.EVar idarr) (I.EVar iditer))] noSem,
         stmt,
         I.SPostInc (I.EVar iditer) noSem] noRbr)] noRbr
-  I.SExpr expr s -> tSem s $ return $ O.SExpr $ tExpr expr
+  I.SExpr expr s -> tSem s $ return $ O.SExpr (tExpr expr) undefined
   I.SThrow expr s -> tSem s $ return $ O.SThrow $ tExpr expr
   I.STryCatch stmt1 typ2 id3 stmt4 -> return $ O.PruneSTryCatch (O.SBlock $ tStmt stmt1) (tTComposed typ2) (tVIdent id3) (O.SBlock $ tStmt stmt4)
   where
@@ -140,17 +140,17 @@ tItem :: I.TypeBasic -> I.Item -> [O.Stmt]
 tItem t x =
   let typ = tTBasic t
   in case x of
-  I.NoInit id -> [O.PruneSDeclVar typ (tVIdent id), O.SAssign (tLVar id) (defaultValue typ)]
+  I.NoInit id -> [O.PruneSDeclVar typ (tVIdent id), O.SAssign (tLVar id) (defaultValue typ) undefined]
   I.Init id e -> -- SYNTACTIC SUGAR
     -- For declarations with conflicts (e.g. int x = x;) we use temporary variable
     -- with lifetime limited to four statements, which cannot hide any user-defined variable
     let expr = tExpr e
     in if refersTo (tVIdent id) expr then let idtmp = tempIdent id "decl" in [
         O.PruneSDeclVar typ (tVIdent idtmp),
-        O.SAssign (tLVar idtmp) expr,
+        O.SAssign (tLVar idtmp) expr undefined,
         O.PruneSDeclVar typ (tVIdent id),
-        O.SAssign (tLVar id) (O.PruneEVar (tVIdent idtmp))]
-    else [O.PruneSDeclVar typ (tVIdent id), O.SAssign (tLVar id) expr]
+        O.SAssign (tLVar id) (O.PruneEVar (tVIdent idtmp)) undefined]
+    else [O.PruneSDeclVar typ (tVIdent id), O.SAssign (tLVar id) expr undefined]
 
 refersTo :: O.VariableName -> O.RValue -> Bool
 -- We can always make a mistake and answer True

@@ -261,7 +261,7 @@ instance Scopeable Stmt where
         [stmt'] -> return stmt'
         _ -> return $ SBlock stmts'
     -- Memory access
-    SAssign lval expr -> SAssign <$> scope lval <*> scope expr
+    SAssign lval expr typ -> SAssign <$> scope lval <*> scope expr <#> typ
     -- Control statements
     SReturn expr _ -> do
       expr' <- scope expr
@@ -287,9 +287,9 @@ instance Scopeable Stmt where
     -- Special function bodies
     SBuiltin -> return SBuiltin
     SInherited -> return SInherited
-    SExpr expr -> do
+    SExpr expr _ -> do
       expr' <- scope expr
-      return $ SExpr expr'
+      return $ SExpr expr' undefined
     -- Metainformation carriers
     SMetaLocation loc stmts -> stmtMetaLocation loc $ mapM scope stmts
     -- These statements will be replaced with ones caring more context in subsequent phases

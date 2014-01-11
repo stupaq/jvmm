@@ -19,6 +19,7 @@ import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Writer
 
+import qualified Data.Char as Char
 import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
@@ -49,16 +50,20 @@ type LlvmType = Llvm.Type.Type
 
 -- BUILTINS AND RUNTIME --
 --------------------------
-defCall :: Name -> [Operand] -> Instruction
-defCall fname args = Call {
+callDefaults :: CallableOperand -> [Operand] -> Instruction
+callDefaults fun args = Call {
       isTailCall = False
     , Llvm.Instruction.callingConvention = Llvm.CallingConvention.C
     , Llvm.Instruction.returnAttributes = []
-    , function =  Right $ ConstantOperand $ GlobalReference fname
+    , function = fun
     , arguments = [(op, []) | op <- args]
     , Llvm.Instruction.functionAttributes = []
     , metadata = []
   }
+
+static, dynamic :: Name -> CallableOperand
+static = Right . ConstantOperand . GlobalReference
+dynamic = Right . LocalReference
 
 defAddrSpace :: AddrSpace
 defAddrSpace = AddrSpace 0
@@ -69,6 +74,16 @@ intType = IntegerType 32
 charType = IntegerType 8
 voidPtrType = PointerType charType defAddrSpace
 stringType = PointerType charType defAddrSpace
+
+intValue, charValue, boolValue :: Integral a => a -> Constant
+intValue int = Llvm.Constant.Int 32 $ toInteger int
+charValue int = Llvm.Constant.Int 8 $ toInteger int
+boolValue int = Llvm.Constant.Int 1 $ toInteger int
+
+alignRef, alignPrim, align0 :: Word32
+alignRef = 0 -- 8
+alignPrim = 0 -- 4
+align0 = 0
 
 composedName :: TypeComposed -> Name
 composedName x = case x of
@@ -96,9 +111,8 @@ builtinGlobals = map GlobalDefinition [
     , declareFn "printString" [stringType] VoidType
     , declareFn "readString" [] stringType
     , declareFn "error" [] VoidType
-    , defineFn "main" [] intType [BasicBlock
-        (UnName 0)
-        [UnName 1 := defCall (composedName TObject +/+ "main") []]
+    , defineFn "main" [] intType [BasicBlock (Name "entry")
+        [UnName 1 := callDefaults (static $ composedName TObject +/+ "main") []]
         (Do $ Ret (Just $ LocalReference $ UnName 1) [])
       ]
   ]
@@ -163,8 +177,14 @@ runEmitterM env action =
 
 -- MONADIC HELPERS --
 ---------------------
+notImplemented :: a
+notImplemented = error "Not implemented"
+
 assertM :: forall (m :: * -> *). Monad m => Bool -> m ()
 assertM cond = assert cond $ return ()
+
+lookupM :: forall r (m :: * -> *) k. (Monad m, Ord k) => k -> m (Map.Map k r) -> m r
+lookupM key = liftM (Maybe.fromJust . Map.lookup key)
 
 resetIds :: EmitterM ()
 resetIds = modify $ \s -> s { emitterstateNextId = 0 }
@@ -179,12 +199,15 @@ intercept :: forall (f :: * -> *) a a1. (Functor f, MonadWriter [a1] f) => f a -
 intercept action = fmap snd $ censor (const []) $ listen action
 
 layoutFor :: TypeComposed -> EmitterM ClassLayout
-layoutFor typ = liftM (Maybe.fromJust . Map.lookup typ) (asks emitterenvLayout)
+layoutFor typ = lookupM typ $ asks emitterenvLayout
 
 -- LLVM MONADIC HELPERS --
 --------------------------
-nextUnName :: EmitterM Name
-nextUnName = UnName <$> nextId
+nextVar :: EmitterM Name
+nextVar = Name <$> ('t':) <$> show <$> nextId
+
+nextBlock :: EmitterM Name
+nextBlock = Name <$> ('b':) <$> show <$> nextId
 
 define :: Definition -> EmitterM ()
 define = lift . tell . return
@@ -200,6 +223,9 @@ class InstructionLike a b | a -> b where
   infix 6 |=
   (|=) :: Name -> a -> EmitterM ()
   (|=) nam ins = (nam := ) |- ins
+
+instance InstructionLike Instruction Instruction where
+  (|-) nam ins = addInstr $ nam ins
 
 instance InstructionLike (InstructionMetadata -> Instruction) Instruction where
   (|-) nam ins = addInstr $ nam (ins [])
@@ -220,7 +246,9 @@ endBlock :: Named Terminator -> EmitterM ()
 endBlock term = get >>= \x -> case x of
     EmitterState _ Nothing _ _ -> return ()
     EmitterState _ (Just bname) rbody _ -> do
-      -- TODO handle releases
+      releases <- gets emitterstateBlockRelease
+      forM_ (List.reverse releases) $ \ref ->
+        Do |- callDefaults (static $ Name "rc_retain") [ref]
       tell [BasicBlock bname (List.reverse rbody) term]
       modify $ \s -> s {
           emitterstateBlockName = Nothing
@@ -230,9 +258,9 @@ endBlock term = get >>= \x -> case x of
 
 defaultValue :: TypeBasic -> Constant
 defaultValue typ = case typ of
-  TPrimitive TInt -> Llvm.Constant.Int 32 0
-  TPrimitive TChar -> Llvm.Constant.Int 8 0
-  TPrimitive TBool -> Llvm.Constant.Int 1 0
+  TPrimitive TInt -> intValue (0 :: Int)
+  TPrimitive TChar -> charValue (0 :: Int)
+  TPrimitive TBool -> boolValue (0 :: Int)
   TComposed ctyp -> Null $ toLlvm ctyp
   _ -> Err.unreachable "no default value"
 
@@ -240,8 +268,8 @@ class Alignable a where
   align :: a -> Word32
 
 instance Alignable TypeBasic where
-  align (TComposed _) = 8
-  align (TPrimitive _) = 4
+  align (TComposed _) = alignRef
+  align (TPrimitive _) = alignPrim
 
 -- LLVM PURE HELPERS --
 -----------------------
@@ -288,6 +316,16 @@ instance Translatable ClassLayout LlvmType where
       , elementTypes = map toLlvm $ layoutFieldTypes layout
     }
 
+-- MEMORY MODEL --
+------------------
+retain, release :: TypeBasic -> Operand -> EmitterM ()
+retain (TComposed _) ref@(LocalReference _) =
+  modify $ \s -> s { emitterstateBlockRelease = ref : emitterstateBlockRelease s }
+retain _ _ = return ()
+release (TComposed _) ref@(LocalReference _) =
+  Do |- callDefaults (static $ Name "rc_release") [ref]
+release _ _ = return ()
+
 -- TREE TRAVERSING --
 ---------------------
 class Emitable a b | a -> b where
@@ -321,6 +359,7 @@ instance Emitable Method () where
       , methodOrigin = origin
       , methodBody = bodyStmt
       }) = do
+    resetIds
     let args = if methodInstance method
         then argSelf : methodArgs method
         else methodArgs method
@@ -328,17 +367,17 @@ instance Emitable Method () where
     largs <- mapM emitArg args
     blocks <- intercept $ do
       let entry = Name "entry"
-      body <- nextUnName
+      body <- nextBlock
       newBlock entry body $ do
         mapM_ allocVar $ args ++ vars
         mapM_ initArg args
-      exit <- nextUnName
+      exit <- nextBlock
       newBlock body exit $
         emit bodyStmt
       newBlock exit exit $
         if ltret == VoidType
         then Do |- Ret Nothing
-        else Do |- Ret (Just $ ConstantOperand $ defaultValue tret)
+        else Do |- Unreachable
     define $ GlobalDefinition $ functionDefaults {
         name = composedName origin +/+ namestr
       , returnType = ltret
@@ -354,6 +393,115 @@ instance Emitable Method () where
           Do |- Store False (location var) (LocalReference $ argName num) Nothing (align typ)
 
 instance Emitable Stmt () where
-  -- FIXME
-  emit _ = return ()
+  emit x = case x of
+    SEmpty -> return ()
+    SBlock stmts -> mapM_ emit stmts
+    SExpr rval typ -> do
+      rop <- emit rval
+      release typ rop
+    -- Memory access
+    SAssign lval rval typ -> do
+      lop <- emit lval
+      rop <- emit rval
+      Do |- Store False lop rop Nothing (align typ)
+    -- Control statements
+    SReturn rval _ -> do
+      rop <- emit rval
+      Do |- Ret (Just rop)
+    SReturnV -> Do |- Ret Nothing
+    SIf rval stmt -> undefined
+    SIfElse rval stmt1 stmt2 -> undefined
+    SWhile rval stmt -> undefined
+    SThrow {} -> notImplemented
+    STryCatch {} -> notImplemented
+    -- Special function bodies
+    SBuiltin -> Err.unreachable x
+    SInherited -> Err.unreachable x
+    -- Metainformation carriers
+    SMetaLocation _ stmts -> mapM_ emit stmts
+    -- These statements will be replaced with ones caring more context in subsequent phases
+    PruneSDeclVar {} -> Err.unreachable x
+    PruneSTryCatch {} -> Err.unreachable x
+
+instance Emitable LValue Operand where
+  -- FIXME ref count
+  emit x = case x of
+    LVariable num _ -> populate $ location num
+    LArrayElement lval rval _ -> do
+      rop <- emit rval
+      lop <- emit lval
+      val <- nextVar
+      val |= Load False lop Nothing alignRef
+      res <- nextVar
+      res |= Llvm.Instruction.GetElementPtr True (LocalReference val) [rop]
+      populate res
+    LField lval ctyp fname _ -> do
+      lop <- emit lval
+      val <- nextVar
+      val |= Load False lop Nothing alignRef
+      res <- nextVar
+      ind <- lookupM fname $ layoutFieldOffsets <$> layoutFor ctyp
+      res |= Llvm.Instruction.GetElementPtr True (LocalReference val) [
+            ConstantOperand $ intValue (0 :: Int)
+          , ConstantOperand $ intValue ind]
+      populate res
+    -- These expressions will be replaced with ones caring more context in subsequent phases
+    PruneLExpr {} -> Err.unreachable x
+
+instance Emitable RValue Operand where
+  -- FIXME ref count
+  emit x = case x of
+    -- FIXME
+    -- Literals
+    ENull -> populate $ Null (toLlvm TObject)
+    ELitTrue -> populate $ boolValue (1 :: Int)
+    ELitFalse -> populate $ boolValue (0 :: Int)
+    ELitChar c -> populate $ charValue (Char.ord c)
+    ELitString str -> undefined
+    ELitInt int -> populate $ intValue int
+    -- Memory access
+    ELoad num typ -> do
+      res <- nextVar
+      res |= Load False (LocalReference $ location num) Nothing (align typ)
+      populate res
+    EArrayLoad rval1 rval2 eltyp -> do
+      rop2 <- emit rval2
+      rop1 <- emit rval1
+      loc <- nextVar
+      loc |= Llvm.Instruction.GetElementPtr True rop1 [rop2]
+      res <- nextVar
+      res |= Load False (LocalReference $ loc) Nothing (align eltyp)
+      populate res
+    EGetField rval ctyp fname ftyp -> do
+      rop <- emit rval
+      loc <- nextVar
+      ind <- lookupM fname $ layoutFieldOffsets <$> layoutFor ctyp
+      loc |= Llvm.Instruction.GetElementPtr True rop [
+            ConstantOperand $ intValue (0 :: Int)
+          , ConstantOperand $ intValue ind]
+      res <- nextVar
+      res |= Load False (LocalReference $ loc) Nothing (align ftyp)
+      populate res
+    -- Method calls
+    EInvokeStatic ctyp mname mtyp args -> undefined
+    EInvokeVirtual rval ctyp mname mtyp args -> undefined
+    -- Object creation
+    ENewObj ctyp -> undefined
+    ENewArr eltyp rval -> undefined
+    -- Operations
+    EUnary opun rval typ -> undefined
+    EBinary opbin rval1 rval2 typ -> undefined
+    -- These expressions will be replaced with ones caring more context in subsequent phases
+    PruneEVar {} -> Err.unreachable x
+
+-- TRAVERSING HELPERS --
+------------------------
+class Populable a where
+  populate :: a -> EmitterM Operand
+
+instance Populable Name where
+  populate = return . LocalReference
+
+instance Populable Constant where
+  populate = return . ConstantOperand
 

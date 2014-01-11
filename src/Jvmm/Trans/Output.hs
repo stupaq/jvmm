@@ -109,12 +109,9 @@ newtype MethodName = MethodName { string :: String }
 data Stmt =
     SEmpty
   | SBlock [Stmt]
-  | SExpr RValue
+  | SExpr RValue TypeBasic
   -- Memory access
-  | SAssign {
-        sassignTarget :: LValue
-      , sassignSource :: RValue
-    }
+  | SAssign LValue RValue TypeBasic
   -- Control statements
   | SReturn RValue TypeBasic
   | SReturnV

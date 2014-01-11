@@ -67,9 +67,9 @@ instance Analysable Stmt [Stmt] where
     SBlock stmts ->
      -- Blocks have no semantic value after resolving scope
      consecutive stmts
-    SExpr expr -> single $ SExpr <$> analyse expr
+    SExpr expr typ -> single $ SExpr <$> analyse expr <#> typ
     -- Memory access
-    SAssign lval expr -> single $ SAssign <$> analyse lval <*> analyse expr
+    SAssign lval expr typ -> single $ SAssign <$> analyse lval <*> analyse expr <#> typ
     -- Control statements
     SReturn expr typ -> do
       expr' <- analyse expr
@@ -87,7 +87,7 @@ instance Analysable Stmt [Stmt] where
           stmts' <- analyse stmt
           case stmts' of
             -- This expression cannot just dissapear
-            [] -> return [SExpr expr']
+            [] -> return [SExpr expr' (TPrimitive TBool)]
             _ -> return [SIf expr' $ block stmts']
     SIfElse expr stmt1 stmt2 -> do
       expr' <- analyse expr
@@ -97,7 +97,7 @@ instance Analysable Stmt [Stmt] where
         _ -> do
           stmtsPair <- liftM2 (,) (analyse stmt1) (analyse stmt2)
           case stmtsPair of
-            ([], []) -> return [SExpr expr']
+            ([], []) -> return [SExpr expr' (TPrimitive TBool)]
             (stmts1', []) -> return [SIf expr' (block stmts1')]
             ([], stmts2') -> return [SIf (EUnary OuNot expr' (TPrimitive TBool)) (block stmts2')]
             (stmts1', stmts2') -> return [SIfElse expr' (block stmts1') (block stmts2')]

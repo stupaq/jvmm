@@ -390,20 +390,20 @@ instance Interpretable Stmt () where
   interpret x = case x of
     SEmpty -> nop
     SBlock stmts -> mapM_ interpret stmts
-    SExpr expr -> interpret expr >> nop
+    SExpr expr _ -> interpret expr >> nop
     -- Memory access
     -- Order of expressions evaluation is 'left to right'
-    SAssign (LVariable num _) expr -> interpret expr >>= store num
-    SAssign (LArrayElement lval expr1 _) expr2 -> do
+    SAssign (LVariable num _) expr _ -> interpret expr >>= store num
+    SAssign (LArrayElement lval expr1 _) expr2 _ -> do
       ref <- interpret $ toRValue lval
       ind <- interpret expr1
       val <- interpret expr2
       astore ref ind val
-    SAssign (LField lval _ name _) expr -> do
+    SAssign (LField lval _ name _) expr _ -> do
       ref <- interpret $ toRValue lval
       val <- interpret expr
       putfield name val ref
-    SAssign (PruneLExpr _) _ -> Err.unreachable x
+    SAssign (PruneLExpr _) _ _ -> Err.unreachable x
     -- Control statements
     SReturn expr _ -> interpret expr >>= return_
     SReturnV -> return'_

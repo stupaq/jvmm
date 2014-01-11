@@ -108,6 +108,7 @@ referencedPrimitive typ = Dangling $ "primitive type cannot be referenced: " ++ 
 danglingThis = Dangling "dangling this"
 noSuperType typ = Dangling $ "cannot determine super type for: " ++ show typ
 intValueOutOfBounds n = Dangling $ "int constant out of bounds: " ++ show n
+nonAsciiCharacter c = Dangling $ "not an ASCII character: " ++ show c
 uncaughtException typ = Dangling $ "uncaught, undeclared exception " ++ show typ
 
 -- Runtime errors (not throwable by user)

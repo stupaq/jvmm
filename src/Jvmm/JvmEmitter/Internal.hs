@@ -337,21 +337,21 @@ instance Emitable Stmt () where
   emit x = case x of
     SEmpty -> none
     SBlock stmts -> mapM_ emit stmts
-    SExpr expr -> do
+    SExpr expr _ -> do
       emit expr
       n <- getStack
       replicateM_ n $ inss "pop" dec1
     -- Memory access
     -- Order of expressions evaluation is 'left to right'
-    SAssign (LVariable num typ) expr -> do
+    SAssign (LVariable num typ) expr _ -> do
       emit expr
       inssv (variable typ "store") dec1 num
-    SAssign (LArrayElement lval expr1 telem) expr2 -> do
+    SAssign (LArrayElement lval expr1 telem) expr2 _ -> do
       emit $ toRValue lval
       emit expr1
       emit expr2
       inss (element telem "astore") dec3
-    SAssign (PruneLExpr _) _ -> Err.unreachable x
+    SAssign (PruneLExpr _) _ _ -> Err.unreachable x
     SAssign {} -> notImplemented
     -- Control statements
     SReturn expr typ -> do
