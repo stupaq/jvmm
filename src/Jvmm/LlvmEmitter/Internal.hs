@@ -403,7 +403,9 @@ instance Emitable Stmt () where
     SAssign lval rval typ -> do
       lop <- emit lval
       rop <- emit rval
-      Do |- Store False lop rop Nothing (align typ)
+      tmp <- nextVar
+      tmp |= Llvm.Instruction.BitCast rop (toLlvm typ)
+      Do |- Store False lop (LocalReference tmp) Nothing (align typ)
     -- Control statements
     SReturn rval _ -> do
       rop <- emit rval

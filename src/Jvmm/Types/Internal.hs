@@ -393,8 +393,8 @@ instance TypeCheckable Stmt where
     SAssign lval expr _ -> do
       (lval', ltyp) <- tcheck' lval
       (expr', etyp) <- tcheck' expr
-      ltyp =| etyp
-      return $ SAssign lval' expr' etyp
+      typ <- ltyp =| etyp
+      return $ SAssign lval' expr' typ
     -- Control statements
     SReturn expr _ -> do
       (expr', etyp) <- tcheck' expr
