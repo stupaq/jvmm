@@ -27,14 +27,19 @@ static inline bool rc_is_const(struct rc_header* header) {
 void* rc_malloc(int32_t size) {
   struct rc_header* header = (struct rc_header*) malloc(((size_t) size) + RC_HEADER_SIZE);
   header->count = 1;
-  return rc_header_to_ptr(header);
+  void* ptr = rc_header_to_ptr(header);
+  fprintf(stderr, "debug: malloc(): size %d object  %p", size, ptr);
+  return ptr;
 }
 
 void rc_retain(void* ptr) {
   if (ptr != NULL) {
     struct rc_header* header = rc_ptr_to_header(ptr);
     if (!rc_is_const(header)) {
+      fprintf(stderr, "debug: retain(): object %p", ptr);
       header->count++;
+    } else {
+      fprintf(stderr, "debug: retain(): constant %p", ptr);
     }
   }
 }
@@ -43,9 +48,13 @@ void rc_release(void* ptr) {
   if (ptr != NULL) {
     struct rc_header* header = rc_ptr_to_header(ptr);
     if (!rc_is_const(header)) {
+      fprintf(stderr, "debug: release(): object %p", ptr);
       if (header->count-- == 0) {
+        fprintf(stderr, "debug: free(): object %p", ptr);
         free(header);
       }
+    } else {
+      fprintf(stderr, "debug: release(): constant %p", ptr);
     }
   }
 }

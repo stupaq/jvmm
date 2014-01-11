@@ -4,6 +4,9 @@ module Jvmm.Builtins where
 
 import Control.Monad.Error
 
+import qualified Data.List as List
+import qualified Data.Maybe as Maybe
+
 import qualified Jvmm.Errors as Err
 import Jvmm.Trans.Output
 
@@ -18,6 +21,12 @@ builtinFunctions = map fun [
     ("error", TypeMethod (TPrimitive TVoid) [] [])]
   where
     fun (name, typ) = Method typ (MethodName name) [] SBuiltin  TObject Err.Unknown [] False
+
+isBuiltinFunction :: TypeComposed -> MethodName -> TypeMethod -> Bool
+isBuiltinFunction TObject name typ = not $ Maybe.isNothing $ List.find builtin builtinFunctions
+  where
+    builtin method = methodName method == name && methodType method == typ
+isBuiltinFunction _ _ _ = False
 
 -- ENTRYPOINT --
 ----------------
