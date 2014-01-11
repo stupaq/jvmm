@@ -1,0 +1,4 @@
+int main() {
+    string s = (Object)null;
+    return 0;
+}
