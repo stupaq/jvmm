@@ -482,14 +482,14 @@ instance Emitable RValue TypeBasic where
       inss "ineg" id
       return tret
     EUnary {} -> Err.unreachable x
-    EBinary _ _ _ (TPrimitive TBool) -> evalCond x
-    EBinary ObPlus expr1 expr2 tret@(TComposed TString) -> do
+    EBinary _ _ _ (TPrimitive TBool) _ _ -> evalCond x
+    EBinary ObPlus expr1 expr2 tret@(TComposed TString) _ _ -> do
       emit expr1
       emit expr2
       fdesc <- emit $ TypeMethod (TComposed TString) [TComposed TString, TComposed TString] []
       inss ("invokestatic " ++ builtinsClassName ++ "/concat"  ++ fdesc) dec1
       return tret
-    EBinary opbin expr1 expr2 tret@(TPrimitive _) -> do
+    EBinary opbin expr1 expr2 tret@(TPrimitive _) _ _ -> do
       emit expr1
       emit expr2
       case opbin of
@@ -546,17 +546,17 @@ instance EmitableConditional RValue where
     -- Operations
     EUnary OuNot expr _ ->
       emitCond expr lfalse ltrue lnext
-    EBinary ObAnd expr1 expr2 _ -> do
+    EBinary ObAnd expr1 expr2 _ _ _ -> do
       lmid <- newLabel
       emitCond expr1 lmid lfalse lmid
       lab lmid
       emitCond expr2 ltrue lfalse lnext
-    EBinary ObOr expr1 expr2 _ -> do
+    EBinary ObOr expr1 expr2 _ _ _ -> do
       lmid <- newLabel
       emitCond expr1 ltrue lmid lmid
       lab lmid
       emitCond expr2 ltrue lfalse lnext
-    EBinary opbin expr1 expr2 _ -> do
+    EBinary opbin expr1 expr2 _ _ _ -> do
       atyp <- emit expr1
       emit expr2
       comp <- comparison opbin

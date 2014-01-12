@@ -476,11 +476,11 @@ instance Interpretable RValue PrimitiveValue where
     EUnary OuNeg expr _ -> do
       VInt val <- interpret expr
       return $ VInt $ negate val
-    EBinary ObPlus expr1 expr2 (TComposed TString) -> do
+    EBinary ObPlus expr1 expr2 (TComposed TString) _ _ -> do
       VString str1 <- deref =<< interpret expr1
       VString str2 <- deref =<< interpret expr2
       alloc $ VString (str1 ++ str2)
-    EBinary opbin expr1 expr2 (TPrimitive TInt) -> do
+    EBinary opbin expr1 expr2 (TPrimitive TInt) _ _ -> do
       VInt val1 <- interpret expr1
       VInt val2 <- interpret expr2
       when (opbin `elem` [ObDiv, ObMod] && val2 == 0) $ throwError $ RError Err.zeroDivision
@@ -491,17 +491,17 @@ instance Interpretable RValue PrimitiveValue where
         ObDiv -> val1 `div` val2
         ObMod -> val1 `rem` val2
         _ -> Err.unreachable opbin
-    EBinary ObAnd expr1 expr2 (TPrimitive TBool) -> do
+    EBinary ObAnd expr1 expr2 (TPrimitive TBool) _ _ -> do
       VBool val1 <- interpret expr1
       if val1
       then interpret expr2
       else return $ VBool False
-    EBinary ObOr expr1 expr2 (TPrimitive TBool) -> do
+    EBinary ObOr expr1 expr2 (TPrimitive TBool) _ _ -> do
       VBool val1 <- interpret expr1
       if val1
       then return $ VBool True
       else interpret expr2
-    EBinary opbin expr1 expr2 (TPrimitive TBool) -> do
+    EBinary opbin expr1 expr2 (TPrimitive TBool) _ _ -> do
       val1 <- interpret expr1
       val2 <- interpret expr2
       return $ VBool $ case opbin of

@@ -45,7 +45,7 @@ tField :: I.TypeBasic -> I.Field -> O.Field
 tField typ (I.Field id) = O.Field {
   O.fieldType = tTBasic typ,
   O.fieldName = tFIdent id,
-  O.fieldOrigin = undefined
+  O.fieldOrigin = O.undef
 }
 
 tFunction :: Bool -> I.Function -> O.Method
@@ -55,13 +55,13 @@ tFunction inst (I.Function typ id args exceptions lbr stmts rbr) =
     , O.methodName = tMIdent id
     , O.methodArgs = arguments
     , O.methodBody = O.SBlock $ tBraces lbr rbr (concatMap tStmt stmts)
-    , O.methodOrigin = undefined
+    , O.methodOrigin = O.undef
     , O.methodLocation = brToLoc lbr rbr
     , O.methodVariables = []
     , O.methodInstance = inst
   }
   where
-    arguments = map (\(I.Argument vtyp vid) -> O.Variable (tTBasic vtyp) undefined (tVIdent vid)) args
+    arguments = map (\(I.Argument vtyp vid) -> O.Variable (tTBasic vtyp) O.undef (tVIdent vid)) args
     argTypes = map (\(I.Argument vtyp _) -> tTBasic vtyp) args
     funType = O.TypeMethod (tTBasic typ) argTypes exceptionTypes
     exceptionTypes = case exceptions of
@@ -74,12 +74,12 @@ tStmt x = case x of
   I.SBlock lbr stmts rbr -> tBraces lbr rbr $ return $
     O.SBlock $ concatMap tStmt stmts
   I.SAssignOp expr1 opassign expr2 s -> tSem s $ return $
-    O.SAssign (tLVal expr1) (tExpr (tAssignOp opassign expr1 expr2)) undefined
+    O.SAssign (tLVal expr1) (tExpr (tAssignOp opassign expr1 expr2)) O.undef
   I.SPostInc expr s -> tStmt $ I.SAssignOp expr I.APlus (I.ELitInt 1) s
   I.SPostDec expr s -> tStmt $ I.SAssignOp expr I.AMinus (I.ELitInt 1) s
   I.SEmpty s -> tSem s $ return O.SEmpty
-  I.SAssign expr1 expr2 s -> tSem s $ return $ O.SAssign (tLVal expr1) (tExpr expr2) undefined
-  I.SReturn expr s -> tSem s $ return $ O.SReturn (tExpr expr) undefined
+  I.SAssign expr1 expr2 s -> tSem s $ return $ O.SAssign (tLVal expr1) (tExpr expr2) O.undef
+  I.SReturn expr s -> tSem s $ return $ O.SReturn (tExpr expr) O.undef
   I.SReturnV s -> tSem s $ return O.SReturnV
   I.SIf expr stmt -> return $ O.SIf (tExpr expr) (O.SBlock $ tStmt stmt)
   I.SIfElse expr stmt1 stmt2 -> return $ O.SIfElse (tExpr expr) (O.SBlock $ tStmt stmt1) (O.SBlock $ tStmt stmt2)
@@ -96,7 +96,7 @@ tStmt x = case x of
         I.SDeclVar typ [I.Init id (I.EArray (I.EVar idarr) (I.EVar iditer))] noSem,
         stmt,
         I.SPostInc (I.EVar iditer) noSem] noRbr)] noRbr
-  I.SExpr expr s -> tSem s $ return $ O.SExpr (tExpr expr) undefined
+  I.SExpr expr s -> tSem s $ return $ O.SExpr (tExpr expr) O.undef
   I.SThrow expr s -> tSem s $ return $ O.SThrow $ tExpr expr
   I.STryCatch stmt1 typ2 id3 stmt4 -> return $ O.PruneSTryCatch (O.SBlock $ tStmt stmt1) (tTComposed typ2) (tVIdent id3) (O.SBlock $ tStmt stmt4)
   where
@@ -140,17 +140,17 @@ tItem :: I.TypeBasic -> I.Item -> [O.Stmt]
 tItem t x =
   let typ = tTBasic t
   in case x of
-  I.NoInit id -> [O.PruneSDeclVar typ (tVIdent id), O.SAssign (tLVar id) (defaultValue typ) undefined]
+  I.NoInit id -> [O.PruneSDeclVar typ (tVIdent id), O.SAssign (tLVar id) (defaultValue typ) O.undef]
   I.Init id e -> -- SYNTACTIC SUGAR
     -- For declarations with conflicts (e.g. int x = x;) we use temporary variable
     -- with lifetime limited to four statements, which cannot hide any user-defined variable
     let expr = tExpr e
     in if refersTo (tVIdent id) expr then let idtmp = tempIdent id "decl" in [
         O.PruneSDeclVar typ (tVIdent idtmp),
-        O.SAssign (tLVar idtmp) expr undefined,
+        O.SAssign (tLVar idtmp) expr O.undef,
         O.PruneSDeclVar typ (tVIdent id),
-        O.SAssign (tLVar id) (O.PruneEVar (tVIdent idtmp)) undefined]
-    else [O.PruneSDeclVar typ (tVIdent id), O.SAssign (tLVar id) expr undefined]
+        O.SAssign (tLVar id) (O.PruneEVar (tVIdent idtmp)) O.undef]
+    else [O.PruneSDeclVar typ (tVIdent id), O.SAssign (tLVar id) expr O.undef]
 
 refersTo :: O.VariableName -> O.RValue -> Bool
 -- We can always make a mistake and answer True
@@ -174,7 +174,7 @@ refersTo var x = case x of
   O.ENewArr _ expr -> refers expr
   -- Operations
   O.EUnary _ expr _ -> refers expr
-  O.EBinary _ expr1 expr2 _ -> any refers [expr1, expr2]
+  O.EBinary _ expr1 expr2 _ _ _ -> any refers [expr1, expr2]
   -- These expressions will be replaced with ones caring more context in subsequent phases
   O.PruneEVar var1 -> var == var1
   O.PruneENull -> False
@@ -191,21 +191,21 @@ tExpr x = case x of
   I.ELitChar c -> O.ELitChar c
   I.ENull -> O.PruneENull
   I.ENullT typ -> O.ENull (tTComposed typ)
-  I.EArray expr1 expr2 -> O.EArrayLoad (tExpr expr1) (tExpr expr2) undefined
+  I.EArray expr1 expr2 -> O.EArrayLoad (tExpr expr1) (tExpr expr2) O.undef
   I.EMethod expr id exprs ->
-    O.EInvokeVirtual (tExpr expr) undefined (tMIdent id) undefined (map tExpr exprs)
-  I.EField expr id -> O.EGetField (tExpr expr) undefined (tFIdent id) undefined
-  I.EApp id exprs -> O.EInvokeStatic undefined (tMIdent id) undefined (map tExpr exprs)
+    O.EInvokeVirtual (tExpr expr) O.undef (tMIdent id) O.undef (map tExpr exprs)
+  I.EField expr id -> O.EGetField (tExpr expr) O.undef (tFIdent id) O.undef
+  I.EApp id exprs -> O.EInvokeStatic O.undef (tMIdent id) O.undef (map tExpr exprs)
   I.ENewArray typ expr -> O.ENewArr (tTBasic typ) (tExpr expr)
   I.ENewObject typ -> O.ENewObj $ tTComposed typ
-  I.ENeg expr -> O.EUnary O.OuNeg (tExpr expr) undefined
-  I.ENot expr -> O.EUnary O.OuNot (tExpr expr) undefined
-  I.EMul expr1 opbin2 expr3 -> O.EBinary (tMulOp opbin2) (tExpr expr1) (tExpr expr3) undefined
-  I.EAdd expr1 opbin2 expr3 -> O.EBinary (tAddOp opbin2) (tExpr expr1) (tExpr expr3) undefined
-  I.ERel expr1 opbin2 expr3 -> O.EBinary (tRelOp opbin2) (tExpr expr1) (tExpr expr3) undefined
-  I.EAnd expr1 expr3 -> O.EBinary O.ObAnd (tExpr expr1) (tExpr expr3) undefined
-  I.EOr expr1 expr3 -> O.EBinary O.ObOr (tExpr expr1) (tExpr expr3) undefined
-  I.EThis -> O.ELoad O.VariableThis undefined
+  I.ENeg expr -> O.EUnary O.OuNeg (tExpr expr) O.undef
+  I.ENot expr -> O.EUnary O.OuNot (tExpr expr) O.undef
+  I.EMul expr1 opbin2 expr3 -> O.EBinary (tMulOp opbin2) (tExpr expr1) (tExpr expr3) O.undef O.undef O.undef
+  I.EAdd expr1 opbin2 expr3 -> O.EBinary (tAddOp opbin2) (tExpr expr1) (tExpr expr3) O.undef O.undef O.undef
+  I.ERel expr1 opbin2 expr3 -> O.EBinary (tRelOp opbin2) (tExpr expr1) (tExpr expr3) O.undef O.undef O.undef
+  I.EAnd expr1 expr3 -> O.EBinary O.ObAnd (tExpr expr1) (tExpr expr3) O.undef O.undef O.undef
+  I.EOr expr1 expr3 -> O.EBinary O.ObOr (tExpr expr1) (tExpr expr3) O.undef O.undef O.undef
+  I.EThis -> O.ELoad O.VariableThis O.undef
 
 tMulOp :: I.MulOp -> O.OpBin
 tMulOp x = case x of

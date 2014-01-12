@@ -157,7 +157,7 @@ instance Analysable RValue RValue where
         (ELitTrue, OuNot) -> return ELitFalse
         (ELitFalse, OuNot) -> return ELitTrue
         _ -> return $ EUnary op expr' tret
-    EBinary op expr1 expr2 tret -> do
+    EBinary op expr1 expr2 tret typ1 typ2 -> do
       option <- liftM3 (,,) (return op) (analyse expr1) (analyse expr2)
       -- Note that comparint subtrees is meaningless here (this is one of the reasons for RValue
       -- not being instance of Eq) as the language is not purely functional
@@ -167,7 +167,7 @@ instance Analysable RValue RValue where
         (ObOr, ELitTrue, _) -> return ELitTrue
         (ObOr, ELitFalse, expr2') -> return expr2'
         -- TODO constant propagation
-        (_, expr1', expr2') -> return $ EBinary op expr1' expr2' tret
+        (_, expr1', expr2') -> return $ EBinary op expr1' expr2' tret typ1 typ2
     -- These expressions will be replaced with ones caring more context in subsequent phases
     PruneEVar {} -> Err.unreachable x
     -- Fallback to original value

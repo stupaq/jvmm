@@ -504,14 +504,15 @@ instance TypeCheckable' RValue where
         OuNot -> TBool =? etyp
         OuNeg -> TInt =? etyp
       return (EUnary op expr' etyp, etyp)
-    EBinary opbin expr1 expr2 _ -> do
+    EBinary opbin expr1 expr2 _ _ _ -> do
       (expr1', etyp1) <- tcheck' expr1
       (expr2', etyp2) <- tcheck' expr2
       typ <- etyp1 =||= etyp2
       isString <- Err.succeeded (TString =? typ)
       case (isString, opbin) of
         (True, ObPlus) ->
-          let rett = TComposed TString in return (EBinary opbin expr1' expr2' rett, rett)
+          let rett = TComposed TString
+          in return (EBinary opbin expr1' expr2' rett etyp1 etyp2, rett)
         _ -> do
           rett <- liftM TPrimitive $ case opbin of
             ObPlus -> TInt =? typ
@@ -529,7 +530,7 @@ instance TypeCheckable' RValue where
                 ObGTH -> return TBool
                 ObGEQ -> return TBool
                 _ -> return TInt
-          return (EBinary opbin expr1' expr2' rett, rett)
+          return (EBinary opbin expr1' expr2' rett etyp1 etyp2, rett)
     -- These expressions will be replaced with ones caring more context in subsequent phases
     PruneEVar {} -> Err.unreachable x
     PruneENull -> do

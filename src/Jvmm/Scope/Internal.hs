@@ -265,7 +265,7 @@ instance Scopeable Stmt where
     -- Control statements
     SReturn expr _ -> do
       expr' <- scope expr
-      return $ SReturn expr' undefined
+      return $ SReturn expr' undef
     SReturnV -> return SReturnV
     SIf expr stmt -> do
       stmt' <- scope stmt
@@ -289,7 +289,7 @@ instance Scopeable Stmt where
     SInherited -> return SInherited
     SExpr expr _ -> do
       expr' <- scope expr
-      return $ SExpr expr' undefined
+      return $ SExpr expr' undef
     -- Metainformation carriers
     SMetaLocation loc stmts -> stmtMetaLocation loc $ mapM scope stmts
     -- These statements will be replaced with ones caring more context in subsequent phases
@@ -324,11 +324,11 @@ instance Scopeable RValue where
     EArrayLoad expr1 expr2 _ -> do
       expr1' <- scope expr1
       expr2' <- scope expr2
-      return $ EArrayLoad expr1' expr2' undefined
+      return $ EArrayLoad expr1' expr2' undef
     EGetField expr _ field _ -> do
       expr' <- scope expr
       -- The field name we see here cannot be verified without type information
-      return $ EGetField expr' undefined field undefined
+      return $ EGetField expr' undef field undef
     -- Method calls
     -- We replace all calls that actually refer to instance method, we also give precedence to
     -- instance methods over static ones.
@@ -336,14 +336,14 @@ instance Scopeable RValue where
       exprs' <- mapM scope exprs
       stat <- isStatic name
       if stat
-      then static name >> return (EInvokeStatic undefined name undefined exprs')
+      then static name >> return (EInvokeStatic undef name undef exprs')
       else dynamic name >>
-          return (EInvokeVirtual (ELoad VariableThis undefined) undefined name undefined exprs')
+          return (EInvokeVirtual (ELoad VariableThis undef) undef name undef exprs')
     EInvokeVirtual expr _ name _ exprs -> do
       expr' <- scope expr
       exprs' <- mapM scope exprs
       -- The method name we see here cannot be verified without type information
-      return $ EInvokeVirtual expr' undefined name undefined exprs'
+      return $ EInvokeVirtual expr' undef name undef exprs'
     -- Object creation
     ENewObj typ -> do
       static typ
@@ -355,16 +355,16 @@ instance Scopeable RValue where
     -- Operations
     EUnary op expr _ -> do
       expr' <- scope expr
-      return $ EUnary op expr' undefined
-    EBinary op expr1 expr2 _ -> do
+      return $ EUnary op expr' undef
+    EBinary op expr1 expr2 _ _ _ -> do
       expr1' <- scope expr1
       expr2' <- scope expr2
-      return $ EBinary op expr1' expr2' undefined
+      return $ EBinary op expr1' expr2' undef undef undef
     -- These expressions will be replaced with ones caring more context in subsequent phases
     PruneEVar name ->
       varOrField name
-        (`ELoad` undefined)
-        (\field -> EGetField (ELoad VariableThis undefined) undefined field undefined)
+        (`ELoad` undef)
+        (\field -> EGetField (ELoad VariableThis undef) undef field undef)
     PruneENull -> return x
 
 instance Scopeable LValue where

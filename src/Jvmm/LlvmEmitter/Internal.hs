@@ -49,6 +49,7 @@ type LlvmType = Llvm.Type.Type
 
 -- LLVM RUNTIME AND BUILTINS --
 -------------------------------
+-- TODO clean this out
 callDefaults :: CallableOperand -> [Operand] -> Instruction
 callDefaults fun args = Call {
       isTailCall = False
@@ -78,7 +79,7 @@ castToVoidPtr :: Operand -> EmitterM Operand
 castToVoidPtr op = do
   tmp <- nextVar
   tmp |= Llvm.Instruction.BitCast op voidPtrType
-  populate tmp
+  return $ LocalReference tmp
 
 intValue :: Integer -> Constant
 intValue = Llvm.Constant.Int 32
@@ -140,6 +141,63 @@ builtinGlobals = map GlobalDefinition [
         , basicBlocks = blks
       }
 
+defaultValue :: TypeBasic -> Constant
+defaultValue typ = case typ of
+  TPrimitive TInt -> intValue 0
+  TPrimitive TChar -> charValue '\0'
+  TPrimitive TBool -> falseConst
+  TComposed ctyp -> Null $ toLlvm ctyp
+  _ -> Err.unreachable "no default value"
+
+class Alignable a where
+  align :: a -> Word32
+
+instance Alignable TypeBasic where
+  align (TComposed _) = alignRef
+  align (TPrimitive _) = alignPrim
+
+class Localizable a b | a -> b where
+  location :: a -> b
+
+instance Localizable VariableNum Name where
+  location num = Name $ ("var" ++) $ show $ fromEnum num
+
+instance Localizable Variable Operand where
+  location (Variable _ num _) = LocalReference $ location num
+
+class Translatable a b | a -> b where
+  toLlvm :: a -> b
+
+instance Translatable Type LlvmType where
+  toLlvm (TMethod typ) = toLlvm typ
+  toLlvm (TBasic typ) = toLlvm typ
+
+instance Translatable TypeMethod LlvmType where
+  toLlvm (TypeMethod tret targs _) = FunctionType (toLlvm tret) (map toLlvm targs) False
+
+instance Translatable TypeBasic LlvmType where
+  toLlvm (TComposed typ) = toLlvm typ
+  toLlvm (TPrimitive typ) = toLlvm typ
+
+instance Translatable TypePrimitive LlvmType where
+  toLlvm x = case x of
+    TVoid -> VoidType
+    TInt -> intType
+    TChar -> charType
+    TBool -> boolType
+
+instance Translatable TypeComposed LlvmType where
+  toLlvm x = case x of
+    TArray typ -> PointerType (toLlvm typ) defAddrSpace
+    TString -> stringType
+    _ -> PointerType (NamedTypeReference $ composedName x) defAddrSpace
+
+instance Translatable ClassLayout LlvmType where
+  toLlvm layout = StructureType {
+        Llvm.Type.isPacked = False
+      , elementTypes = map toLlvm $ layoutFieldTypes layout
+    }
+
 -- EMITTING CLASS HIERARCHY --
 ------------------------------
 emitHierarchy :: EmitterEnv -> ClassHierarchy -> ErrorInfoT Identity [LlvmModule]
@@ -197,10 +255,10 @@ runEmitterM env action =
 notImplemented :: a
 notImplemented = error "Not implemented"
 
-assertM :: forall (m :: * -> *). Monad m => Bool -> m ()
+assertM :: Monad m => Bool -> m ()
 assertM cond = assert cond $ return ()
 
-lookupM :: forall r (m :: * -> *) k. (Monad m, Ord k) => k -> m (Map.Map k r) -> m r
+lookupM :: (Monad m, Ord k) => k -> m (Map.Map k r) -> m r
 lookupM key = liftM (Maybe.fromJust . Map.lookup key)
 
 resetIds :: EmitterM ()
@@ -216,26 +274,41 @@ nextConst = do
   modify $ \s -> s { emitterstateNextConst = next + 1 }
   return next
 
-intercept :: forall (f :: * -> *) a a1. (Functor f, MonadWriter [a1] f) => f a -> f [a1]
+intercept :: (Functor f, MonadWriter [a1] f) => f a -> f [a1]
 intercept action = fmap snd $ censor (const []) $ listen action
 
 layoutFor :: TypeComposed -> EmitterM ClassLayout
 layoutFor typ = lookupM typ $ asks emitterenvLayout
 
--- LLVM MONADIC HELPERS --
---------------------------
+-- NAMES ALLOCATION --
+----------------------
 nextVar, nextBlock, nextGlobal :: EmitterM Name
 nextVar = Name <$> ('t':) <$> show <$> nextId
 nextBlock = Name <$> ('b':) <$> show <$> nextId
 nextGlobal = Name <$> ('c':) <$> show <$> nextConst
 
+nextBlocks2 :: EmitterM (Name, Name)
+nextBlocks2 = liftM2 (,) nextBlock nextBlock
+nextBlocks3 :: EmitterM (Name, Name, Name)
+nextBlocks3 = liftM3 (,,) nextBlock nextBlock nextBlock
+
+-- GLOBALS DEFINITIONS --
+-------------------------
 define :: Definition -> EmitterM ()
 define = lift . tell . return
 
-addInstr :: Named Instruction -> EmitterM ()
-addInstr instr = modify $ \s -> s { emitterstateBlockBodyRev = instr : emitterstateBlockBodyRev s }
+withLocalVar :: (Name -> EmitterM a) -> EmitterM Operand
+withLocalVar action = do
+  res <- nextVar
+  action res
+  return $ LocalReference res
 
--- So sexy, singe llvm-general's constructors have proper arguments order (mostly) we can handle
+withConstant :: Constant -> EmitterM Operand
+withConstant = return . ConstantOperand
+
+-- BASIC BLOCKS --
+------------------
+-- So sexy, since llvm-general's constructors have proper arguments order (mostly) we can handle
 -- many defaults and weird metadata fields this way.
 class InstructionLike a b | a -> b where
   infix 6 |-
@@ -253,14 +326,21 @@ instance InstructionLike (InstructionMetadata -> Instruction) Instruction where
 instance InstructionLike (InstructionMetadata -> Terminator) Terminator where
   (|-) nam ins = endBlock $ nam (ins [])
 
+addInstr :: Named Instruction -> EmitterM ()
+addInstr instr = modify $ \s -> s { emitterstateBlockBodyRev = instr : emitterstateBlockBodyRev s }
+
 newBlock :: Name  -> Name -> EmitterM a -> EmitterM a
 newBlock bname back action = do
-  oldname <- gets emitterstateBlockName
-  assertM (Maybe.isNothing oldname)
-  modify $ \s -> s { emitterstateBlockName = Just bname }
+  divideBlock bname
   res <- action
   endBlock $ Do $ Br back []
   return res
+
+divideBlock :: Name -> EmitterM ()
+divideBlock bname = do
+  oldname <- gets emitterstateBlockName
+  assertM (Maybe.isNothing oldname)
+  modify $ \s -> s { emitterstateBlockName = Just bname }
 
 endBlock :: Named Terminator -> EmitterM ()
 endBlock term = gets emitterstateBlockName >>= \x -> case x of
@@ -277,80 +357,27 @@ endBlock term = gets emitterstateBlockName >>= \x -> case x of
       , emitterstateBlockRelease = []
     }
 
-defaultValue :: TypeBasic -> Constant
-defaultValue typ = case typ of
-  TPrimitive TInt -> intValue 0
-  TPrimitive TChar -> charValue '\0'
-  TPrimitive TBool -> falseConst
-  TComposed ctyp -> Null $ toLlvm ctyp
-  _ -> Err.unreachable "no default value"
-
-class Alignable a where
-  align :: a -> Word32
-
-instance Alignable TypeBasic where
-  align (TComposed _) = alignRef
-  align (TPrimitive _) = alignPrim
-
--- LLVM PURE HELPERS --
------------------------
-class Localizable a b | a -> b where
-  location :: a -> b
-
-instance Localizable VariableNum Name where
-  location num = Name $ ("var" ++) $ show $ fromEnum num
-
-instance Localizable Variable Operand where
-  location (Variable _ num _) = LocalReference $ location num
-
-class Translatable a b | a -> b where
-  toLlvm :: a -> b
-
-instance Translatable Type LlvmType where
-  toLlvm (TMethod typ) = toLlvm typ
-  toLlvm (TBasic typ) = toLlvm typ
-
-instance Translatable TypeMethod LlvmType where
-  toLlvm (TypeMethod tret targs _) = FunctionType (toLlvm tret) (map toLlvm targs) False
-
-instance Translatable TypeBasic LlvmType where
-  toLlvm (TComposed typ) = toLlvm typ
-  toLlvm (TPrimitive typ) = toLlvm typ
-
-instance Translatable TypePrimitive LlvmType where
-  toLlvm x = case x of
-    TVoid -> VoidType
-    TInt -> intType
-    TChar -> charType
-    TBool -> boolType
-
-instance Translatable TypeComposed LlvmType where
-  toLlvm x = case x of
-    TArray typ -> PointerType (toLlvm typ) defAddrSpace
-    TString -> stringType
-    _ -> PointerType (NamedTypeReference $ composedName x) defAddrSpace
-
-instance Translatable ClassLayout LlvmType where
-  toLlvm layout = StructureType {
-        Llvm.Type.isPacked = False
-      , elementTypes = map toLlvm $ layoutFieldTypes layout
-    }
-
 -- MEMORY MODEL --
 ------------------
 -- We do reference counting for strings only (for now)
-retain, release :: TypeBasic -> Operand -> EmitterM ()
-retain (TComposed TString) ref@(LocalReference _) = do
-  ref' <- castToVoidPtr ref
-  Do |- callDefaults (static $ Name "rc_retain") [ref']
-retain _ _ = return ()
-release (TComposed TString) ref@(LocalReference _) = do
-  ref' <- castToVoidPtr ref
-  modify $ \s -> s { emitterstateBlockRelease = ref' : emitterstateBlockRelease s }
-release _ _ = return ()
+class ReferenceCounted a where
+  retain, release :: TypeBasic -> a -> EmitterM ()
+  releaseAll :: [TypeBasic] -> [a] -> EmitterM ()
+  releaseAll types ops = mapM_ (uncurry release) (List.zip types ops)
 
-releaseAll :: [TypeBasic] -> [Operand] -> EmitterM ()
-releaseAll types ops = mapM_ (uncurry release) (List.zip types ops)
+instance ReferenceCounted Operand where
+  retain (TComposed TString) ref@(LocalReference _) = do
+    ref' <- castToVoidPtr ref
+    Do |- callDefaults (static $ Name "rc_retain") [ref']
+  retain _ _ = return ()
+  release (TComposed TString) ref@(LocalReference _) = do
+    ref' <- castToVoidPtr ref
+    modify $ \s -> s { emitterstateBlockRelease = ref' : emitterstateBlockRelease s }
+  release _ _ = return ()
+
+instance ReferenceCounted Name where
+  retain typ nam = retain typ $ LocalReference nam
+  release typ nam = release typ $ LocalReference nam
 
 sizeOf :: LlvmType -> Operand
 sizeOf typ = let aNull = Null $ PointerType typ defAddrSpace in ConstantOperand $
@@ -436,16 +463,14 @@ instance Emitable Method () where
         freeVar var@(Variable typ num _) = do
           tmp <- nextVar
           tmp |= Load False (location var) Nothing (align tret)
-          release typ (LocalReference tmp)
+          release typ tmp
 
 instance Emitable (Operand, TypeComposed, FieldName) Operand where
-  emit (op, ctyp, fname) = do
+  emit (op, ctyp, fname) = withLocalVar $ \res -> do
     ind <- lookupM fname $ layoutFieldOffsets <$> layoutFor ctyp
-    res <- nextVar
     res |= Llvm.Instruction.GetElementPtr True op [
         ConstantOperand $ intValue 0
       , ConstantOperand $ intValue $ toInteger ind]
-    populate res
 
 instance Emitable Stmt () where
   emit x = case x of
@@ -461,7 +486,7 @@ instance Emitable Stmt () where
       -- Firstly we have to fetch old value for reference counting
       tmp <- nextVar
       tmp |= Load False lop Nothing (align typ)
-      release typ (LocalReference tmp)
+      release typ tmp
       -- And then we can assign new one
       Do |- Store False lop rop Nothing (align typ)
     -- Control statements
@@ -470,10 +495,23 @@ instance Emitable Stmt () where
       Do |- Store False (LocalReference returnLoc) rop Nothing (align typ)
       Do |- Br exitBlockName
     SReturnV -> Do |- Br exitBlockName
-    -- FIXME ref count
-    SIf rval stmt -> undefined
-    SIfElse rval stmt1 stmt2 -> undefined
-    SWhile rval stmt -> undefined
+    SIf rval stmt -> do
+      (btrue, bcont) <- nextBlocks2
+      emitCond rval btrue bcont
+      newBlock btrue bcont $ emit stmt
+      divideBlock bcont
+    SIfElse rval stmt1 stmt2 -> do
+      (btrue, bfalse, bcont) <- nextBlocks3
+      emitCond rval btrue bfalse
+      newBlock btrue bcont $ emit stmt1
+      newBlock bfalse bcont $ emit stmt2
+      divideBlock bcont
+    SWhile rval stmt -> do
+      (bloop, bcond, bcont) <- nextBlocks3
+      Do |- Br bcond
+      newBlock bloop bcond $ emit stmt
+      newBlock bcond undefined $ emitCond rval bloop bcont
+      divideBlock bcont
     SThrow {} -> notImplemented
     STryCatch {} -> notImplemented
     -- Special function bodies
@@ -489,13 +527,11 @@ instance Emitable LValue Operand where
   -- We do not call retain/release for lvalues since they are local to instruction and cannot
   -- create (or remove) objects - all lvalue constructors refer to existing entities.
   emit x = case x of
-    LVariable num _ -> populate $ location num
-    LArrayElement lval rval _ -> do
+    LVariable num _ -> return $ LocalReference $ location num
+    LArrayElement lval rval _ -> withLocalVar $ \res -> do
       rop <- emit rval
       val <- loadLValue lval
-      res <- nextVar
       res |= Llvm.Instruction.GetElementPtr True val [rop]
-      populate res
     LField lval ctyp fname _ -> do
       val <- loadLValue lval
       emit (val, ctyp, fname)
@@ -514,15 +550,14 @@ instance Emitable RValue Operand where
   -- created object; whenever a  reference leaves computation (that means it is not propagated
   -- further) we call release.
   emit x = case x of
-    -- FIXME ref count
     -- Literals
     ENull typ ->
       -- We deliberately skip retain here since it's a no-op, null can be treated as a new object
       -- to meet invariant assertion.
-      populate $ Null (toLlvm typ)
-    ELitTrue -> populate trueConst
-    ELitFalse -> populate falseConst
-    ELitChar c -> populate $ charValue c
+      withConstant $ Null (toLlvm typ)
+    ELitTrue -> withConstant trueConst
+    ELitFalse -> withConstant falseConst
+    ELitChar c -> withConstant $ charValue c
     ELitString str -> do
       -- This has to be kept in sync with struct rc_heaader definition in runtime library
       let val = Struct True [
@@ -540,32 +575,26 @@ instance Emitable RValue Operand where
         }
       let arr = Llvm.Constant.GetElementPtr True (GlobalReference cname) [intValue 0, intValue 1]
       -- There is no need to bump up a reference count since this is marked as constant
-      populate $ Llvm.Constant.BitCast arr stringType
-    ELitInt int -> populate $ intValue int
+      withConstant $ Llvm.Constant.BitCast arr stringType
+    ELitInt int -> withConstant $ intValue int
     -- Memory access
-    ELoad num typ -> do
-      res <- nextVar
+    ELoad num typ -> withLocalVar $ \res -> do
       res |= Load False (LocalReference $ location num) Nothing (align typ)
-      retain typ (LocalReference res)
-      populate res
-    EArrayLoad rval1 rval2 eltyp -> do
+      retain typ res
+    EArrayLoad rval1 rval2 eltyp -> withLocalVar $ \res -> do
       rop2 <- emit rval2
       rop1 <- emit rval1
       loc <- nextVar
       loc |= Llvm.Instruction.GetElementPtr True rop1 [rop2]
-      res <- nextVar
       res |= Load False (LocalReference loc) Nothing (align eltyp)
-      retain eltyp (LocalReference res)
+      retain eltyp res
       release (TComposed $ TArray eltyp) rop1
-      populate res
-    EGetField rval ctyp fname ftyp -> do
+    EGetField rval ctyp fname ftyp -> withLocalVar $ \res -> do
       rop <- emit rval
       loc <- emit (rop, ctyp, fname)
-      res <- nextVar
       res |= Load False loc Nothing (align ftyp)
-      retain ftyp (LocalReference res)
+      retain ftyp res
       release (TComposed ctyp) rop
-      populate res
     -- Method calls
     EInvokeStatic ctyp mname@(MethodName str) mtyp@(TypeMethod tret targs _) args -> do
       aops <- mapM emit args
@@ -576,15 +605,13 @@ instance Emitable RValue Operand where
       if tret == TPrimitive TVoid
       then do
         callAndRelease (Do |-)
-        populate $ Undef VoidType
-      else do
-        res <- nextVar
+        withConstant $ Undef VoidType
+      else withLocalVar $ \res -> do
         callAndRelease (res |=)
-        populate res
-    -- FIXME
+    -- FIXME ref count
     EInvokeVirtual rval ctyp mname mtyp args -> undefined
     -- Object creation
-    ENewObj ctyp -> do
+    ENewObj ctyp -> withLocalVar $ \res -> do
       let PointerType lctyp _ = toLlvm ctyp
       let siz = sizeOf lctyp
       let proto = Llvm.Constant.BitCast (GlobalReference $ objectProto ctyp) voidPtrType
@@ -592,41 +619,51 @@ instance Emitable RValue Operand where
       ptr |= callDefaults (static $ Name "rc_malloc") [siz]
       Do |- callDefaults (static $ Name "object_init")
           [siz, LocalReference ptr, ConstantOperand proto]
-      obj <- nextVar
-      obj |= Llvm.Instruction.BitCast (LocalReference ptr) (toLlvm ctyp)
-      populate obj
-    ENewArr eltyp rval -> do
-      let siz = sizeOf $ toLlvm eltyp
+      res |= Llvm.Instruction.BitCast (LocalReference ptr) (toLlvm ctyp)
+    ENewArr eltyp rval -> withLocalVar $ \res -> do
+      let leltyp = toLlvm eltyp
+      let siz = sizeOf leltyp
       rop <- emit rval
       ptr <- nextVar
       ptr |= callDefaults (static $ Name "array_create") [rop, siz]
-      obj <- nextVar
-      obj |= Llvm.Instruction.BitCast (LocalReference ptr) (PointerType (toLlvm eltyp) defAddrSpace)
-      populate obj
+      res |= Llvm.Instruction.BitCast (LocalReference ptr) (PointerType leltyp defAddrSpace)
     -- Operations
-    EUnary _ _ (TPrimitive TBool) -> evalCond x
-    EUnary OuNeg expr typ@(TPrimitive TInt) -> emit $ EBinary ObMinus (ELitInt 0) expr typ
+    EUnary OuNot expr (TPrimitive TBool) -> withLocalVar $ \res -> do
+      eop <- emit expr
+      res |= Llvm.Instruction.Xor (ConstantOperand $ intValue 1) eop
+    EUnary OuNeg expr typ@(TPrimitive TInt) -> emit $ EBinary ObMinus (ELitInt 0) expr typ typ typ
     EUnary {} -> Err.unreachable x
-    EBinary _ _ _ (TPrimitive TBool) -> evalCond x
-    EBinary ObPlus expr1 expr2 (TComposed TString) -> do
+    EBinary opbin expr1 expr2 (TPrimitive TBool) typ1 typ2 -> withLocalVar $ \res -> do
       eop1 <- emit expr1
       eop2 <- emit expr2
-      res <- nextVar
+      case opbin of
+        ObAnd -> evalCond x res
+        ObOr -> evalCond x res
+        _ -> let p = case opbin of
+                  ObLTH -> SLT
+                  ObLEQ -> SLE
+                  ObGTH -> SGT
+                  ObGEQ -> SGE
+                  ObEQU -> Llvm.IntegerPrediacte.EQ
+                  ObNEQ -> NE
+                  _ -> Err.unreachable "unknown operation"
+             in res |= Llvm.Instruction.ICmp p eop1 eop2
+      releaseAll [typ1, typ2] [eop1, eop2]
+    EBinary ObPlus expr1 expr2 (TComposed TString) _ _ -> withLocalVar $ \res -> do
+      eop1 <- emit expr1
+      eop2 <- emit expr2
       res |= callDefaults (static $ Name "string_concat") [eop1, eop2]
       releaseAll (replicate 2 $ TComposed TString) [eop1, eop2]
-      populate res
-    EBinary opbin expr1 expr2 (TPrimitive TInt) -> do
+    EBinary opbin expr1 expr2 (TPrimitive TInt) _ _ -> withLocalVar $ \res -> do
       eop1 <- emit expr1
       eop2 <- emit expr2
-      res <- nextVar
       case opbin of
         ObTimes -> res |= Llvm.Instruction.Mul False False eop1 eop2
         ObDiv -> res |= Llvm.Instruction.SDiv True eop1 eop2
         ObMod -> res |= Llvm.Instruction.SRem eop1 eop2
         ObPlus -> res |= Llvm.Instruction.Add False False eop1 eop2
         ObMinus -> res |= Llvm.Instruction.Sub False False eop1 eop2
-        _ -> Err.unreachable "should be handled in TPrimitive TBool branch"
-      populate res
+        _ -> Err.unreachable "unknown operation"
     EBinary {} -> Err.unreachable x
     -- These expressions will be replaced with ones caring more context in subsequent phases
     PruneEVar {} -> Err.unreachable x
@@ -634,22 +671,12 @@ instance Emitable RValue Operand where
 
 -- JUMPING CODE --
 ------------------
+-- FIXME
 class EmitableConditional a where
   emitCond :: a -> Name -> Name -> EmitterM ()
-  evalCond :: a -> EmitterM Operand
-  evalCond x = undefined
+  evalCond :: a -> Name -> EmitterM ()
+  evalCond = undefined
 
 instance EmitableConditional RValue where
   emitCond = undefined
-
--- TRAVERSING HELPERS --
-------------------------
-class Populable a where
-  populate :: a -> EmitterM Operand
-
-instance Populable Name where
-  populate = return . LocalReference
-
-instance Populable Constant where
-  populate = return . ConstantOperand
 

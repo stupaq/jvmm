@@ -152,7 +152,7 @@ data RValue =
   | ENewArr TypeBasic RValue
   -- Operations
   | EUnary OpUn RValue TypeBasic
-  | EBinary OpBin RValue RValue TypeBasic
+  | EBinary OpBin RValue RValue TypeBasic TypeBasic TypeBasic
   -- These expressions will be replaced with ones caring more context in subsequent phases
   | PruneEVar VariableName
   | PruneENull
@@ -269,6 +269,18 @@ stmtMetaLocation loc action = do
 
 stmtMetaLocation' :: (MonadError ErrorInfo m, Functor m) => Location -> m [a] -> m ()
 stmtMetaLocation' loc action = void $ stmtMetaLocation loc (action >> return [])
+
+class IncrementalAttribute a where
+  undef :: a
+  undef = error "value of this field is not defined at this stage of compilation"
+
+instance IncrementalAttribute TypeBasic where
+
+instance IncrementalAttribute TypeComposed where
+
+instance IncrementalAttribute TypeMethod where
+
+instance IncrementalAttribute VariableNum where
 
 -- PORN --
 ----------
