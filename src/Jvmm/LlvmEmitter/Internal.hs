@@ -523,7 +523,7 @@ instance Emitable (Operand, TypeComposed, FieldName) Operand where
     emit (op, ind)
 
 instance Emitable (Operand, Int) Operand where
-  emit (op, ind) = withLocalVar $ \res -> do
+  emit (op, ind) = withLocalVar $ \res ->
     res |= Instr.GetElementPtr True op [intValue' 0, intValue' ind]
 
 instance Emitable Stmt () where
@@ -637,23 +637,26 @@ instance Emitable RValue Operand where
       res |= Load False (LocalReference $ location num) Nothing (align typ)
       retain' typ res
     EArrayLoad rval1 rval2 eltyp -> withLocalVar $ \res -> do
-      rop2 <- emit rval2
       rop1 <- emit rval1
+      rop2 <- emit rval2
       loc <- nextVar
       loc |= Instr.GetElementPtr True rop1 [rop2]
       res |= Load False (LocalReference loc) Nothing (align eltyp)
       retain' eltyp res
       release' (TComposed $ TArray eltyp) rop1
     -- FIXME
-    EGetField rval TString (FieldName "length") ftyp -> do
-      undefined
-    -- FIXME
-    EGetField rval ctyp@(TArray _) (FieldName "length") _ -> withLocalVar $ \res -> do
+    EGetField rval TString (FieldName "length") _ -> do
+      let mtyp = TypeMethod (TPrimitive TInt) [TComposed TString] []
       rop <- emit rval
       tmp <- nextVar
       tmp |= Instr.BitCast rop voidPtrType
-      res |= callStatic (Name "array_length") [LocalReference tmp]
-      release' ctyp rop
+      invokeMethod mtyp (callStatic $ Name "string_length") [LocalReference tmp]
+    EGetField rval ctyp@(TArray _) (FieldName "length") _ -> do
+      let mtyp = TypeMethod (TPrimitive TInt) [TComposed ctyp] []
+      rop <- emit rval
+      tmp <- nextVar
+      tmp |= Instr.BitCast rop voidPtrType
+      invokeMethod mtyp (callStatic $ Name "array_length") [LocalReference tmp]
     EGetField rval ctyp fname ftyp -> withLocalVar $ \res -> do
       rop <- emit rval
       loc <- emit (rop, ctyp, fname)
@@ -661,25 +664,24 @@ instance Emitable RValue Operand where
       retain' ftyp res
       release' (TComposed ctyp) rop
     -- Method calls
-    EInvokeStatic ctyp mname@(MethodName str) mtyp@(TypeMethod tret targs _) args -> do
+    EInvokeStatic ctyp mname@(MethodName str) mtyp args -> do
       aops <- mapM emit args
-      let nam = if Builtins.isLibraryMethod ctyp mname mtyp
+      let fun = if Builtins.isLibraryMethod ctyp mname mtyp
           then Name str
           else composedName ctyp +/+ str
-      let callAndRelease dst = do
-          dst (callStatic nam aops)
-          mapM_ release $ List.zip targs aops
-      if tret == TPrimitive TVoid
-      then do
-        callAndRelease (Do |-)
-        withConstant $ Undef VoidType
-      else withLocalVar $ \res -> callAndRelease (res |=)
+      invokeMethod mtyp (callStatic fun) aops
     -- FIXME
-    EInvokeVirtual rval TString (MethodName "charAt") mtyp [arg1] -> do
-      undefined
-    EInvokeVirtual rval ctyp mname mtyp' args -> do
-      let mtyp@(TypeMethod tret targs _) = memberMethodType ctyp mtyp'
+    EInvokeVirtual rval TString (MethodName "charAt") _ [arg1] -> withLocalVar $ \res -> do
       rop <- emit rval
+      aop <- emit arg1
+      loc <- nextVar
+      loc |= Instr.GetElementPtr True rop [aop]
+      res |= Load False (LocalReference loc) Nothing (align $ TPrimitive TChar)
+      -- No need to free the index
+      release' (TComposed TString) rop
+    EInvokeVirtual rval ctyp mname mtyp0 args -> do
+      let mtyp = memberMethodType ctyp mtyp0
+      aops@(rop:_) <- mapM emit $ rval:args
       -- Get vtab address
       vloc <- emit (rop, 0 :: Int)
       vtab <- nextVar
@@ -692,16 +694,8 @@ instance Emitable RValue Operand where
       mptr |= Load False (LocalReference mloc) Nothing alignRef
       fun <- nextVar
       fun |= Instr.BitCast (LocalReference mptr) (ptrType $ toLlvm mtyp)
-      -- We no have function address
-      aops <- (rop:) <$> mapM emit args
-      let callAndRelease dst = do
-          dst $ callDynamic fun aops
-          mapM_ release $ List.zip targs aops
-      if tret == TPrimitive TVoid
-      then do
-        callAndRelease (Do |-)
-        withConstant $ Undef VoidType
-      else withLocalVar $ \res -> callAndRelease (res |=)
+      -- We now have function address
+      invokeMethod mtyp (callDynamic fun) aops
     -- Object creation
     ENewObj ctyp -> withLocalVar $ \res -> do
       let PointerType lctyp _ = toLlvm ctyp
@@ -741,12 +735,10 @@ instance Emitable RValue Operand where
       res |= Instr.ICmp p eop1 eop2
       release' typ1 eop1
       release' typ2 eop2
-    EBinary ObPlus expr1 expr2 (TComposed TString) _ _ -> withLocalVar $ \res -> do
-      eop1 <- emit expr1
-      eop2 <- emit expr2
-      res |= callStatic (Name "string_concat") [eop1, eop2]
-      release' (TComposed TString) eop1
-      release' (TComposed TString) eop2
+    EBinary ObPlus expr1 expr2 (TComposed TString) _ _ -> do
+      let mtyp = TypeMethod (TComposed TString) [TComposed TString, TComposed TString] []
+      aops <- mapM emit [expr1, expr2]
+      invokeMethod mtyp (callStatic $ Name "string_concat") aops
     EBinary opbin expr1 expr2 (TPrimitive TInt) _ _ -> withLocalVar $ \res -> do
       eop1 <- emit expr1
       eop2 <- emit expr2
@@ -761,6 +753,16 @@ instance Emitable RValue Operand where
     -- These expressions will be replaced with ones caring more context in subsequent phases
     PruneEVar {} -> Err.unreachable x
     PruneENull {} -> Err.unreachable x
+    where
+      invokeMethod (TypeMethod tret targs _) call aops = do
+        let callAndRelease dst = do
+            dst $ call aops
+            mapM_ release $ List.zip targs aops
+        if tret == TPrimitive TVoid
+        then do
+          callAndRelease (Do |-)
+          withConstant $ Undef VoidType
+        else withLocalVar $ \res -> callAndRelease (res |=)
 
 -- JUMPING CODE --
 ------------------
