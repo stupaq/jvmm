@@ -381,7 +381,9 @@ instance ReferenceCounted (TypeBasic, Operand) where
   retain _ = return ()
   release (typ, ref@(LocalReference _)) = whenRefCounted typ $ do
     ref' <- castToVoidPtr ref
-    modify $ \s -> s { emitterstateBlockRelease = ref' : emitterstateBlockRelease s }
+    -- TODO do this lazily at the very end of each block
+    Do |- callDefaults (static $ Name "rc_release") [ref']
+    --modify $ \s -> s { emitterstateBlockRelease = ref' : emitterstateBlockRelease s }
   release _ = return ()
 
 instance ReferenceCounted (TypeComposed, Operand) where
