@@ -38,6 +38,7 @@ import LLVM.General.AST.Constant as Llvm.Constant
 import LLVM.General.AST.Global as Llvm.Global
 import LLVM.General.AST.Instruction as Llvm.Instruction
 import LLVM.General.AST.IntegerPredicate as Llvm.IntegerPrediacte
+-- TODO remove these
 import LLVM.General.AST.Linkage as Llvm.Linkage
 import LLVM.General.AST.Name as Llvm.Name
 import LLVM.General.AST.Operand as Llvm.Operand
@@ -332,6 +333,9 @@ noOp = return ()
 addInstr :: Named Instruction -> EmitterM ()
 addInstr instr = modify $ \s -> s { emitterstateBlockBodyRev = instr : emitterstateBlockBodyRev s }
 
+undefBlock :: Name
+undefBlock = error "block to jump to is not defined"
+
 newBlock :: Name  -> Name -> EmitterM a -> EmitterM a
 newBlock bname back action = do
   divideBlock bname
@@ -363,28 +367,44 @@ endBlock term = gets emitterstateBlockName >>= \x -> case x of
 -- MEMORY MODEL --
 ------------------
 -- We do reference counting for strings only (for now)
-isRefCounted :: TypeBasic -> Bool
-isRefCounted (TComposed TString) = True
-isRefCounted _ = False
+whenRefCounted :: TypeBasic -> EmitterM () -> EmitterM ()
+whenRefCounted (TComposed TString) = id
+whenRefCounted _ =  const $ return ()
 
 class ReferenceCounted a where
-  retain, release :: TypeBasic -> a -> EmitterM ()
-  releaseAll :: [TypeBasic] -> [a] -> EmitterM ()
-  releaseAll types ops = mapM_ (uncurry release) (List.zip types ops)
+  retain, release :: a -> EmitterM ()
 
-instance ReferenceCounted Operand where
-  retain typ ref@(LocalReference _) = when (isRefCounted typ) $ do
+instance ReferenceCounted (TypeBasic, Operand) where
+  retain (typ, ref@(LocalReference _)) = whenRefCounted typ $ do
     ref' <- castToVoidPtr ref
     Do |- callDefaults (static $ Name "rc_retain") [ref']
-  retain _ _ = return ()
-  release typ ref@(LocalReference _) = when (isRefCounted typ) $ do
+  retain _ = return ()
+  release (typ, ref@(LocalReference _)) = whenRefCounted typ $ do
     ref' <- castToVoidPtr ref
     modify $ \s -> s { emitterstateBlockRelease = ref' : emitterstateBlockRelease s }
-  release _ _ = return ()
+  release _ = return ()
 
-instance ReferenceCounted Name where
-  retain typ nam = retain typ $ LocalReference nam
-  release typ nam = release typ $ LocalReference nam
+instance ReferenceCounted (TypeComposed, Operand) where
+  retain (typ, op) = retain (TComposed typ, op)
+  release (typ, op) = retain (TComposed typ, op)
+
+instance ReferenceCounted (TypeBasic, Name) where
+  retain (typ, nam) = retain (typ, LocalReference nam)
+  release (typ, nam) = release (typ, LocalReference nam)
+
+instance ReferenceCounted Variable where
+  retain var@(Variable typ _ _) = whenRefCounted typ $ do
+    tmp <- nextVar
+    tmp |= Load False (location var) Nothing (align typ)
+    retain (typ, tmp)
+  release var@(Variable typ _ _) = whenRefCounted typ $ do
+    tmp <- nextVar
+    tmp |= Load False (location var) Nothing (align typ)
+    release (typ, tmp)
+
+retain', release' :: ReferenceCounted (a, b) => a -> b -> EmitterM ()
+retain' = curry retain
+release' = curry release
 
 sizeOf :: LlvmType -> Operand
 sizeOf typ = let aNull = Null $ PointerType typ defAddrSpace in ConstantOperand $
@@ -441,9 +461,9 @@ instance Emitable Method () where
           returnLoc |= Alloca ltret Nothing (align tret)
       newBlock body exitBlockName $
         emit bodyStmt
-      newBlock exitBlockName undefined $ do
-        mapM_ freeVar args
-        mapM_ freeVar vars
+      newBlock exitBlockName undefBlock $ do
+        mapM_ release args
+        mapM_ release vars
         if ltret == VoidType
         then Do |- Ret Nothing
         else do
@@ -464,13 +484,9 @@ instance Emitable Method () where
         initArg var@(Variable typ num _) = let argRef = LocalReference $ argName num in do
           Do |- Store False (location var) argRef Nothing (align typ)
           -- Note that we are copying a reference when initializing argument
-          retain typ argRef
+          retain' typ argRef
         initVar var@(Variable typ _ _) =
           Do |- Store False (location var) (ConstantOperand $ defaultValue typ) Nothing (align typ)
-        freeVar var@(Variable typ num _) = do
-          tmp <- nextVar
-          tmp |= Load False (location var) Nothing (align tret)
-          release typ tmp
 
 instance Emitable (Operand, TypeComposed, FieldName) Operand where
   emit (op, ctyp, fname) = withLocalVar $ \res -> do
@@ -485,16 +501,16 @@ instance Emitable Stmt () where
     SBlock stmts -> mapM_ emit stmts
     SExpr rval typ -> do
       rop <- emit rval
-      release typ rop
+      release' typ rop
     -- Memory access
     SAssign lval rval typ -> do
       rop <- emit rval
       lop <- emit lval
-      when (isRefCounted typ) $ do
+      whenRefCounted typ $ do
         -- Firstly we have to fetch old value for reference counting
         tmp <- nextVar
         tmp |= Load False lop Nothing (align typ)
-        release typ tmp
+        release' typ tmp
       -- And then we can assign new one
       Do |- Store False lop rop Nothing (align typ)
     -- Control statements
@@ -518,7 +534,7 @@ instance Emitable Stmt () where
       (bloop, bcond, bcont) <- nextBlocks3
       Do |- Br bcond
       newBlock bloop bcond $ emit stmt
-      newBlock bcond undefined $ emitCond rval bloop bcont
+      newBlock bcond undefBlock $ emitCond rval bloop bcont
       divideBlock bcont
     SThrow {} -> notImplemented
     STryCatch {} -> notImplemented
@@ -588,28 +604,30 @@ instance Emitable RValue Operand where
     -- Memory access
     ELoad num typ -> withLocalVar $ \res -> do
       res |= Load False (LocalReference $ location num) Nothing (align typ)
-      retain typ res
+      retain' typ res
     EArrayLoad rval1 rval2 eltyp -> withLocalVar $ \res -> do
       rop2 <- emit rval2
       rop1 <- emit rval1
       loc <- nextVar
       loc |= Llvm.Instruction.GetElementPtr True rop1 [rop2]
       res |= Load False (LocalReference loc) Nothing (align eltyp)
-      retain eltyp res
-      release (TComposed $ TArray eltyp) rop1
+      retain' eltyp res
+      release' (TComposed $ TArray eltyp) rop1
     EGetField rval ctyp fname ftyp -> withLocalVar $ \res -> do
       rop <- emit rval
       loc <- emit (rop, ctyp, fname)
       res |= Load False loc Nothing (align ftyp)
-      retain ftyp res
-      release (TComposed ctyp) rop
+      retain' ftyp res
+      release' (TComposed ctyp) rop
     -- Method calls
     EInvokeStatic ctyp mname@(MethodName str) mtyp@(TypeMethod tret targs _) args -> do
       aops <- mapM emit args
       let nam = if Builtins.isLibraryMethod ctyp mname mtyp
           then Name str
           else composedName ctyp +/+ str
-      let callAndRelease dst = dst (callDefaults (static nam) aops) >> releaseAll targs aops
+      let callAndRelease dst = do
+          dst (callDefaults (static nam) aops)
+          mapM_ release $ List.zip targs aops
       if tret == TPrimitive TVoid
       then do
         callAndRelease (Do |-)
@@ -656,12 +674,14 @@ instance Emitable RValue Operand where
                   ObNEQ -> NE
                   _ -> Err.unreachable "unknown operation"
              in res |= Llvm.Instruction.ICmp p eop1 eop2
-      releaseAll [typ1, typ2] [eop1, eop2]
+      release' typ1 eop1
+      release' typ2 eop2
     EBinary ObPlus expr1 expr2 (TComposed TString) _ _ -> withLocalVar $ \res -> do
       eop1 <- emit expr1
       eop2 <- emit expr2
       res |= callDefaults (static $ Name "string_concat") [eop1, eop2]
-      releaseAll (replicate 2 $ TComposed TString) [eop1, eop2]
+      release' (TComposed TString) eop1
+      release' (TComposed TString) eop2
     EBinary opbin expr1 expr2 (TPrimitive TInt) _ _ -> withLocalVar $ \res -> do
       eop1 <- emit expr1
       eop2 <- emit expr2
@@ -691,6 +711,34 @@ class EmitableConditional a where
     res |= Phi boolType [(ConstantOperand trueConst, btrue), (ConstantOperand falseConst, bfalse)]
 
 instance EmitableConditional RValue where
-  -- FIXME
-  emitCond x btrue bfalse = Do |- Br bfalse
+  emitCond x btrue bfalse = case x of
+    -- Literals
+    ELitTrue -> Do |- Br btrue
+    ELitFalse -> Do |- Br bfalse
+    -- Memory access
+    ELoad _ (TPrimitive TBool) -> emitAndJump
+    EArrayLoad _ _ (TPrimitive TBool) -> emitAndJump
+    EGetField {} -> emitAndJump
+    -- Method calls
+    EInvokeStatic _ (MethodName _) (TypeMethod (TPrimitive TBool) _ _) _ -> emitAndJump
+    EInvokeVirtual {} -> emitAndJump
+    -- Object creation
+    -- Operations
+    EUnary OuNot expr _ -> emitCond expr bfalse btrue
+    EBinary ObAnd expr1 expr2 _ _ _ -> do
+      bmid <- nextBlock
+      emitCond expr1 bmid bfalse
+      newBlock bmid undefBlock $ emitCond expr2 btrue bfalse
+    EBinary ObOr expr1 expr2 _ _ _ -> do
+      bmid <- nextBlock
+      emitCond expr1 btrue bmid
+      newBlock bmid undefBlock $ emitCond expr2 btrue bfalse
+    EBinary {} -> emitAndJump
+    -- If we cannot recognize expression as binary one
+    _ -> badExpressionType
+    where
+      emitAndJump = do
+        res <- emit x
+        Do |- CondBr res btrue bfalse
+      badExpressionType = Err.unreachable $ "attempt to emit jump code for non-boolean" ++ show x
 
