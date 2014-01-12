@@ -44,7 +44,7 @@ layoutHierarchy = return . layout classlayout0
         , layoutMethodOffsets = foldl insertMethod methods $ classInstanceMethods clazz
       }
       where
-        insertField x Field { fieldName = name } = Map.insert name (Map.size x) x
+        insertField x Field { fieldName = name } = Map.insert name (Map.size x + 1) x
         insertMethod x Method { methodName = name } =
           if Map.member name x then x else Map.insert name (Map.size x) x
 

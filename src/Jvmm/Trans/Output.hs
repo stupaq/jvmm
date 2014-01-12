@@ -222,8 +222,11 @@ data Type =
   | TBasic TypeBasic
   deriving (Show, Eq, Ord)
 
-data TypeMethod = TypeMethod TypeBasic [TypeBasic] [TypeComposed]
-  deriving (Show, Eq, Ord)
+data TypeMethod = TypeMethod {
+    typemethodReturn :: TypeBasic
+  , typemethodArgs   :: [TypeBasic]
+  , typemethodThrows :: [TypeComposed]
+} deriving (Show, Eq, Ord)
 
 data TypeBasic =
     TPrimitive TypePrimitive

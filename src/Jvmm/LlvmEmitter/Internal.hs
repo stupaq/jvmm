@@ -1,7 +1,6 @@
 {-# LANGUAGE FlexibleContexts       #-}
 {-# LANGUAGE FlexibleInstances      #-}
 {-# LANGUAGE FunctionalDependencies #-}
-{-# LANGUAGE KindSignatures         #-}
 {-# LANGUAGE MultiParamTypeClasses  #-}
 {-# LANGUAGE ScopedTypeVariables    #-}
 {-# LANGUAGE TupleSections          #-}
@@ -20,6 +19,7 @@ import Control.Monad.State
 import Control.Monad.Writer
 
 import qualified Data.Char as Char
+import qualified Data.Ord as Ord
 import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
@@ -82,8 +82,13 @@ castToVoidPtr op = do
   tmp |= Llvm.Instruction.BitCast op voidPtrType
   return $ LocalReference tmp
 
+castToVoidPtr' :: Constant -> Constant
+castToVoidPtr' c = Llvm.Constant.BitCast c voidPtrType
+
 intValue :: Integer -> Constant
-intValue = Llvm.Constant.Int 32
+intValue = Llvm.Constant.Int 32 . fromIntegral
+intValue' :: Int -> Operand
+intValue' = ConstantOperand . Llvm.Constant.Int 32 . fromIntegral
 charValue :: Char -> Constant
 charValue int = Llvm.Constant.Int 8 $ toInteger $ Char.ord int
 
@@ -111,8 +116,13 @@ composedName x = case x of
 (+/+) (Name pref) suf = Name $ pref ++ "." ++ suf
 (+/+) x@(UnName _) _ = x
 
-objectProto :: TypeComposed -> Name
+memberMethod :: TypeComposed -> TypeMethod -> TypeMethod
+memberMethod ctyp mtyp@(TypeMethod _ args _) =
+  mtyp { typemethodArgs = TComposed ctyp : args }
+
+objectProto, objectVtable :: TypeComposed -> Name
 objectProto typ = composedName typ +/+ ".proto"
+objectVtable typ = composedName typ +/+ ".vtable"
 
 builtinGlobals :: [Definition]
 builtinGlobals = map GlobalDefinition [
@@ -193,10 +203,10 @@ instance Translatable TypeComposed LlvmType where
     TString -> stringType
     _ -> PointerType (NamedTypeReference $ composedName x) defAddrSpace
 
-instance Translatable ClassLayout LlvmType where
-  toLlvm layout = StructureType {
+instance Translatable ClassLayout (LlvmType -> LlvmType) where
+  toLlvm layout vtable = StructureType {
         Llvm.Type.isPacked = False
-      , elementTypes = map toLlvm $ layoutFieldTypes layout
+      , elementTypes = PointerType vtable defAddrSpace : map toLlvm (layoutFieldTypes layout)
     }
 
 -- EMITTING CLASS HIERARCHY --
@@ -419,19 +429,32 @@ class Emitable a b | a -> b where
 
 instance Emitable Class () where
   emit clazz@(Class { classType = typ }) = do
+    lay@(ClassLayout _ fields methods) <- layoutFor typ
+    -- Emit vtable
+    let vtableMethods = map snd $ List.sortBy (Ord.comparing fst)
+          [(ind, GlobalReference (composedName origin +/+ namestr)) |
+              Method { methodOrigin = origin, methodName = name' } <- classInstanceMethods clazz
+            , (MethodName namestr, ind) <- Map.toList methods
+            , MethodName namestr == name']
+    let vtableType = ArrayType (fromIntegral $ length vtableMethods) voidPtrType
+    let vtableValue = Array voidPtrType $ map castToVoidPtr' vtableMethods
+    define $ GlobalDefinition $ globalVariableDefaults {
+          name = objectVtable typ
+        , isConstant = True
+        , Llvm.Global.type' = vtableType
+        , initializer = Just vtableValue
+      }
     -- Emit class structure definition
-    lay@(ClassLayout _ fields _) <- layoutFor typ
-    let tdef = toLlvm lay
-    define $ TypeDefinition (composedName typ) (Just tdef)
+    let classDef = toLlvm lay vtableType
+    define $ TypeDefinition (composedName typ) (Just classDef)
     -- Emit object prototype
+    let classProto = Struct False $ GlobalReference (objectVtable typ) : map defaultValue fields
     define $ GlobalDefinition $ globalVariableDefaults {
           name = objectProto typ
         , isConstant = True
-        , Llvm.Global.type' = tdef
-        , initializer = Just $ Struct False $ map defaultValue fields
+        , Llvm.Global.type' = classDef
+        , initializer = Just classProto
       }
-    -- Emit vtable
-    -- FIXME
     -- Emit static methods
     mapM_ emit $ classAllMethods clazz
 
@@ -440,7 +463,7 @@ instance Emitable Method () where
   emit Method { methodBody = SBuiltin } = return ()
   emit method@(Method {
         methodName = MethodName namestr
-      , methodType = TypeMethod tret targs _
+      , methodType = TypeMethod tret _ _
       , methodVariables = vars
       , methodOrigin = origin
       , methodBody = bodyStmt
@@ -491,11 +514,13 @@ instance Emitable Method () where
           Do |- Store False (location var) (ConstantOperand $ defaultValue typ) Nothing (align typ)
 
 instance Emitable (Operand, TypeComposed, FieldName) Operand where
-  emit (op, ctyp, fname) = withLocalVar $ \res -> do
+  emit (op, ctyp, fname) = do
     ind <- lookupM fname $ layoutFieldOffsets <$> layoutFor ctyp
-    res |= Llvm.Instruction.GetElementPtr True op [
-        ConstantOperand $ intValue 0
-      , ConstantOperand $ intValue $ toInteger ind]
+    emit (op, ind)
+
+instance Emitable (Operand, Int) Operand where
+  emit (op, ind) = withLocalVar $ \res -> do
+    res |= Llvm.Instruction.GetElementPtr True op [intValue' 0, intValue' ind]
 
 instance Emitable Stmt () where
   emit x = case x of
@@ -634,10 +659,32 @@ instance Emitable RValue Operand where
       then do
         callAndRelease (Do |-)
         withConstant $ Undef VoidType
-      else withLocalVar $ \res -> do
-        callAndRelease (res |=)
-    -- FIXME ref count
-    EInvokeVirtual rval ctyp mname mtyp args -> undefined
+      else withLocalVar $ \res -> callAndRelease (res |=)
+    EInvokeVirtual rval ctyp mname mtyp' args -> do
+      let mtyp@(TypeMethod tret targs _) = memberMethod ctyp mtyp'
+      rop <- emit rval
+      -- Get vtab address
+      vloc <- emit (rop, 0 :: Int)
+      vtab <- nextVar
+      vtab |= Load False vloc Nothing alignRef
+      mloc <- nextVar
+      -- Note that we must be within bounds since presence of a method is determined statically
+      ind <- lookupM mname $ layoutMethodOffsets <$> layoutFor ctyp
+      mloc |= Llvm.Instruction.GetElementPtr True (LocalReference vtab) [intValue' 0, intValue' ind]
+      mptr <- nextVar
+      mptr |= Load False (LocalReference mloc) Nothing alignRef
+      fun <- nextVar
+      fun |= Llvm.Instruction.BitCast (LocalReference mptr) (PointerType (toLlvm mtyp) defAddrSpace)
+      -- We no have function address
+      aops <- (rop:) <$> mapM emit args
+      let callAndRelease dst = do
+          dst (callDefaults (dynamic fun) aops)
+          mapM_ release $ List.zip targs aops
+      if tret == TPrimitive TVoid
+      then do
+        callAndRelease (Do |-)
+        withConstant $ Undef VoidType
+      else withLocalVar $ \res -> callAndRelease (res |=)
     -- Object creation
     ENewObj ctyp -> withLocalVar $ \res -> do
       let PointerType lctyp _ = toLlvm ctyp
@@ -658,7 +705,7 @@ instance Emitable RValue Operand where
     -- Operations
     EUnary OuNot expr (TPrimitive TBool) -> withLocalVar $ \res -> do
       eop <- emit expr
-      res |= Llvm.Instruction.Xor (ConstantOperand $ intValue 1) eop
+      res |= Llvm.Instruction.Xor (intValue' 1) eop
     EUnary OuNeg expr typ@(TPrimitive TInt) -> emit $ EBinary ObMinus (ELitInt 0) expr typ typ typ
     EUnary {} -> Err.unreachable x
     EBinary opbin expr1 expr2 (TPrimitive TBool) typ1 typ2 -> withLocalVar $ \res -> do
