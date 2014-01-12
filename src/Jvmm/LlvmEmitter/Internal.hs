@@ -649,15 +649,13 @@ instance Emitable RValue Operand where
     EGetField rval TString (FieldName "length") _ -> do
       let mtyp = TypeMethod (TPrimitive TInt) [TComposed TString] []
       rop <- emit rval
-      tmp <- nextVar
-      tmp |= Instr.BitCast rop voidPtrType
-      invokeMethod mtyp (callStatic $ Name "string_length") [LocalReference tmp]
+      tmp <- castToVoidPtr rop
+      invokeMethod mtyp (callStatic $ Name "string_length") [tmp]
     EGetField rval ctyp@(TArray _) (FieldName "length") _ -> do
       let mtyp = TypeMethod (TPrimitive TInt) [TComposed ctyp] []
       rop <- emit rval
-      tmp <- nextVar
-      tmp |= Instr.BitCast rop voidPtrType
-      invokeMethod mtyp (callStatic $ Name "array_length") [LocalReference tmp]
+      tmp <- castToVoidPtr rop
+      invokeMethod mtyp (callStatic $ Name "array_length") [tmp]
     EGetField rval ctyp fname ftyp -> withLocalVar $ \res -> do
       rop <- emit rval
       loc <- emit (rop, ctyp, fname)
@@ -702,7 +700,7 @@ instance Emitable RValue Operand where
     ENewObj ctyp -> withLocalVar $ \res -> do
       let PointerType lctyp _ = toLlvm ctyp
       let siz = sizeOf lctyp
-      let proto = Const.BitCast (GlobalReference $ objectProto ctyp) voidPtrType
+      let proto = castToVoidPtr' (GlobalReference $ objectProto ctyp)
       ptr <- nextVar
       ptr |= callStatic (Name "rc_malloc") [siz]
       Do |- callStatic (Name "object_init")
