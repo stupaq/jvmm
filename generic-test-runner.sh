@@ -6,6 +6,7 @@ pattern_bad_exec="*/errors/*.lat"
 pattern_bad_check="*/bad/*.lat"
 pattern_bad_parse="*/bad/*.txt"
 
+compile_llvm="./jvmmc_llvm"
 compile_jvm="./jvmmc_jvm"
 compile_jvm_opts="-p"
 compile_check="./jvmmc_check"
@@ -22,7 +23,15 @@ exec_output="exec.out"
 exec_error="exec.err"
 
 command_find="find $tests_root -type f \
-    ! -name *.output -a ! -name *.input -a ! -name *.class -a ! -name *.j -a ! -name *.jar "
+        ! -name *.output \
+    -a  ! -name *.input \
+    -a  ! -name *.class \
+    -a  ! -name *.j \
+    -a  ! -name *.jar \
+    -a  ! -name *.ll \
+    -a  ! -name *.s \
+    -a  ! -name *.bc \
+    "
 
 # test cases
 tests_exec=`$command_find -path "$pattern_good" | sort | uniq`
@@ -105,9 +114,40 @@ function show_results() {
         echo -e "\n:: JASMIN:"
         cat "${1%.*}.j" 2>/dev/null
     fi
+    if [[ $2 == -*l* || $2 == -*v* ]]; then
+        echo -e "\n:: LLVM:"
+        cat "${1%.*}.ll" 2>/dev/null
+    fi
 }
 
 # testers
+function testcase_llvm() {
+  [[ $2 == *L* || $2 == *A* ]] || return 0
+  test_prepare
+
+  Input="${1%.*}.input"
+  [[ -f $Input ]] || Input=/dev/null
+  Output="${1%.*}.output"
+  [[ -f $Output ]] || Output=/dev/null
+
+  echo -ne "LLVM\t$1: "
+  $compile_llvm $1 &>$compile_output
+  Status=$?
+  if [[ $Status -eq 0 ]]; then
+    `dirname $1`/a.out <$Input 1>$exec_output 2>$exec_error
+    Status=$?
+  fi
+  if [[ $1 == $pattern_bad_exec ]]; then
+    negate $Status
+    assert_status $?
+    assert_exec $Output
+  else
+    assert_status $Status
+    assert_exec $Output
+  fi
+  test_result $?
+}
+
 function testcase_interpreter() {
   [[ $2 == *I* || $2 == *A* ]] || return 0
   test_prepare
@@ -210,6 +250,7 @@ if [[ $# -eq 0 || $1 == -* ]]; then
     testcase_check $f $1
     testcase_jvm $f $1
     testcase_interpreter $f $1
+    testcase_llvm $f $1
   done
 
   echo -e "FAILED: $FailsCount\tTOTAL:  $TotalCount"
@@ -229,6 +270,7 @@ else
   testcase_check $File $2
   testcase_jvm $File $2
   testcase_interpreter $File $2
+  testcase_llvm $File $2
   show_results $File $2
 fi
 

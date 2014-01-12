@@ -38,11 +38,6 @@ import LLVM.General.AST.Constant as Llvm.Constant
 import LLVM.General.AST.Global as Llvm.Global
 import LLVM.General.AST.Instruction as Llvm.Instruction
 import LLVM.General.AST.IntegerPredicate as Llvm.IntegerPrediacte
--- TODO remove these
-import LLVM.General.AST.Linkage as Llvm.Linkage
-import LLVM.General.AST.Name as Llvm.Name
-import LLVM.General.AST.Operand as Llvm.Operand
-import LLVM.General.AST.RMWOperation as Llvm.RMWOperation
 import LLVM.General.AST.Type as Llvm.Type hiding (Type)
 import qualified LLVM.General.AST.Type as Llvm.Type (Type)
 
@@ -131,6 +126,7 @@ builtinGlobals = map GlobalDefinition [
     , declareFn "rc_retain" [voidPtrType] VoidType
     , declareFn "rc_release" [voidPtrType] VoidType
     , declareFn "string_concat" [stringType, stringType] stringType
+    , declareFn "string_length" [stringType] intType
     , declareFn "array_create" [intType, intType] voidPtrType
     , declareFn "array_length" [voidPtrType] intType
     , declareFn "printInt" [intType] VoidType
@@ -640,6 +636,16 @@ instance Emitable RValue Operand where
       res |= Load False (LocalReference loc) Nothing (align eltyp)
       retain' eltyp res
       release' (TComposed $ TArray eltyp) rop1
+    -- FIXME
+    EGetField rval TString (FieldName "length") ftyp -> do
+      undefined
+    -- FIXME
+    EGetField rval ctyp@(TArray _) (FieldName "length") _ -> withLocalVar $ \res -> do
+      rop <- emit rval
+      tmp <- nextVar
+      tmp |= Llvm.Instruction.BitCast rop voidPtrType
+      res |= callDefaults (static $ Name "array_length") [LocalReference tmp]
+      release' ctyp rop
     EGetField rval ctyp fname ftyp -> withLocalVar $ \res -> do
       rop <- emit rval
       loc <- emit (rop, ctyp, fname)
@@ -660,6 +666,9 @@ instance Emitable RValue Operand where
         callAndRelease (Do |-)
         withConstant $ Undef VoidType
       else withLocalVar $ \res -> callAndRelease (res |=)
+    -- FIXME
+    EInvokeVirtual rval TString (MethodName "charAt") mtyp [arg1] -> do
+      undefined
     EInvokeVirtual rval ctyp mname mtyp' args -> do
       let mtyp@(TypeMethod tret targs _) = memberMethod ctyp mtyp'
       rop <- emit rval

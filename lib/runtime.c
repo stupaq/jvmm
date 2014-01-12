@@ -90,6 +90,10 @@ char* string_concat(char* first, char* second) {
   return both;
 }
 
+int32_t string_length(char* str) {
+  return strlen(str);
+}
+
 /** Arrays */
 #define ARRAY_HEADER_SIZE (sizeof(struct array_header))
 
