@@ -714,24 +714,23 @@ instance Emitable RValue Operand where
     -- Operations
     EUnary OuNot expr (TPrimitive TBool) -> withLocalVar $ \res -> do
       eop <- emit expr
-      res |= Llvm.Instruction.Xor (intValue' 1) eop
+      res |= Llvm.Instruction.Xor (ConstantOperand falseConst) eop
     EUnary OuNeg expr typ@(TPrimitive TInt) -> emit $ EBinary ObMinus (ELitInt 0) expr typ typ typ
     EUnary {} -> Err.unreachable x
+    EBinary ObAnd _ _ _ _ _ -> withLocalVar $ \res -> evalCond x res
+    EBinary ObOr _ _ _ _ _ -> withLocalVar $ \res -> evalCond x res
     EBinary opbin expr1 expr2 (TPrimitive TBool) typ1 typ2 -> withLocalVar $ \res -> do
       eop1 <- emit expr1
       eop2 <- emit expr2
-      case opbin of
-        ObAnd -> evalCond x res
-        ObOr -> evalCond x res
-        _ -> let p = case opbin of
-                  ObLTH -> SLT
-                  ObLEQ -> SLE
-                  ObGTH -> SGT
-                  ObGEQ -> SGE
-                  ObEQU -> Llvm.IntegerPrediacte.EQ
-                  ObNEQ -> NE
-                  _ -> Err.unreachable "unknown operation"
-             in res |= Llvm.Instruction.ICmp p eop1 eop2
+      let p = case opbin of
+            ObLTH -> SLT
+            ObLEQ -> SLE
+            ObGTH -> SGT
+            ObGEQ -> SGE
+            ObEQU -> Llvm.IntegerPrediacte.EQ
+            ObNEQ -> NE
+            _ -> Err.unreachable "unknown operation"
+      res |= Llvm.Instruction.ICmp p eop1 eop2
       release' typ1 eop1
       release' typ2 eop2
     EBinary ObPlus expr1 expr2 (TComposed TString) _ _ -> withLocalVar $ \res -> do

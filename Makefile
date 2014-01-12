@@ -2,13 +2,13 @@ DOCS := $(patsubst %.md, %.pdf, $(wildcard docs/*.md))
 TESTSUITES := $(wildcard test-*)
 JVM_RUNTIME := lib/Runtime.class
 LLVM_RUNTIME := lib/runtime.bc
-DEFAULT := jvm
 
 PDFLATEX := pdflatex -interaction=batchmode
 
 all: $(JVM_RUNTIME) $(LLVM_RUNTIME)
 	$(MAKE) -C src/ all
-	ln -sf ./jvmmc_$(DEFAULT) ./latc
+	ln -sf ./jvmmc_jvm ./latc
+	ln -sf ./jvmmc_llvm ./latc_llvm
 
 $(JVM_RUNTIME): %.class: %.java
 	javac $<
