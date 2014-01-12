@@ -34,5 +34,13 @@ Test cases that MUST FAIL in current implementation:
 +   INTERPRETER backend
     *   test-mrjp
         -   tail_call_optimization
++   LLVM backend
+    *   test-jvmm
+        -   exceptions001
+        -   exceptions002
+        -   exceptions003
+        -   gchiddenstack
+    *   test-mrjp
+        -   tail_call_optimization
 
 All other test cases MUST PASS with current implementation.

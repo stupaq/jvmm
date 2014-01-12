@@ -139,7 +139,9 @@ void printString(char* s) {
 
 char* readString() {
   char* line = NULL;
-  getline(&line, NULL, stdin);
+  size_t n = 0;
+  getline(&line, &n, stdin);
+  line = strtok(line, "\n");
   char* str = (char*) rc_malloc(strlen(line) + 1);
   strcpy(str, line);
   return str;

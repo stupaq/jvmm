@@ -95,16 +95,16 @@ memberMethodType :: TypeComposed -> TypeMethod -> TypeMethod
 memberMethodType ctyp mtyp@(TypeMethod _ args _) =
   mtyp { typemethodArgs = TComposed ctyp : args }
 
+castToVoidPtr :: Operand -> EmitterM Operand
+castToVoidPtr op = withLocalVar $ \res -> res |= Instr.BitCast op voidPtrType
+
+castToVoidPtr' :: Constant -> Constant
+castToVoidPtr' c = Const.BitCast c voidPtrType
+
+castTo :: TypeComposed -> Operand -> EmitterM Operand
+castTo ctyp op = withLocalVar $ \res -> res |= Instr.BitCast op (toLlvm ctyp)
+
 -- Pointers and addresses
-castVoidPtr :: Operand -> EmitterM Operand
-castVoidPtr op = do
-  tmp <- nextVar
-  tmp |= Instr.BitCast op voidPtrType
-  return $ LocalReference tmp
-
-castVoidPtr' :: Constant -> Constant
-castVoidPtr' c = Const.BitCast c voidPtrType
-
 alignRef, alignPrim, align0 :: Word32
 alignRef = 0 -- 8
 alignPrim = 0 -- 4
@@ -390,11 +390,11 @@ class ReferenceCounted a where
 
 instance ReferenceCounted (TypeBasic, Operand) where
   retain (typ, ref@(LocalReference _)) = whenRefCounted typ $ do
-    ref' <- castVoidPtr ref
+    ref' <- castToVoidPtr ref
     Do |- callStatic (Name "rc_retain") [ref']
   retain _ = return ()
   release (typ, ref@(LocalReference _)) = whenRefCounted typ $ do
-    ref' <- castVoidPtr ref
+    ref' <- castToVoidPtr ref
     -- TODO do this lazily at the very end of each block
     Do |- callStatic (Name "rc_release") [ref']
     --modify $ \s -> s { emitterstateBlockRelease = ref' : emitterstateBlockRelease s }
@@ -441,7 +441,7 @@ instance Emitable Class () where
             , (MethodName namestr, ind) <- Map.toList methods
             , MethodName namestr == name']
     let vtableType = ArrayType (fromIntegral $ length vtableMethods) voidPtrType
-    let vtableValue = Array voidPtrType $ map castVoidPtr' vtableMethods
+    let vtableValue = Array voidPtrType $ map castToVoidPtr' vtableMethods
     define $ GlobalDefinition $ globalVariableDefaults {
           name = objectVtable typ
         , isConstant = True
@@ -542,8 +542,12 @@ instance Emitable Stmt () where
         tmp <- nextVar
         tmp |= Load False lop Nothing (align typ)
         release' typ tmp
+      -- Then cast rval to proper type
+      rop' <- case typ of
+          TComposed ctyp -> castTo ctyp rop
+          _ -> return rop
       -- And then we can assign new one
-      Do |- Store False lop rop Nothing (align typ)
+      Do |- Store False lop rop' Nothing (align typ)
     -- Control statements
     SReturn rval typ -> do
       rop <- emit rval
@@ -593,11 +597,9 @@ instance Emitable LValue Operand where
     -- These expressions will be replaced with ones caring more context in subsequent phases
     PruneLExpr {} -> Err.unreachable x
     where
-      loadLValue lval = do
+      loadLValue lval = withLocalVar $ \res -> do
         lop <- emit lval
-        val <- nextVar
-        val |= Load False lop Nothing alignRef
-        return (LocalReference val)
+        res |= Load False lop Nothing alignRef
 
 instance Emitable RValue Operand where
   -- Objects might be created and destroyed while computing rvalue. Our invariants are:
@@ -644,7 +646,6 @@ instance Emitable RValue Operand where
       res |= Load False (LocalReference loc) Nothing (align eltyp)
       retain' eltyp res
       release' (TComposed $ TArray eltyp) rop1
-    -- FIXME
     EGetField rval TString (FieldName "length") _ -> do
       let mtyp = TypeMethod (TPrimitive TInt) [TComposed TString] []
       rop <- emit rval
@@ -664,13 +665,14 @@ instance Emitable RValue Operand where
       retain' ftyp res
       release' (TComposed ctyp) rop
     -- Method calls
-    EInvokeStatic ctyp mname@(MethodName str) mtyp args -> do
+    EInvokeStatic _ mname@(MethodName str) mtyp args -> do
+      -- We have very limited support for static methods, let's keep it simple here
+      let ctyp = TObject
       aops <- mapM emit args
       let fun = if Builtins.isLibraryMethod ctyp mname mtyp
           then Name str
           else composedName ctyp +/+ str
       invokeMethod mtyp (callStatic fun) aops
-    -- FIXME
     EInvokeVirtual rval TString (MethodName "charAt") _ [arg1] -> withLocalVar $ \res -> do
       rop <- emit rval
       aop <- emit arg1
@@ -716,7 +718,7 @@ instance Emitable RValue Operand where
     -- Operations
     EUnary OuNot expr (TPrimitive TBool) -> withLocalVar $ \res -> do
       eop <- emit expr
-      res |= Instr.Xor (ConstantOperand falseConst) eop
+      res |= Instr.Xor (ConstantOperand trueConst) eop
     EUnary OuNeg expr typ@(TPrimitive TInt) -> emit $ EBinary ObMinus (ELitInt 0) expr typ typ typ
     EUnary {} -> Err.unreachable x
     EBinary ObAnd _ _ _ _ _ -> withLocalVar $ \res -> evalCond x res
@@ -732,7 +734,12 @@ instance Emitable RValue Operand where
             ObEQU -> Llvm.IntegerPrediacte.EQ
             ObNEQ -> NE
             _ -> Err.unreachable "unknown operation"
-      res |= Instr.ICmp p eop1 eop2
+      case (typ1, typ2) of
+        (TComposed _, TComposed _) -> do
+          iop1 <- castToVoidPtr eop1
+          iop2 <- castToVoidPtr eop2
+          res |= Instr.ICmp p iop1 iop2
+        _ -> res |= Instr.ICmp p eop1 eop2
       release' typ1 eop1
       release' typ2 eop2
     EBinary ObPlus expr1 expr2 (TComposed TString) _ _ -> do
