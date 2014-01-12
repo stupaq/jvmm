@@ -101,8 +101,15 @@ castToVoidPtr op = withLocalVar $ \res -> res |= Instr.BitCast op voidPtrType
 castToVoidPtr' :: Constant -> Constant
 castToVoidPtr' c = Const.BitCast c voidPtrType
 
-castTo :: TypeComposed -> Operand -> EmitterM Operand
-castTo ctyp op = withLocalVar $ \res -> res |= Instr.BitCast op (toLlvm ctyp)
+class Castable a where
+  castTo :: a -> Operand -> EmitterM Operand
+
+instance Castable TypeBasic where
+  castTo (TComposed ctyp) = castTo ctyp
+  castTo (TPrimitive _) = return
+
+instance Castable TypeComposed where
+  castTo ctyp op = withLocalVar $ \res -> res |= Instr.BitCast op (toLlvm ctyp)
 
 -- Pointers and addresses
 alignRef, alignPrim, align0 :: Word32
@@ -550,10 +557,13 @@ instance Emitable Stmt () where
       Do |- Store False lop rop' Nothing (align typ)
     -- Control statements
     SReturn rval typ -> do
-      rop <- emit rval
+      rop <- castTo typ =<< emit rval
       Do |- Store False (LocalReference returnLoc) rop Nothing (align typ)
       Do |- Br exitBlockName
-    SReturnV -> Do |- Br exitBlockName
+      divideBlock =<< nextBlock
+    SReturnV -> do
+      Do |- Br exitBlockName
+      divideBlock =<< nextBlock
     SIf rval stmt -> do
       (btrue, bcont) <- nextBlocks2
       emitCond rval btrue bcont
@@ -666,7 +676,7 @@ instance Emitable RValue Operand where
     EInvokeStatic _ mname@(MethodName str) mtyp args -> do
       -- We have very limited support for static methods, let's keep it simple here
       let ctyp = TObject
-      aops <- mapM emit args
+      aops <- castToArgs mtyp =<< mapM emit args
       let fun = if Builtins.isLibraryMethod ctyp mname mtyp
           then Name str
           else composedName ctyp +/+ str
@@ -681,7 +691,7 @@ instance Emitable RValue Operand where
       release' (TComposed TString) rop
     EInvokeVirtual rval ctyp mname mtyp0 args -> do
       let mtyp = memberMethodType ctyp mtyp0
-      aops@(rop:_) <- mapM emit $ rval:args
+      aops@(rop:_) <- castToArgs mtyp =<< mapM emit (rval:args)
       -- Get vtab address
       vloc <- emit (rop, 0 :: Int)
       vtab <- nextVar
@@ -759,6 +769,7 @@ instance Emitable RValue Operand where
     PruneEVar {} -> Err.unreachable x
     PruneENull {} -> Err.unreachable x
     where
+      invokeMethod :: TypeMethod -> ([Operand] -> Instruction) -> [Operand] -> EmitterM Operand
       invokeMethod (TypeMethod tret targs _) call aops = do
         let callAndRelease dst = do
             dst $ call aops
@@ -768,6 +779,8 @@ instance Emitable RValue Operand where
           callAndRelease (Do |-)
           withConstant $ Undef VoidType
         else withLocalVar $ \res -> callAndRelease (res |=)
+      castToArgs :: TypeMethod -> [Operand] -> EmitterM [Operand]
+      castToArgs (TypeMethod _ targs _) aops = mapM (uncurry castTo) $ List.zip targs aops
 
 -- JUMPING CODE --
 ------------------
