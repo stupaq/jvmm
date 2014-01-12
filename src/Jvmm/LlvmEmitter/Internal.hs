@@ -326,6 +326,9 @@ instance InstructionLike (InstructionMetadata -> Instruction) Instruction where
 instance InstructionLike (InstructionMetadata -> Terminator) Terminator where
   (|-) nam ins = endBlock $ nam (ins [])
 
+noOp :: EmitterM ()
+noOp = return ()
+
 addInstr :: Named Instruction -> EmitterM ()
 addInstr instr = modify $ \s -> s { emitterstateBlockBodyRev = instr : emitterstateBlockBodyRev s }
 
@@ -360,17 +363,21 @@ endBlock term = gets emitterstateBlockName >>= \x -> case x of
 -- MEMORY MODEL --
 ------------------
 -- We do reference counting for strings only (for now)
+isRefCounted :: TypeBasic -> Bool
+isRefCounted (TComposed TString) = True
+isRefCounted _ = False
+
 class ReferenceCounted a where
   retain, release :: TypeBasic -> a -> EmitterM ()
   releaseAll :: [TypeBasic] -> [a] -> EmitterM ()
   releaseAll types ops = mapM_ (uncurry release) (List.zip types ops)
 
 instance ReferenceCounted Operand where
-  retain (TComposed TString) ref@(LocalReference _) = do
+  retain typ ref@(LocalReference _) = when (isRefCounted typ) $ do
     ref' <- castToVoidPtr ref
     Do |- callDefaults (static $ Name "rc_retain") [ref']
   retain _ _ = return ()
-  release (TComposed TString) ref@(LocalReference _) = do
+  release typ ref@(LocalReference _) = when (isRefCounted typ) $ do
     ref' <- castToVoidPtr ref
     modify $ \s -> s { emitterstateBlockRelease = ref' : emitterstateBlockRelease s }
   release _ _ = return ()
@@ -483,10 +490,11 @@ instance Emitable Stmt () where
     SAssign lval rval typ -> do
       rop <- emit rval
       lop <- emit lval
-      -- Firstly we have to fetch old value for reference counting
-      tmp <- nextVar
-      tmp |= Load False lop Nothing (align typ)
-      release typ tmp
+      when (isRefCounted typ) $ do
+        -- Firstly we have to fetch old value for reference counting
+        tmp <- nextVar
+        tmp |= Load False lop Nothing (align typ)
+        release typ tmp
       -- And then we can assign new one
       Do |- Store False lop rop Nothing (align typ)
     -- Control statements
@@ -671,12 +679,18 @@ instance Emitable RValue Operand where
 
 -- JUMPING CODE --
 ------------------
--- FIXME
 class EmitableConditional a where
   emitCond :: a -> Name -> Name -> EmitterM ()
   evalCond :: a -> Name -> EmitterM ()
-  evalCond = undefined
+  evalCond x res = do
+    (btrue, bfalse, bcont) <- nextBlocks3
+    emitCond x btrue bfalse
+    newBlock btrue bcont noOp
+    newBlock bfalse bcont noOp
+    divideBlock bcont
+    res |= Phi boolType [(ConstantOperand trueConst, btrue), (ConstantOperand falseConst, bfalse)]
 
 instance EmitableConditional RValue where
-  emitCond = undefined
+  -- FIXME
+  emitCond x btrue bfalse = Do |- Br bfalse
 
