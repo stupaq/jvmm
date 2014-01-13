@@ -134,7 +134,7 @@ function testcase_llvm() {
   $compile_llvm $1 &>$compile_output
   Status=$?
   if [[ $Status -eq 0 ]]; then
-    `dirname $1`/a.out <$Input 1>$exec_output 2>$exec_error
+    { `dirname $1`/a.out; } <$Input 1>$exec_output 2>$exec_error
     Status=$?
   fi
   if [[ $1 == $pattern_bad_exec ]]; then
