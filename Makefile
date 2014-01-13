@@ -14,7 +14,9 @@ $(JVM_RUNTIME): %.class: %.java
 	javac $<
 
 $(LLVM_RUNTIME): %.bc: %.c
-	clang -W -Wall -Wextra -pedantic -std=c99 -S -emit-llvm -o $*.ll $<
+	clang -pedantic -std=c99 -S -emit-llvm \
+		-W -Wall -Wextra -Wno-implicit-function-declaration \
+		-o $*.ll $<
 	llvm-as -o $@ $*.ll
 
 docs: $(DOCS)
