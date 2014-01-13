@@ -31,6 +31,7 @@ command_find="find $tests_root -type f \
     -a  ! -name *.ll \
     -a  ! -name *.s \
     -a  ! -name *.bc \
+    -a  ! -name a.out \
     "
 
 # test cases

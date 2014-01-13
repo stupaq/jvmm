@@ -10,8 +10,8 @@ You can find detailed description of the language and BNF grammar under `docs/` 
 
 QUICK START
 -----------
-Build-time requirements include `haskell-platform` as well as several Haskell packages `bnfc`, `pandoc` and
-`pretty-show`.
+Build-time requirements include `haskell-platform` as well as several Haskell packages `bnfc`, `pandoc`, `pretty-show`,
+`llvm-general-pure` and `llvm-general`.
 You can easily obtain them with `cabal install <pkg_name>`, be sure to upgrade Cabal itself beforehand with `cabal
 install cabal`.
 You will also need some Unix tools that you should already have.

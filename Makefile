@@ -32,7 +32,15 @@ clean:
 	-rm -f $(JVM_RUNTIME)
 	-rm -f $(LLVM_RUNTIME) $(LLVM_RUNTIME:.bc=.ll)
 	-rm -f {compile,exec}.{err,out}
-	-find ./ -path "*test-*" -a \( -name "*.class" -o -name "*.j" -o -name "*.jar" \) -delete
+	-find ./ -path "*test-*" -a \( \
+		   -name "*.class" \
+		-o -name "*.j" \
+		-o -name "*.jar" \
+		-o -name "*.ll" \
+		-o -name "*.bc" \
+		-o -name "*.s" \
+		-o -name "a.out" \
+		\) -delete
 
 distclean: clean
 	-$(MAKE) -C src/ distclean
