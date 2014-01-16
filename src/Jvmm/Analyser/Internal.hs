@@ -67,50 +67,50 @@ instance Analysable Stmt [Stmt] where
     SBlock stmts ->
      -- Blocks have no semantic value after resolving scope
      consecutive stmts
-    SExpr expr typ -> single $ SExpr <$> analyse expr <#> typ
+    SExpr _e typ -> single $ SExpr <$> analyse _e <#> typ
     -- Memory access
-    SAssign lval expr typ -> single $ SAssign <$> analyse lval <*> analyse expr <#> typ
+    SAssign lval _e typ -> single $ SAssign <$> analyse lval <*> analyse _e <#> typ
     -- Control statements
-    SReturn expr typ -> do
-      expr' <- analyse expr
+    SReturn _e typ -> do
+      _e <- analyse _e
       setReachable False
-      return [SReturn expr' typ]
+      return [SReturn _e typ]
     SReturnV -> do
       setReachable False
       original
-    SIf expr stmt -> do
-      expr' <- analyse expr
-      case expr' of
+    SIf _e stmt -> do
+      _e <- analyse _e
+      case _e of
         ELitTrue -> analyse stmt
         ELitFalse -> nothing
         _ -> do
           stmts' <- analyse stmt
           case stmts' of
             -- This expression cannot just dissapear
-            [] -> return [SExpr expr' (TPrimitive TBool)]
-            _ -> return [SIf expr' $ block stmts']
-    SIfElse expr stmt1 stmt2 -> do
-      expr' <- analyse expr
-      case expr' of
+            [] -> return [SExpr _e (TPrimitive TBool)]
+            _ -> return [SIf _e $ block stmts']
+    SIfElse _e stmt1 stmt2 -> do
+      _e <- analyse _e
+      case _e of
         ELitTrue -> analyse stmt1
         ELitFalse -> analyse stmt2
         _ -> do
           stmtsPair <- liftM2 (,) (analyse stmt1) (analyse stmt2)
           case stmtsPair of
-            ([], []) -> return [SExpr expr' (TPrimitive TBool)]
-            (stmts1', []) -> return [SIf expr' (block stmts1')]
-            ([], stmts2') -> return [SIf (EUnary OuNot expr' (TPrimitive TBool)) (block stmts2')]
-            (stmts1', stmts2') -> return [SIfElse expr' (block stmts1') (block stmts2')]
-    SWhile expr stmt -> do
-      expr' <- analyse expr
-      case expr' of
+            ([], []) -> return [SExpr _e (TPrimitive TBool)]
+            (stmts1', []) -> return [SIf _e (block stmts1')]
+            ([], stmts2') -> return [SIf (EUnary OuNot _e (TPrimitive TBool)) (block stmts2')]
+            (stmts1', stmts2') -> return [SIfElse _e (block stmts1') (block stmts2')]
+    SWhile _e stmt -> do
+      _e <- analyse _e
+      case _e of
         ELitFalse -> nothing
         _ -> do
           stmt' <- block <$> analyse stmt
           -- No prunning of loop's body can be done here
           -- However if it loops forever, the instructions after the loop are not reachable
-          when (isLitTrue expr') $ setReachable False
-          return [SWhile expr' stmt']
+          when (isLitTrue _e) $ setReachable False
+          return [SWhile _e stmt']
     SThrow {} -> original
     STryCatch {} -> original
     -- Special function bodies
@@ -137,37 +137,96 @@ instance Analysable Stmt [Stmt] where
       isLitTrue ELitTrue = True
       isLitTrue _ = False
 
+class Constant a where
+  asConst :: a -> AnalyserM RValue
+
+instance Constant Bool where
+  asConst x = return $ if x then ELitTrue else ELitFalse
+
+instance Constant Integer where
+  asConst = return . ELitInt
+
+instance Constant String where
+  asConst = return . ELitString
+
 instance Analysable RValue RValue where
   analyse x = case x of
     -- Literals
     -- Memory access
-    EArrayLoad expr1 expr2 telem -> EArrayLoad <$> analyse expr1 <*> analyse expr2 <#> telem
-    EGetField expr ctyp name ftyp -> EGetField <$> analyse expr <#> ctyp <#> name <#> ftyp
+    EArrayLoad _e1 _e2 telem -> EArrayLoad <$> analyse _e1 <*> analyse _e2 <#> telem
+    EGetField _e ctyp name ftyp -> EGetField <$> analyse _e <#> ctyp <#> name <#> ftyp
     -- Method calls
-    EInvokeStatic ctyp name ftyp exprs -> EInvokeStatic ctyp name ftyp <$> mapM analyse exprs
-    EInvokeVirtual expr ctyp name ftyp exprs ->
-      EInvokeVirtual <$> analyse expr <#> ctyp <#> name <#> ftyp <*> mapM analyse exprs
+    EInvokeStatic ctyp name ftyp _es -> EInvokeStatic ctyp name ftyp <$> mapM analyse _es
+    EInvokeVirtual _e ctyp name ftyp _es ->
+      EInvokeVirtual <$> analyse _e <#> ctyp <#> name <#> ftyp <*> mapM analyse _es
     -- Object creation
-    ENewArr telem expr -> ENewArr telem <$> analyse expr
+    ENewArr telem _e -> ENewArr telem <$> analyse _e
     -- Operations
-    EUnary op expr tret -> do
-      expr' <- analyse expr
-      case (expr', op) of
-        (ELitInt n, OuNeg) -> return $ ELitInt (negate n)
-        (ELitTrue, OuNot) -> return ELitFalse
-        (ELitFalse, OuNot) -> return ELitTrue
-        _ -> return $ EUnary op expr' tret
-    EBinary op expr1 expr2 tret typ1 typ2 -> do
-      option <- liftM3 (,,) (return op) (analyse expr1) (analyse expr2)
-      -- Note that comparint subtrees is meaningless here (this is one of the reasons for RValue
+    EUnary op _e tret -> do
+      _e <- analyse _e
+      case (op, _e) of
+        -- Bool
+        (OuNot, ELitTrue) -> asConst False
+        (OuNot, ELitFalse) -> asConst True
+        -- Int
+        (OuNeg, ELitInt _e) -> asConst $ negate _e
+        -- Fallback
+        _ -> return $ EUnary op _e tret
+    EBinary op _e1 _e2 tret typ1 typ2 -> do
+      option@(_, _e1, _e2) <- liftM3 (,,) (return op) (analyse _e1) (analyse _e2)
+      let fallback = return $ EBinary op _e1 _e2 tret typ1 typ2
+      -- Note that comparing subtrees is meaningless here (this is one of the reasons for RValue
       -- not being instance of Eq) as the language is not purely functional
       case option of
-        (ObAnd, ELitFalse, _) -> return ELitFalse
-        (ObAnd, ELitTrue, expr2') -> return expr2'
-        (ObOr, ELitTrue, _) -> return ELitTrue
-        (ObOr, ELitFalse, expr2') -> return expr2'
-        -- TODO constant propagation
-        (_, expr1', expr2') -> return $ EBinary op expr1' expr2' tret typ1 typ2
+        -- No guarantees whether expressions are constant
+        -- Somethimes we can tell for sure that both sides are the same
+        (ob, ELoad num1 _, ELoad num2 _)
+          | num1 == num2 -> case ob of
+            ObEQU -> asConst True
+            ObNEQ -> asConst False
+            ObLTH -> asConst False
+            ObLEQ -> asConst True
+            ObGTH -> asConst False
+            ObGEQ -> asConst True
+            _ -> fallback
+          | otherwise -> fallback
+        -- Bool
+        (ObAnd, ELitFalse, _) -> asConst False
+        (ObAnd, ELitTrue, _e2) -> return _e2
+        (ObOr, ELitTrue, _) -> asConst True
+        (ObOr, ELitFalse, _e2) -> return _e2
+        (_, _e1, _e2) -> if isLiteral _e1 && isLiteral _e2
+          then case option of
+            -- We have guarantee that subexpressions are constants
+            -- Object
+            (ObEQU, ENull _, ENull _) -> asConst True
+            (ObNEQ, ENull _, ENull _) -> asConst False
+            -- String
+            (ObPlus, ELitString str1, ELitString str2) -> asConst $ str1 ++ str2
+            -- Bool
+            (ObEQU, ELitTrue, _e2) -> return _e2
+            (ObNEQ, ELitFalse, _e2) -> return _e2
+            (ob, ELitTrue, ELitTrue) -> asConst $ ob == ObEQU
+            (ob, ELitFalse, ELitFalse) -> asConst $ ob == ObEQU
+            (ob, ELitTrue, ELitFalse) -> asConst $ ob == ObNEQ
+            (ob, ELitFalse, ELitTrue) -> asConst $ ob == ObNEQ
+            -- Int
+            (ObEQU, ELitInt x1, ELitInt x2) -> asConst $ x1 == x2
+            (ObNEQ, ELitInt x1, ELitInt x2) -> asConst $ x1 /= x2
+            (ObLTH, ELitInt x1, ELitInt x2) -> asConst $ x1 < x2
+            (ObLEQ, ELitInt x1, ELitInt x2) -> asConst $ x1 <= x2
+            (ObGTH, ELitInt x1, ELitInt x2) -> asConst $ x1 > x2
+            (ObGEQ, ELitInt x1, ELitInt x2) -> asConst $ x1 >= x2
+            (ObPlus, ELitInt x1, ELitInt x2) -> asConst $ x1 + x2
+            (ObMinus, ELitInt x1, ELitInt x2) -> asConst $ x1 - x2
+            (ObTimes, ELitInt x1, ELitInt x2) -> asConst $ x1 * x2
+            (ObDiv, ELitInt x1, ELitInt x2) -> asConst $ x1 `div` x2
+            (ObMod, ELitInt x1, ELitInt x2) -> asConst $ x1 `rem` x2
+            -- Char
+            (ObEQU, ELitChar x1, ELitChar x2) -> asConst $ x1 == x2
+            (ObNEQ, ELitChar x1, ELitChar x2) -> asConst $ x1 /= x2
+            _ -> fallback
+          else fallback
     -- These expressions will be replaced with ones caring more context in subsequent phases
     PruneEVar {} -> Err.unreachable x
     -- Fallback to original value
@@ -179,7 +238,7 @@ instance Analysable RValue RValue where
 instance Analysable LValue LValue where
   analyse x = case x of
     LVariable _ _ -> return x
-    LArrayElement lval expr telem -> LArrayElement <$> analyse lval <*> analyse expr <#> telem
+    LArrayElement lval _e telem -> LArrayElement <$> analyse lval <*> analyse _e <#> telem
     LField lval ctyp name ftyp -> LField <$> analyse lval <#> ctyp <#> name <#> ftyp
     PruneLExpr _ -> Err.unreachable x
 

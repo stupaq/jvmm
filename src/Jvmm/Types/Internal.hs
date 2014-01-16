@@ -515,7 +515,6 @@ instance TypeCheckable' RValue where
           in return (EBinary opbin expr1' expr2' rett etyp1 etyp2, rett)
         _ -> do
           rett <- liftM TPrimitive $ case opbin of
-            ObPlus -> TInt =? typ
             ObAnd -> TBool =? typ
             ObOr -> TBool =? typ
             -- For primitives we have natural ==, for others we compare 'adresses'

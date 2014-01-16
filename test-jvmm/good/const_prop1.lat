@@ -1,0 +1,21 @@
+int main() {
+    Object x;
+    int y;
+    printInt(3 * 5 - 2 * 10);
+    printBool(2 * 2 == 2 + 2);
+    printBool(x == x);
+    printBool(x != x);
+    printBool(y > y);
+    printBool(y >= y);
+    printBool(y <= y);
+    printBool(y < y);
+    return 0;
+}
+
+void printBool(boolean b) {
+    if (b) {
+        printString("true");
+    } else {
+        printString("false");
+    }
+}

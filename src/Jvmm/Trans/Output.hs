@@ -158,6 +158,16 @@ data RValue =
   | PruneENull
   deriving (Show)
 
+isLiteral :: RValue -> Bool
+isLiteral x = case x of
+  ENull _ -> True
+  ELitTrue -> True
+  ELitFalse -> True
+  ELitChar _ -> True
+  ELitString _ -> True
+  ELitInt _ -> True
+  _ -> False
+
 data LValue =
     LVariable VariableNum TypeBasic
   | LArrayElement LValue RValue TypeBasic

@@ -109,6 +109,7 @@ instance Castable TypeBasic where
   castTo (TPrimitive _) = return
 
 instance Castable TypeComposed where
+  castTo ctyp (ConstantOperand c) = withConstant $ Const.BitCast c (toLlvm ctyp)
   castTo ctyp op = withLocalVar $ \res -> res |= Instr.BitCast op (toLlvm ctyp)
 
 -- Pointers and addresses
@@ -420,11 +421,11 @@ instance ReferenceCounted (TypeBasic, Name) where
   release (typ, nam) = release (typ, LocalReference nam)
 
 instance ReferenceCounted (TypeBasic, VariableNum) where
-  retain (typ, num) = do
+  retain (typ, num) = whenRefCounted typ $ do
     tmp <- nextVar
     tmp |= Load False (LocalReference $ location num) Nothing (align typ)
     retain' typ tmp
-  release (typ, num) = do
+  release (typ, num) = whenRefCounted typ $ do
     tmp <- nextVar
     tmp |= Load False (LocalReference $ location num) Nothing (align typ)
     release' typ tmp
