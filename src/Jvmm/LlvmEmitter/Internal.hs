@@ -147,7 +147,6 @@ falseConst = Const.Int 1 0
 charValue :: Char -> Constant
 charValue int = Const.Int 8 $ toInteger $ Char.ord int
 
--- TODO
 intValue :: Integer -> Constant
 intValue = Const.Int 32 . fromIntegral
 intValue' :: Int -> Operand
@@ -309,7 +308,7 @@ define = lift . tell . return
 -- LOCAL VARIABLES --
 ---------------------
 releaseLocals :: EmitterM ()
-releaseLocals = release =<< map Tuple.swap <$> Map.toList <$> asks emitterenvLocals
+releaseLocals = mapM_ release =<< map Tuple.swap <$> Map.toList <$> asks emitterenvLocals
 
 -- BASIC BLOCKS --
 ------------------
@@ -405,7 +404,6 @@ isRefCounted _ = False
 whenRefCounted :: TypeBasic -> EmitterM () -> EmitterM ()
 whenRefCounted typ = if isRefCounted typ then id else const (return ())
 
--- FIXME clean this shit up
 class ReferenceCounted a where
   retain, release :: a -> EmitterM ()
 
@@ -415,21 +413,8 @@ instance ReferenceCounted (TypeBasic, Operand) where
     Do |- callStatic (Name "rc_retain") [ref']
   retain _ = return ()
   release (typ, ref@(LocalReference _)) = whenRefCounted typ $ do
-    ref' <- castToVoidPtr ref
-    -- TODO do this lazily at the very end of each block
-    Do |- callStatic (Name "rc_release") [ref']
-    --modify $ \s -> s { emitterstateBlockRelease = ref' : emitterstateBlockRelease s }
+    modify $ \s -> s { emitterstateBlockRelease = ref : emitterstateBlockRelease s }
   release _ = return ()
-
-instance ReferenceCounted ([(TypeBasic, Operand)]) where
-  retain = mapM_ retain
-  release refs =
-    let refs' = map snd $ filter filterRefs refs
-        filterRefs x = case x of
-          (typ, LocalReference _) -> isRefCounted typ
-          _ -> False
-        cnt = intValue' $ List.length refs'
-    in unless (null refs') $ Do |- callStatic (Name "rc_release_all") (cnt:refs')
 
 instance ReferenceCounted (TypeComposed, Operand) where
   retain (typ, op) = retain (TComposed typ, op)
@@ -439,15 +424,15 @@ instance ReferenceCounted (TypeBasic, Name) where
   retain (typ, nam) = retain (typ, LocalReference nam)
   release (typ, nam) = release (typ, LocalReference nam)
 
-instance ReferenceCounted [(TypeBasic, VariableNum)] where
-  retain = notImplemented
-  release vars =
-    let vars' = List.filter (isRefCounted . fst) vars
-        count' = intValue' $ List.length vars'
-    in do
-      refs' <- forM vars' $ \(typ, num) -> withLocalVar $ \ref ->
-        ref |= Load False (LocalReference $ location num) Nothing (align typ)
-      unless (null vars') $ Do |- callStatic (Name "rc_release_all") (count' : refs')
+instance ReferenceCounted (TypeBasic, VariableNum) where
+  retain (typ, num) = do
+    tmp <- nextVar
+    tmp |= Load False (LocalReference $ location num) Nothing (align typ)
+    retain' typ tmp
+  release (typ, num) = do
+    tmp <- nextVar
+    tmp |= Load False (LocalReference $ location num) Nothing (align typ)
+    release' typ tmp
 
 retain', release' :: ReferenceCounted (a, b) => a -> b -> EmitterM ()
 retain' = curry retain
