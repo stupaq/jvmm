@@ -22,17 +22,7 @@ compile_output="compile.err"
 exec_output="exec.out"
 exec_error="exec.err"
 
-command_find="find $tests_root -type f \
-    -a  ! -name *.output \
-    -a  ! -name *.input \
-    -a  ! -name *.class \
-    -a  ! -name *.j \
-    -a  ! -name *.jar \
-    -a  ! -name *.ll \
-    -a  ! -name *.s \
-    -a  ! -name *.bc \
-    -a  ! -name a.out \
-    -a "
+command_find="find $tests_root -type f -a ( -name "'*.lat'" -o -name "'*.txt'" ) -a "
 
 # test cases
 tests_exec=`$command_find -path "$pattern_good" | sort | uniq`
