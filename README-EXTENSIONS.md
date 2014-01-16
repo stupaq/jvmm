@@ -6,6 +6,7 @@ Implemented language extensions
 +   objects
 +   virtual methods
 +   reference counting GC
++   copy & constant propagation (in pre-SSA form)
 
 External libraries used in the project
 ======================================

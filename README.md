@@ -22,6 +22,7 @@ In project's root folder you can find scripts which run different parts of the J
 +   `./jvmmc_check <source_file>` - performs static analysis (type checking and more) and shows any errors
 +   `./jvmmc_jvm <source_file>` - emits Jasmin assembler, compiles it into .class file and packages into JAR
     together with JVMM runtime library
++   `./jvmmc_llvm <source_file>` - emits LLVM IR, compiles it into native binary
 +   `./jvmmi <source_file>` - interprets program in the same process that performed parsing and static analysis
 
 RUNNING TEST SUITES
