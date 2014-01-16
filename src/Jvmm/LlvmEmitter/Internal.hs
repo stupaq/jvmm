@@ -17,6 +17,7 @@ import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Writer
 
+import qualified Data.Tuple as Tuple
 import qualified Data.Char as Char
 import qualified Data.Ord as Ord
 import qualified Data.List as List
@@ -44,6 +45,9 @@ import qualified LLVM.General.AST.Type as Llvm.Type (Type)
 --------------------------
 class Translatable a b | a -> b where
   toLlvm :: a -> b
+
+class Localizable a b | a -> b where
+  location :: a -> b
 
 -- Types
 type LlvmType = Llvm.Type.Type
@@ -208,6 +212,13 @@ runtimeLibrary = map GlobalDefinition [
         , basicBlocks = blks
       }
 
+-- Operands
+instance Localizable VariableNum Name where
+  location num = Name $ ("var" ++) $ show $ fromEnum num
+
+instance Localizable Variable Operand where
+  location (Variable _ num _) = LocalReference $ location num
+
 -- CLASS HIERARCHY EMITTER --
 -----------------------------
 emitHierarchy :: EmitterEnv -> ClassHierarchy -> ErrorInfoT Identity [LlvmModule]
@@ -230,19 +241,13 @@ data EmitterState = EmitterState {
   , emitterstateBlockName    :: Maybe Name
   , emitterstateBlockBodyRev :: [Named Instruction]
   , emitterstateBlockRelease :: [Operand]
-  , emitterstateLocals       :: LocalVariables
 } deriving (Show)
-
-type LocalVariables = Map.Map VariableNum Operand
-
-localvariables0 :: LocalVariables
-localvariables0 = Map.empty
 
 emitterstateBlockBody :: EmitterState -> [Named Instruction]
 emitterstateBlockBody = List.reverse . emitterstateBlockBodyRev
 
 emitterstate0 :: EmitterState
-emitterstate0 = EmitterState 0 0 Nothing [] [] localvariables0
+emitterstate0 = EmitterState 0 0 Nothing [] []
 
 -- EMITTER ENVIRONMENT --
 -------------------------
@@ -303,42 +308,8 @@ define = lift . tell . return
 
 -- LOCAL VARIABLES --
 ---------------------
-setLocal :: VariableNum -> Operand -> EmitterM ()
-setLocal num op = modify $ \s -> s {
-    emitterstateLocals = Map.insert num op (emitterstateLocals s) }
-
-getLocal :: VariableNum -> EmitterM Operand
-getLocal num = lookupM num =<< gets emitterstateLocals
-
-getLocals :: EmitterM (Name, LocalVariables)
-getLocals = do
-  nam <- currentBlock
-  vars <- gets emitterstateLocals
-  return (nam, vars)
-
-mergeLocals :: [(Name, LocalVariables)] ->  EmitterM ()
-mergeLocals paths = do
-  types <- Map.toList <$> asks emitterenvLocals
-  forM_ types $ \(num, typ) -> do
-    incoming <- mapM (\(nam, vars) -> (, nam) <$> lookupM num vars) paths
-    let uniq = List.nub $ map fst $ incoming
-    case uniq of
-      [] -> return ()
-      [val] -> setLocal num val
-      _ -> do
-        tmp <- nextVar
-        tmp |= Phi (toLlvm typ) incoming
-        setLocal num (LocalReference tmp)
-
-phiNode :: [Maybe (Name, LocalVariables)] ->  EmitterM ()
-phiNode vars = let vars' = map Maybe.fromJust $ filter Maybe.isJust vars
-  in when (List.length vars' > 1) $ mergeLocals vars'
-
 releaseLocals :: EmitterM ()
-releaseLocals = do
-  types <- map snd <$> Map.toAscList <$> asks emitterenvLocals
-  vars <- map snd <$> Map.toAscList <$> gets emitterstateLocals
-  release $ List.zip types vars
+releaseLocals = release =<< map Tuple.swap <$> Map.toList <$> asks emitterenvLocals
 
 -- BASIC BLOCKS --
 ------------------
@@ -347,43 +318,36 @@ undefBlock = error "block is not defined"
 
 -- Note that in current semantics the only way to escape from the new block is to return from the
 -- function, this makes phi nodes computation and block management much easier.
-newBlock :: Name  -> Name -> EmitterM () -> EmitterM (Maybe (Name, LocalVariables))
+newBlock :: Name  -> Name -> EmitterM a -> EmitterM a
 newBlock bname back action = do
   divideBlock bname
-  action
+  res <- action
   endBlock $ Do $ Br back []
-
-currentBlock :: EmitterM Name
-currentBlock = do
-  oldname <- gets emitterstateBlockName
-  case oldname of
-    Just old -> return old
-    Nothing -> error "no current block"
+  return res
 
 divideBlock :: Name -> EmitterM ()
 divideBlock bname = do
   -- This is an assertion only
   Nothing <- gets emitterstateBlockName
-  modify $ \s -> s { emitterstateBlockName = Just bname }
+  modify $ \s -> s {
+      emitterstateBlockName = Just bname
+    , emitterstateBlockBodyRev = []
+  }
 
-endBlock :: Named Terminator -> EmitterM (Maybe (Name, LocalVariables))
+endBlock :: Named Terminator -> EmitterM ()
 endBlock term = gets emitterstateBlockName >>= \x -> case x of
-  Nothing -> return Nothing
+  Nothing -> return ()
   Just bname -> do
     releases <- List.reverse <$> gets emitterstateBlockRelease
     unless (null releases) $
       Do |- callStatic (Name "rc_release_all") (intValue' (List.length releases) : releases)
     body <- gets emitterstateBlockBody
-    vars <- gets emitterstateLocals
     tell [BasicBlock bname body term]
     modify $ \s -> s {
         emitterstateBlockName = Nothing
       , emitterstateBlockBodyRev = []
       , emitterstateBlockRelease = []
-      -- TODO
-      --, emitterstateLocals = localvariables0
     }
-    return $ Just (bname, vars)
 
 -- BLOCKS AND REFERENCES --
 ---------------------------
@@ -415,7 +379,7 @@ instance InstructionLike (InstructionMetadata -> Instruction) Instruction where
   (|-) nam ins = addInstr $ nam (ins [])
 
 instance InstructionLike (InstructionMetadata -> Terminator) Terminator where
-  (|-) nam ins = void $ endBlock $ nam (ins [])
+  (|-) nam ins = endBlock $ nam (ins [])
 
 withLocalVar :: (Name -> EmitterM a) -> EmitterM Operand
 withLocalVar action = do
@@ -430,13 +394,10 @@ noOp :: EmitterM ()
 noOp = return ()
 
 addInstr :: Named Instruction -> EmitterM ()
-addInstr ins = do
-  isDead <- Maybe.isNothing <$> gets emitterstateBlockName
-  unless isDead $ modify $ \s -> s { emitterstateBlockBodyRev = ins : emitterstateBlockBodyRev s }
+addInstr instr = modify $ \s -> s { emitterstateBlockBodyRev = instr : emitterstateBlockBodyRev s }
 
 -- MEMORY MODEL --
 ------------------
--- We do reference counting for strings only (for now)
 isRefCounted :: TypeBasic -> Bool
 isRefCounted (TComposed TString) = True
 isRefCounted _ = False
@@ -444,6 +405,7 @@ isRefCounted _ = False
 whenRefCounted :: TypeBasic -> EmitterM () -> EmitterM ()
 whenRefCounted typ = if isRefCounted typ then id else const (return ())
 
+-- FIXME clean this shit up
 class ReferenceCounted a where
   retain, release :: a -> EmitterM ()
 
@@ -464,7 +426,7 @@ instance ReferenceCounted ([(TypeBasic, Operand)]) where
   release refs =
     let refs' = map snd $ filter filterRefs refs
         filterRefs x = case x of
-          (TComposed TString, LocalReference _) -> True
+          (typ, LocalReference _) -> isRefCounted typ
           _ -> False
         cnt = intValue' $ List.length refs'
     in unless (null refs') $ Do |- callStatic (Name "rc_release_all") (cnt:refs')
@@ -477,13 +439,15 @@ instance ReferenceCounted (TypeBasic, Name) where
   retain (typ, nam) = retain (typ, LocalReference nam)
   release (typ, nam) = release (typ, LocalReference nam)
 
-instance ReferenceCounted Variable where
-  retain (Variable typ num _) = whenRefCounted typ $ do
-    op <- getLocal num
-    retain (typ, op)
-  release (Variable typ num _) = whenRefCounted typ $ do
-    op <- getLocal num
-    release (typ, op)
+instance ReferenceCounted [(TypeBasic, VariableNum)] where
+  retain = notImplemented
+  release vars =
+    let vars' = List.filter (isRefCounted . fst) vars
+        count' = intValue' $ List.length vars'
+    in do
+      refs' <- forM vars' $ \(typ, num) -> withLocalVar $ \ref ->
+        ref |= Load False (LocalReference $ location num) Nothing (align typ)
+      unless (null vars') $ Do |- callStatic (Name "rc_release_all") (count' : refs')
 
 retain', release' :: ReferenceCounted (a, b) => a -> b -> EmitterM ()
 retain' = curry retain
@@ -548,10 +512,14 @@ instance Emitable Method () where
     blocks <- intercept $ initLocals (args ++ vars) $ do
       body <- nextBlock
       newBlock entryBlockName body $ do
+        mapM_ allocVar $ args ++ vars
         mapM_ initArg args
+        -- We have to initialize variables here for the first time for GC corectness
         mapM_ initVar vars
+        when (ltret /= VoidType) $
+          -- Allocate place for return value
+          returnLoc |= Alloca ltret Nothing (align tret)
       newBlock body undefBlock $ do
-        -- No need to put phi here as we can enter method body from entry block only
         emit bodyStmt
         if ltret == VoidType
         then do
@@ -565,16 +533,18 @@ instance Emitable Method () where
       , basicBlocks = blocks
     }
       where
+        initLocals locals = local (\e -> e { emitterenvLocals =
+          Map.fromList $ List.map (\(Variable typ num _) -> (num, typ)) locals })
         argSelf = Variable (TComposed origin) VariableThis (VariableName "self")
         argName num = Name $ ("arg" ++) $ show $ fromEnum num
         emitArg (Variable typ num _) = return $ Parameter (toLlvm typ) (argName num) []
-        initArg (Variable typ num _) = let argRef = LocalReference $ argName num in do
-          setLocal num argRef
+        allocVar (Variable typ num _) = location num |= Alloca (toLlvm typ) Nothing (align typ)
+        initArg var@(Variable typ num _) = let argRef = LocalReference $ argName num in do
+          Do |- Store False (location var) argRef Nothing (align typ)
           -- Note that we are copying a reference when initializing argument
           retain' typ argRef
-        initVar (Variable typ num _) = setLocal num (ConstantOperand $ defaultValue typ)
-        initLocals locals = local (\e -> e { emitterenvLocals =
-          Map.fromList $ List.map (\(Variable typ num _) -> (num, typ)) locals })
+        initVar var@(Variable typ _ _) =
+          Do |- Store False (location var) (ConstantOperand $ defaultValue typ) Nothing (align typ)
 
 instance Emitable (Operand, TypeComposed, FieldName) Operand where
   emit (op, ctyp, fname) = do
@@ -593,23 +563,20 @@ instance Emitable Stmt () where
       rop <- emit rval
       release' typ rop
     -- Memory access
-    SAssign lval@(LVariable num _) rval typ -> do
-      rop <- castTo typ =<< emit rval
-      lop <- emit lval
-      -- Firstly we have to update reference count of the old value
-      release' typ lop
-      -- And then we can assign new one
-      setLocal num rop
     SAssign lval rval typ -> do
-      rop <- castTo typ =<< emit rval
+      rop <- emit rval
       lop <- emit lval
       whenRefCounted typ $ do
         -- Firstly we have to fetch old value for reference counting
         tmp <- nextVar
         tmp |= Load False lop Nothing (align typ)
         release' typ tmp
+      -- Then cast rval to proper type
+      rop' <- case typ of
+          TComposed ctyp -> castTo ctyp rop
+          _ -> return rop
       -- And then we can assign new one
-      Do |- Store False lop rop Nothing (align typ)
+      Do |- Store False lop rop' Nothing (align typ)
     -- Control statements
     SReturn rval typ -> do
       rop <- castTo typ =<< emit rval
@@ -623,32 +590,21 @@ instance Emitable Stmt () where
       -- Any code afterwards is certainly dead
     SIf rval stmt -> do
       (btrue, bcont) <- nextBlocks2
-      vorig <- Just <$> getLocals
       emitCond rval btrue bcont
-      vtrue <- newBlock btrue bcont $
-        -- Only a single entry block, no need for phi node
-        emit stmt
+      newBlock btrue bcont $ emit stmt
       divideBlock bcont
-      phiNode [vorig, vtrue]
     SIfElse rval stmt1 stmt2 -> do
       (btrue, bfalse, bcont) <- nextBlocks3
       emitCond rval btrue bfalse
-      vtrue <- newBlock btrue bcont $
-        emit stmt1
-      vfalse <- newBlock bfalse bcont $
-        emit stmt2
+      newBlock btrue bcont $ emit stmt1
+      newBlock bfalse bcont $ emit stmt2
       divideBlock bcont
-      phiNode [vtrue, vfalse]
     SWhile rval stmt -> do
       (bloop, bcond, bcont) <- nextBlocks3
-      vorig <- Just <$> getLocals
       Do |- Br bcond
-      vloop <- newBlock bloop bcond $ emit stmt
-      vcond <- newBlock bcond undefBlock $ do
-        phiNode [vorig, vloop]
-        emitCond rval bloop bcont
+      newBlock bloop bcond $ emit stmt
+      newBlock bcond undefBlock $ emitCond rval bloop bcont
       divideBlock bcont
-      phiNode [vcond, vloop]
     SThrow {} -> notImplemented
     STryCatch {} -> notImplemented
     -- Special function bodies
@@ -664,7 +620,7 @@ instance Emitable LValue Operand where
   -- We do not call retain/release for lvalues since they are local to instruction and cannot
   -- create (or remove) objects - all lvalue constructors refer to existing entities.
   emit x = case x of
-    LVariable num _ -> getLocal num
+    LVariable num _ -> return $ LocalReference $ location num
     LArrayElement lval rval _ -> withLocalVar $ \res -> do
       rop <- emit rval
       val <- loadLValue lval
@@ -713,10 +669,9 @@ instance Emitable RValue Operand where
       withConstant $ Const.BitCast arr stringType
     ELitInt int -> withConstant $ intValue int
     -- Memory access
-    ELoad num typ -> do
-      var <- getLocal num
-      retain' typ var
-      return var
+    ELoad num typ -> withLocalVar $ \res -> do
+      res |= Load False (LocalReference $ location num) Nothing (align typ)
+      retain' typ res
     EArrayLoad rval1 rval2 eltyp -> withLocalVar $ \res -> do
       rop1 <- emit rval1
       rop2 <- emit rval2
@@ -883,16 +838,10 @@ instance EmitableConditional RValue where
       bmid <- nextBlock
       emitCond expr1 bmid bfalse
       newBlock bmid undefBlock $ emitCond expr2 btrue bfalse
-      -- Note that there can be no assignment when emitting jumping code, as a consequence we do
-      -- not need to keep trach of potential data for constructing phi nodes.
-      return ()
     EBinary ObOr expr1 expr2 _ _ _ -> do
       bmid <- nextBlock
       emitCond expr1 btrue bmid
       newBlock bmid undefBlock $ emitCond expr2 btrue bfalse
-      -- Note that there can be no assignment when emitting jumping code, as a consequence we do
-      -- not need to keep trach of potential data for constructing phi nodes.
-      return ()
     EBinary {} -> emitAndJump
     -- If we cannot recognize expression as binary one
     _ -> badExpressionType
