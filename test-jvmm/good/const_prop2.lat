@@ -1,0 +1,25 @@
+int main() {
+    int a, b = 3, c = foo();
+    printInt(a);
+    printInt(b);
+    while (b < 6) {
+      printInt(a);
+      printInt(b);
+      b++;
+    }
+    printInt(a);
+    printInt(b);
+    if (b == 6) {
+        a = 3;
+        b = 1;
+        printInt(a);
+        printInt(b);
+    }
+    printInt(a);
+    printInt(b);
+    return 0;
+}
+
+int foo() {
+    return 4;
+}

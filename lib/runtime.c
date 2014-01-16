@@ -135,6 +135,7 @@ int32_t array_length(void* array) {
 /** IO library functions */
 void printInt(int32_t x) {
   printf("%d\n", x);
+  fflush(stdout);
 }
 
 int32_t readInt() {
@@ -145,6 +146,7 @@ int32_t readInt() {
 
 void printString(char* s) {
   printf("%s\n", s);
+  fflush(stdout);
 }
 
 char* readString() {
@@ -159,5 +161,6 @@ char* readString() {
 
 void error() {
   printf("runtime error\n");
+  fflush(stdout);
   exit(EXIT_FAILURE);
 }
