@@ -36,6 +36,13 @@ If a test suite uses generic test runner, you can also run a single test with `.
 many more options to each `test-run.sh` script, explore `generic-test-runner.sh` for more info.
 For example to test interpreter back-end only use `-I` or `-Iv` respectively.
 
+RUNTIME DEBUGGING
+-----------------
+LLVM backend for JVMM supports limited form of debugging, more specifically when `lib/runtime.c` is compiled without
+`NODEBUG` flag (which is the default behaviour) then every memory management action will be logged to `stderr`.
+Note that this includes logging on _every_ reference count increment or decrement which may significantly slow down the
+execution.
+
 SOURCES AND ACKNOWLEDGEMENTS
 ----------------------------
 Test programs under `test-latte/` come from official package: http://www.mimuw.edu.pl/~ben/Zajecia/Mrj2012/Latte/.
