@@ -2,7 +2,13 @@ BNFC := $(wildcard ../docs/*.cf)
 MAIN := Jvmm/Main
 
 PDFLATEX := pdflatex -interaction=batchmode
-GHCWARN := -Wall -fno-warn-unused-do-bind
+GHCWARN := -W \
+	-Wall \
+	-fwarn-tabs \
+	-fwarn-monomorphism-restriction \
+	-fwarn-unrecognised-pragmas \
+	-fwarn-auto-orphans \
+	-fno-warn-unused-do-bind
 GHCPROF := #-rtsopts -prof
 GHCMAKE := ghc --make -outputdir ghc-make $(GHCWARN) $(GHCPROF)
 

@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <assert.h>
 #include <stdbool.h>
+#include <stdarg.h>
 
 /** Debug */
 #ifndef NODEBUG
@@ -79,6 +80,15 @@ void rc_release(void* ptr) {
   } else {
     debug("release(): %s\n", "null");
   }
+}
+
+void rc_release_all(int32_t count, ...) {
+  va_list args;
+  va_start(args, count);
+  for (int i = 0; i < count; i++) {
+    rc_release(va_arg(args, void*));
+  }
+  va_end(args);
 }
 
 /** Strings */
