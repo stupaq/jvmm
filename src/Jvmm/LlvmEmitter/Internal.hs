@@ -185,7 +185,6 @@ runtimeLibrary = map GlobalDefinition [
       declareFn "object_init" [intType, voidPtrType, voidPtrType] voidPtrType
     , declareFn "rc_malloc" [intType] voidPtrType
     , declareFn "rc_retain" [voidPtrType] VoidType
-    , declareFn "rc_release" [voidPtrType] VoidType
     , declareVa "rc_release_all" [intType] VoidType
     , declareFn "string_concat" [stringType, stringType] stringType
     , declareFn "string_length" [stringType] intType

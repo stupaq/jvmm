@@ -64,7 +64,7 @@ void rc_retain(void* ptr) {
   }
 }
 
-void rc_release(void* ptr) {
+static inline void rc_release(void* ptr) {
   if (ptr != NULL) {
     struct rc_header* header = rc_ptr_to_header(ptr);
     if (!rc_is_const(header)) {
