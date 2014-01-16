@@ -415,10 +415,6 @@ instance ReferenceCounted (TypeBasic, Operand) where
     modify $ \s -> s { emitterstateBlockRelease = ref : emitterstateBlockRelease s }
   release _ = return ()
 
-instance ReferenceCounted (TypeComposed, Operand) where
-  retain (typ, op) = retain (TComposed typ, op)
-  release (typ, op) = retain (TComposed typ, op)
-
 instance ReferenceCounted (TypeBasic, Name) where
   retain (typ, nam) = retain (typ, LocalReference nam)
   release (typ, nam) = release (typ, LocalReference nam)
