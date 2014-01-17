@@ -174,7 +174,9 @@ instance Analysable Stmt [Stmt] where
           when (isLitTrue _e) $ setReachable False
           return [SWhile _e $ block stmt']
     SThrow {} -> original
-    STryCatch {} -> original
+    STryCatch stmt1 _ _ stmt2 -> do
+      mapM_ resetValue $ killedVars stmt1 ++ killedVars stmt2
+      original
     -- Special function bodies
     SBuiltin -> original
     SInherited -> original
