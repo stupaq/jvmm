@@ -22,7 +22,6 @@ import qualified Data.Char as Char
 import qualified Data.Ord as Ord
 import qualified Data.List as List
 import qualified Data.Map as Map
-import qualified Data.Maybe as Maybe
 import qualified Data.Traversable as Traversable
 import Data.Word
 
@@ -412,7 +411,7 @@ instance ReferenceCounted (TypeBasic, Operand) where
     ref' <- castToVoidPtr ref
     Do |- callStatic (Name "rc_retain") [ref']
   retain _ = return ()
-  release (typ, ref@(LocalReference _)) = whenRefCounted typ $ do
+  release (typ, ref@(LocalReference _)) = whenRefCounted typ $
     modify $ \s -> s { emitterstateBlockRelease = ref : emitterstateBlockRelease s }
   release _ = return ()
 
