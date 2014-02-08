@@ -43,10 +43,58 @@ LLVM backend for JVMM supports limited form of debugging, more specifically when
 Note that this includes logging on _every_ reference count increment or decrement which may significantly slow down the
 execution.
 
+REMARKS ABOUT PROVIDED TEST SUITES
+----------------------------------
+Test suites `test-latte`, `test-mrjp` and `test-jvmm` are meant as a progress indicators, rather than actual correctness
+evaluation, i.e. they do not need to succeed.
+
+Test cases that MUST FAIL in current implementation:
++   JVM backend
+    *   test-latte
+        -   counter
+        -   linked
+        -   points
+        -   queue
+        -   shapes
+        -   list
+    *   test-jvmm
+        -   dfs
+        -   exceptions001
+        -   exceptions002
+        -   exceptions003
+        -   gchiddenstack
+        -   non-static_prec
+        -   this_semantics
+    *   test-mrjp
+        -   bfs
+        -   calculator
+        -   lista2Kierunkowa
+        -   mergeSort
+        -   tail_call_optimization
+        -   polymorphism
++   INTERPRETER backend
+    *   test-mrjp
+        -   tail_call_optimization
++   LLVM backend
+    *   test-jvmm
+        -   exceptions001
+        -   exceptions002
+        -   exceptions003
+        -   gchiddenstack
+    *   test-mrjp
+        -   tail_call_optimization
+
+All other test cases MUST PASS with current implementation.
+
 SOURCES AND ACKNOWLEDGEMENTS
 ----------------------------
-Test programs under `test-latte/` come from official package: http://www.mimuw.edu.pl/~ben/Zajecia/Mrj2012/Latte/.
+Test programs under `test-latte/` come from [official package][1].
+Some of the test programs under `test-mrjp/` come from [community-driven tests repository][2].
+[Jasmin][3] binary is provided with this package under `lib/`.
 
-Test programs under `test-mrjp/` come from: https://github.com/tomwys/mrjp-tests.
+REFERENCES
+----------
+[1]: http://www.mimuw.edu.pl/~ben/Zajecia/Mrj2012/Latte/
+[2]: https://github.com/tomwys/mrjp-tests
+[3]: http://jasmin.sourceforge.net/
 
-Jasmin binary is provided in this package
