@@ -92,8 +92,6 @@ Test programs under `test-latte/` come from [official package][1].
 Some of the test programs under `test-mrjp/` come from [community-driven tests repository][2].
 [Jasmin][3] binary is provided with this package under `lib/`.
 
-REFERENCES
-----------
 [1]: http://www.mimuw.edu.pl/~ben/Zajecia/Mrj2012/Latte/
 [2]: https://github.com/tomwys/mrjp-tests
 [3]: http://jasmin.sourceforge.net/
