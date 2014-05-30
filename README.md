@@ -90,7 +90,8 @@ SOURCES AND ACKNOWLEDGEMENTS
 ----------------------------
 Test programs under `test-latte/` come from [official package][1].
 Some of the test programs under `test-mrjp/` come from [community-driven tests repository][2].
-[Jasmin][3] JAR must be placed under `lib/` directory in order to use JVM backend.
+[Jasmin][3] JAR must be placed under `lib/` directory in order to use JVM
+backend (in current relase this is done automatically by make invokation).
 
 [1]: http://www.mimuw.edu.pl/~ben/Zajecia/Mrj2012/Latte/
 [2]: https://github.com/tomwys/mrjp-tests
