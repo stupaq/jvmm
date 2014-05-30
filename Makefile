@@ -1,7 +1,8 @@
-DOCS := $(patsubst %.md, %.pdf, $(wildcard docs/*.md))
-TESTSUITES := $(wildcard test-*)
-JVM_RUNTIME := lib/Runtime.class
-LLVM_RUNTIME := lib/runtime.bc
+DOCS			:= $(patsubst %.md, %.pdf, $(wildcard docs/*.md))
+JVM_RUNTIME		:= lib/Runtime.class
+LLVM_RUNTIME	:= lib/runtime.bc
+TEST_SUITES		:= $(pathsubst test-,run-,$(wildcard test-*))
+TEST_RUNNER		:= test-run.sh
 
 PDFLATEX := pdflatex -interaction=batchmode
 
@@ -26,8 +27,20 @@ $(DOCS): %.pdf : %.md
 lint:
 	$(MAKE) -C src/ lint
 
-$(TESTSUITES): % : all
-	@./$@/test-run.sh -A
+$(TEST_SUITES): %) : % all
+	@./$</$(TEST_RUNNER) -A
+
+test-jvmm:
+test-mrjp:
+test-latte:
+	mkdir $@
+	curl 'http://www.mimuw.edu.pl/%7Eben/Zajecia/Mrj2012/Latte/lattests121017.tgz' | tar -xzf - -C $@ --strip-components=1
+	@echo '#!/bin/bash' > $@/$(TEST_RUNNER)
+	@echo 'tests_root="./test-latte/"' >> $@/$(TEST_RUNNER)
+	@echo '. generic-test-runner.sh' >> $@/$(TEST_RUNNER)
+	chmod +x $@/$(TEST_RUNNER)
+	for d in $@/extensions/*/; do mkdir $$d/good/; mv $$d/*.{lat,output} $$d/good/; done
+	for f in $@/bad/bad00{1,2,4,5}; do mv $$f.lat $$f.txt; done
 
 clean:
 	-$(MAKE) -C src/ clean
