@@ -2,6 +2,7 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 module Jvmm.Verifier.Internal where
 
+import Control.Applicative
 import Control.Monad.Identity
 import Control.Monad.State
 import qualified Data.Traversable as Traversable
@@ -30,7 +31,7 @@ verifierstate0 = VerifierState {
 ---------------
 type VerifierM = StateT VerifierState (ErrorInfoT Identity)
 runVerifierM :: VerifierM a -> ErrorInfoT Identity a
-runVerifierM m = fmap fst $ runStateT m verifierstate0
+runVerifierM m = fst <$> runStateT m verifierstate0
 
 probeReturned :: VerifierM a -> VerifierM (a, Bool)
 probeReturned action = do

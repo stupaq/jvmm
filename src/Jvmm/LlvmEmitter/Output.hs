@@ -5,7 +5,7 @@ import Control.Monad.Error
 
 import LLVM.General.AST as LLVM
 import LLVM.General.Context (withContext)
-import LLVM.General.Module (withModuleFromAST, writeBitcodeToFile)
+import LLVM.General.Module (File (..), withModuleFromAST, writeBitcodeToFile)
 
 -- LLVM MODULE --
 -----------------
@@ -19,7 +19,7 @@ writeUnitFile :: String -> LlvmModule -> IO ()
 writeUnitFile file (LlvmModule content) =
   withContext $ \ctx -> handleErrorT $
     withModuleFromAST ctx content $ \m -> handleErrorT $
-      writeBitcodeToFile file m
+      writeBitcodeToFile (File file) m
   where
     handleErrorT action = do
       res <- runErrorT action

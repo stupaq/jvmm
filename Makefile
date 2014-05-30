@@ -66,7 +66,7 @@ clean:
 
 distclean: clean
 	-$(MAKE) -C src/ distclean
-	-rm -f $(DOCS) ./latc
+	-rm -f $(DOCS) ./latc ./latc_llvm
 	-rm -rf test-latte
 	-rm -rf $(JASMIN_JAR)
 

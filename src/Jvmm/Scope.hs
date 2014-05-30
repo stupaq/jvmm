@@ -1,6 +1,7 @@
 module Jvmm.Scope where
 import Jvmm.Scope.Internal as Internal
 
+import Control.Applicative
 import Control.Monad.Identity
 
 import Jvmm.Errors (ErrorInfoT)
@@ -12,5 +13,5 @@ import Jvmm.Trans.Output (ClassHierarchy)
 -------------------------------------------------------------------------------
 
 scope :: ClassHierarchy -> ErrorInfoT Identity ClassHierarchy
-scope classes = fmap (fst . fst) $ runScopeM (enterHierarchy classes $ Internal.scope classes)
+scope classes = (fst . fst) <$> runScopeM (enterHierarchy classes $ Internal.scope classes)
 

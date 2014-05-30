@@ -5,8 +5,8 @@ import Control.Monad.Identity
 import Data.List as List
 
 import qualified Jvmm.Builtins as Builtins
+import Jvmm.Errors (ErrorInfoT, rethrow)
 import qualified Jvmm.Errors as Err
-import Jvmm.Errors (rethrow, ErrorInfoT)
 import Jvmm.Trans.Output
 
 -- HIERARCHY ------------------------------------------------------------------

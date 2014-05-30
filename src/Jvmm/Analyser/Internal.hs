@@ -9,14 +9,14 @@ import Control.Applicative
 import Control.Monad.Identity
 import Control.Monad.State
 
-import qualified Data.Map as Map
 import qualified Data.List as List
+import qualified Data.Map as Map
 
 import qualified Data.Traversable as Traversable
 
+import qualified Jvmm.Builtins as Builtins
 import Jvmm.Errors (ErrorInfoT)
 import qualified Jvmm.Errors as Err
-import qualified Jvmm.Builtins as Builtins
 import Jvmm.Trans.Output
 
 -- THE STATE --
@@ -35,7 +35,7 @@ analyserstate0 = AnalyserState True Map.empty
 ---------------
 type AnalyserM = StateT AnalyserState (ErrorInfoT Identity)
 runAnalyserM :: AnalyserM a -> ErrorInfoT Identity a
-runAnalyserM m = fmap fst $ runStateT m analyserstate0
+runAnalyserM m = fst <$> runStateT m analyserstate0
 
 localValues :: AnalyserM a -> AnalyserM (a, ConstantValues)
 localValues action = do

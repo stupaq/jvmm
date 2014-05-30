@@ -6,13 +6,14 @@
 {-# LANGUAGE UndecidableInstances  #-}
 module Jvmm.Types.Internal where
 
+import Control.Applicative
 import Control.Monad.Error
 import Control.Monad.Identity
 import Control.Monad.Reader
 import Control.Monad.State
 
-import Data.Int (Int32)
 import qualified Data.Char as Char
+import Data.Int (Int32)
 import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Set as Set
@@ -59,19 +60,19 @@ membertypes0 = Map.empty
 
 data TypeEnv = TypeEnv {
     -- Type of a function currently executed
-    typeenvFunction     :: Maybe TypeMethod
+    typeenvFunction      :: Maybe TypeMethod
     -- This type
-  , typeenvThis         :: Maybe TypeComposed
+  , typeenvThis          :: Maybe TypeComposed
     -- Set of exceptions that are caught when throw in current context
-  , typeenvExceptions   :: Set.Set TypeComposed
+  , typeenvExceptions    :: Set.Set TypeComposed
     -- Types of symbols
-  , typeenvSymbols      :: Types
+  , typeenvSymbols       :: Types
     -- Definitions of types
-  , typeenvTypes        :: MemberTypes
+  , typeenvTypes         :: MemberTypes
     -- Mapping from type to super
-  , typeenvSuper        :: Map.Map TypeComposed TypeComposed
+  , typeenvSuper         :: Map.Map TypeComposed TypeComposed
     -- Origin of visible static methods
-  , typeenvStaticOrigin :: TypeComposed
+  , typeenvStaticOrigin  :: TypeComposed
     -- Expected type for limited type inference
   , typeenvExpectedTypes :: [TypeBasic]
 } deriving (Show)
@@ -98,7 +99,7 @@ typeenvNewType typ mem env = env { typeenvTypes = Map.insert typ mem (typeenvTyp
 -------------------------------
 -- Returns TypeEnv filled with type information about all classes in the hierarchy.
 collectTypes :: ClassHierarchy -> ErrorInfoT Identity TypeEnv
-collectTypes classes = fmap snd $ runStateT (Traversable.mapM decClass classes) typeenv0
+collectTypes classes = snd <$> runStateT (Traversable.mapM decClass classes) typeenv0
   where
     decClass :: Class -> StateT TypeEnv (ErrorInfoT Identity) ()
     decClass clazz@Class { classType = typ } = do

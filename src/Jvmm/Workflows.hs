@@ -1,7 +1,7 @@
 module Jvmm.Workflows where
 
-import System.IO (stderr, hPutStrLn)
-import System.Exit (exitSuccess, exitFailure)
+import System.Exit (exitFailure, exitSuccess)
+import System.IO (hPutStrLn, stderr)
 
 import Control.Monad.Error
 import Control.Monad.Identity
@@ -13,9 +13,9 @@ import Jvmm.Errors
 --------------------------
 data Configuration = Configuration {
     configurationVerbosity :: Verbosity
-  , configurationWorkflow :: Interaction String
-  , configurationSource :: String
-  , configurationDebug :: Bool
+  , configurationWorkflow  :: Interaction String
+  , configurationSource    :: String
+  , configurationDebug     :: Bool
 }
 
 configuration0 :: Configuration

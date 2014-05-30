@@ -6,9 +6,9 @@ import System.FilePath (takeBaseName)
 
 import Control.Monad.Identity
 
-import Jvmm.Workflows
 import Jvmm.Errors (ErrorInfoT)
 import Jvmm.Trans.Output
+import Jvmm.Workflows
 
 -- JVM EMITTER ----------------------------------------------------------------
 --  The layer responsible for emitting Jasmin assembler for restricted subset

@@ -2,14 +2,14 @@
 module Main where
 
 
-import System.IO ( stdin, hGetContents )
-import System.Environment ( getArgs, getProgName )
+import System.Environment (getArgs, getProgName)
+import System.IO (hGetContents, stdin)
 
+import Syntax.AbsJvmm
 import Syntax.LexJvmm
 import Syntax.ParJvmm
-import Syntax.SkelJvmm
 import Syntax.PrintJvmm
-import Syntax.AbsJvmm
+import Syntax.SkelJvmm
 
 
 

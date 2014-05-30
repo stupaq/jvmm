@@ -463,7 +463,7 @@ instance Emitable Class () where
     let classDef = toLlvm lay vtableType
     define $ TypeDefinition (composedName typ) (Just classDef)
     -- Emit object prototype
-    let classProto = Struct False $ GlobalReference (objectVtable typ) : map defaultValue fields
+    let classProto = Struct Nothing False $ GlobalReference (objectVtable typ) : map defaultValue fields
     define $ GlobalDefinition $ globalVariableDefaults {
           name = objectProto typ
         , isConstant = True
@@ -631,7 +631,7 @@ instance Emitable RValue Operand where
     ELitChar c -> withConstant $ charValue c
     ELitString str -> do
       -- This has to be kept in sync with struct rc_heaader definition in runtime library
-      let val = Struct True [
+      let val = Struct Nothing True [
               Const.Int 32 (-1)
             , Array charType $ map charValue str ++ [charValue '\0']]
       let len = fromIntegral (List.length str + 1) :: Word64
