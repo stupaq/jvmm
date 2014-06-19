@@ -15,7 +15,7 @@ if [[ $2 == -*c* ]]; then
   exit 0
 fi
 
-`dirname $0`/src/Jvmm/Main -j $1 $debug
+`dirname $0`/jvmm_bin -j $1 $debug
 java -jar lib/jasmin.jar $path/$class.j -d $path
 
 if [[ $2 == -*s* || $2 == -*v* ]]; then

@@ -3,6 +3,7 @@
 {-# LANGUAGE MultiParamTypeClasses  #-}
 {-# LANGUAGE RankNTypes             #-}
 {-# LANGUAGE TypeSynonymInstances   #-}
+{-# LANGUAGE DoAndIfThenElse        #-}
 module Jvmm.Analyser.Internal where
 
 import Control.Applicative

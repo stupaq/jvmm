@@ -1,2 +1,2 @@
 #!/bin/bash
-`dirname $0`/src/Jvmm/Main -p "$@"
+`dirname $0`/jvmm_bin -p "$@"

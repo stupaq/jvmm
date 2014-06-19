@@ -5,12 +5,10 @@ JASMIN_JAR		:= lib/jasmin.jar
 TEST_SUITES		:= run-test-jvmm run-test-latte run-test-mrjp
 TEST_RUNNER		:= test-run.sh
 
-PDFLATEX := pdflatex -interaction=batchmode
-
 all: $(JVM_RUNTIME) $(LLVM_RUNTIME) $(JASMIN_JAR)
 	$(MAKE) -C src/ all
-	ln -sf ./jvmmc_jvm ./latc
-	ln -sf ./jvmmc_llvm ./latc_llvm
+	cabal configure
+	cabal build
 
 $(JVM_RUNTIME): %.class: %.java
 	javac $<
@@ -24,9 +22,6 @@ $(LLVM_RUNTIME): %.bc: %.c
 docs: $(DOCS)
 $(DOCS): %.pdf : %.md
 	pandoc $< -o $@
-
-lint:
-	$(MAKE) -C src/ lint
 
 $(TEST_SUITES): run-% : % all
 	@./$</$(TEST_RUNNER) -A
@@ -66,8 +61,8 @@ clean:
 
 distclean: clean
 	-$(MAKE) -C src/ distclean
-	-rm -f $(DOCS) ./latc ./latc_llvm
+	-rm -f $(DOCS)
 	-rm -rf test-latte
 	-rm -rf $(JASMIN_JAR)
 
-.PHONY: clean distclean docs lint
+.PHONY: clean distclean docs

@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE DoAndIfThenElse      #-}
 module Jvmm.Scope.Internal where
 
 import Control.Applicative

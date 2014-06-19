@@ -1,6 +1,7 @@
 {-# OPTIONS_GHC -fno-warn-incomplete-patterns #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE MultiParamTypeClasses  #-}
+{-# LANGUAGE DoAndIfThenElse        #-}
 module Jvmm.Interpreter.Internal where
 
 import qualified System.IO as IO

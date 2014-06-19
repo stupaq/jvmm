@@ -5,6 +5,7 @@
 {-# LANGUAGE ScopedTypeVariables    #-}
 {-# LANGUAGE TupleSections          #-}
 {-# LANGUAGE TypeSynonymInstances   #-}
+{-# LANGUAGE DoAndIfThenElse        #-}
 module Jvmm.LlvmEmitter.Internal where
 import Jvmm.LlvmEmitter.Layout
 import Jvmm.LlvmEmitter.Output
