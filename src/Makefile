@@ -17,4 +17,4 @@ clean:
 distclean: clean
 	-rm -f Syntax/*.{tex,txt,pdf,x,y,info}
 
-.PHONY: clean distclean $(MAIN)
+.PHONY: clean distclean

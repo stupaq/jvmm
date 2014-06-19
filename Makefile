@@ -46,6 +46,7 @@ $(JASMIN_JAR):
 
 clean:
 	-$(MAKE) -C src/ clean
+	-rm -rf dist/
 	-rm -f $(JVM_RUNTIME)
 	-rm -f $(LLVM_RUNTIME) $(LLVM_RUNTIME:.bc=.ll)
 	-rm -f {compile,exec}.{err,out}
